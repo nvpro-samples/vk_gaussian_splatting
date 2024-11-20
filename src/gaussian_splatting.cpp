@@ -130,7 +130,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   bool       newIndexAvailable = false;
   const auto splatCount        = m_splatSet.positions.size() / 3;
 
-  if(!frameInfo.pointCloudModeEnabled)
+  if(!frameInfo.opacityGaussianDisabled)
   {
     // Splatting/blending is on, we check for a newly sorted index table
     std::unique_lock<std::mutex> lock(mutex);
@@ -212,7 +212,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   const glm::vec2& clip      = CameraManip.getClipPlanes();
   frameInfo.viewMatrix       = CameraManip.getMatrix();
   frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-  // JEM: why multiply by -1 ?
+  // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
   frameInfo.projectionMatrix[1][1] *= -1;
   //
   frameInfo.cameraPosition         = eye;
@@ -309,7 +309,12 @@ void GaussianSplatting::onUIRender()
         resetFrameInfo();
       }
       PE::entry(
-          "Splat scale", [&]() { return ImGui::SliderFloat("##SPlatScale", (float*)&frameInfo.splatScale, 0.1f, 2.0f); }, "TODOC");
+          "Splat scale",
+          [&]() {
+            return ImGui::SliderFloat("##SPlatScale", (float*)&frameInfo.splatScale, 
+              0.1f, frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f); // we set a different size range for point and splat rendering
+          },
+          "TODOC");
 
       PE::entry(
           "Spherical Harmonic degree",
@@ -324,6 +329,12 @@ void GaussianSplatting::onUIRender()
       PE::entry(
           "Disable splatting", [&]() { return ImGui::Checkbox("##DisableSplatting", &disableSplatting); }, "TODOC");
       frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
+
+      bool opacityGaussianDisabled = frameInfo.opacityGaussianDisabled != 0;
+      PE::entry(
+          "Disable opacity gaussian",
+          [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
+      frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
 
       PE::end();
     }
@@ -407,7 +418,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 
 void GaussianSplatting::createScene()
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_30000\\point_cloud.ply");
+  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_7000\\point_cloud.ply");
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud

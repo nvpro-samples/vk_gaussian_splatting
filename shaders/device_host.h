@@ -44,5 +44,6 @@ struct FrameInfo
   int   sphericalHarmonics8BitMode;
   float splatScale;
   int   showShOnly;
+  int   opacityGaussianDisabled;
 };
 
