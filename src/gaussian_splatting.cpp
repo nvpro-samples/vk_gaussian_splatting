@@ -231,12 +231,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
 
-  // Drawing the primitives in a G-Buffer
+  // Drawing the primitives in the G-Buffer
   nvvk::createRenderingInfo r_info({{0, 0}, m_gBuffers->getSize()}, {m_gBuffers->getColorImageView()},
                                    m_gBuffers->getDepthImageView(), VK_ATTACHMENT_LOAD_OP_CLEAR,
                                    VK_ATTACHMENT_LOAD_OP_CLEAR, m_clearColor);
   r_info.pStencilAttachment = nullptr;
-
 
   nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
@@ -244,6 +243,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   m_app->setViewport(cmd);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+  // overrides the pipeline setup for depth test/write
+  vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
   const VkDeviceSize offsets{0};
   // display the quad
   {
@@ -479,8 +480,11 @@ void GaussianSplatting::createPipeline()
       {1, 1, VK_FORMAT_R32_UINT, 0},  //
   });
 
-  // disable depth test for the pipeline
+  // By default disable depth test for the pipeline
   pstate.depthStencilState.depthTestEnable = VK_FALSE;
+  // The dynamic state is used to change the depth test state dynamically
+  pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+
   // create the pipeline
   nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
 
