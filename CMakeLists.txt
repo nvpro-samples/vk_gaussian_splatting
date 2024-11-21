@@ -4,6 +4,15 @@ project(vk_gaussian_splatting LANGUAGES C CXX)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CXX_STANDARD 20)
 
+# Download CPM.cmake
+set(CPM_DOWNLOAD_VERSION 0.40.2)
+set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
+if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
+    message(STATUS "Downloading CPM.cmake...")
+    file(DOWNLOAD https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
+endif()
+include(${CPM_DOWNLOAD_LOCATION})
+
 #--------------------------------------------------------------------------------------------------
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
 # this cannot be put anywhere else since we still didn't find setup.cmake yet
@@ -65,6 +74,14 @@ _add_package_ImGUI()            # All
 #_add_package_NVML()             # gpu_monitor
 #_add_package_NVAPI()            # compute_mutil_threaded
 _add_package_ShaderC()          # tiny_shader_toy
+
+# Include Vulkan Radix Sort
+CPMAddPackage(
+  NAME vulkan_radix_sort
+  GITHUB_REPOSITORY jaesung-cs/vulkan_radix_sort
+  GIT_TAG 2cda1ef1e6760da5faa5f5b616eb8e13b3af289b
+)
+#add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/build/_deps/vulkan_radix_sort-src")
 
 # Initialize variables
 set(USE_GLSL OFF )
@@ -151,6 +168,7 @@ function(create_sample  PROJECT_NAME)
         ${PLATFORM_LIBRARIES}
         ${UNIXLINKLIBS}
     )
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE Vulkan::Vulkan VulkanMemoryAllocator vk_radix_sort)
 
     # Compile definitions
     # the "config" directory doesn't really exist but serves as place holder

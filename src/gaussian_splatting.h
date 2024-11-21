@@ -51,7 +51,8 @@
 #include <mutex>
 // time
 #include<chrono>
-
+// GPU radix sort
+#include <vk_radix_sort.h>
 
 //
 #include "imgui/imgui_camera_widget.h"
@@ -155,6 +156,13 @@ inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>&
 {
   return a.first > b.first;
 }
+
+
+struct SortData
+{
+  std::vector<uint32_t> keys;
+  std::vector<uint32_t> values;
+};
 
 // TODO: class documentation
 class GaussianSplatting : public nvvkhl::IAppElement
@@ -273,6 +281,7 @@ private: // Attributes
   nvvk::Buffer  m_splatIndicesHost;   // Buffer of splat indices on host for transfers
   nvvk::Buffer  m_splatIndicesDevice; // Buffer of splat indices on device
 
+  //
   nvvk::Buffer  m_vertices; // Buffer of the vertices for the splat quad
   nvvk::Buffer  m_indices;  // Buffer of the indices for the splat quad
   VkSampler     m_sampler;  // texture sampler
@@ -303,6 +312,19 @@ private: // Attributes
   std::vector<uint32_t> gsIndex;
   std::vector<uint32_t> sortGsIndex;
   int m_sortTime = 0;
+
+  // GPU radix sort
+  nvvk::Buffer         m_valuesHost;
+  nvvk::Buffer         m_valuesDevice;
+  nvvk::Buffer         m_keysHost;
+  nvvk::Buffer         m_keysDevice;
+  nvvk::Buffer           m_storage;
+  VmaAllocation          m_storage_allocation = VK_NULL_HANDLE;
+  VkFence   m_fence; // to rename
+  VrdxSorter           m_sorter;
+  VrdxSorterCreateInfo m_sorterInfo;
+  VkQueryPool            m_queryPool;
+  SortData               m_data;
 
   // Pipeline
   DH::PushConstant m_pushConst{};                        // Information sent to the shader

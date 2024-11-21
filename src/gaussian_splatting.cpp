@@ -112,10 +112,95 @@ void GaussianSplatting::onResize(uint32_t width, uint32_t height)
   createGbuffers({width, height});
 }
 
+// following to be removed after war
+#include <random>
+
+
+SortData GenerateUniformRandomData(uint32_t size, uint32_t bits = 32)
+{
+  std::random_device                      rd;
+  std::mt19937                            gen(rd());
+  std::uniform_int_distribution<uint32_t> dist_values;
+  std::uniform_int_distribution<uint32_t> dist_keys;
+  if(bits < 32)
+    dist_keys = std::uniform_int_distribution<uint32_t>(0, (1u << bits) - 1);
+
+  SortData data;
+  data.keys.reserve(size);
+  data.values.reserve(size);
+  for(int i = 0; i < size; ++i)
+  {
+    data.keys.push_back(dist_keys(gen));
+  }
+  for(int i = 0; i < size; ++i)
+  {
+    data.values.push_back(dist_values(gen));
+  }
+  return data;
+}
+// end statment to remove
+
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
 {
   if(!m_gBuffers)
     return;
+
+  // temp here try a GPU sort
+  // Prepare buffer on host using sorted indices
+  if(true)
+  {
+    int  count = m_splatSet.positions.size() / 3;
+
+    {  // copy keys
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_keysHost));
+      for(int i = 0; i < count; ++i)
+      {
+        hostBuffer[i] = m_data.keys[i];
+      }
+      m_alloc->unmap(m_keysHost);
+      // copy buffer to device
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = count * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_keysHost.buffer, m_keysDevice.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_keysDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+    }
+    {  // copy values
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_valuesHost));
+      for(int i = 0; i < count; ++i)
+      {
+        hostBuffer[i] = m_data.values[i];
+      }
+      m_alloc->unmap(m_valuesHost);
+      // copy buffer to device
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = count * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_valuesHost.buffer, m_valuesDevice.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_valuesDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+    }
+
+    // sort
+    VkCommandBuffer tmpCmd = m_app->createTempCmdBuffer();
+    VkQueryPool     queryPool = VK_NULL_HANDLE;
+    vrdxCmdSortKeyValue(cmd, m_sorter, count, m_keysDevice.buffer, 0, m_valuesDevice.buffer, 0, m_storage.buffer, 0, queryPool, 0);
+    m_app->submitAndWaitTempCmdBuffer(tmpCmd);
+
+  }// end test
 
   //
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
@@ -415,7 +500,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 
 void GaussianSplatting::createScene()
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_30000\\point_cloud.ply");
+  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_7000\\point_cloud.ply");
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
@@ -509,6 +594,9 @@ void GaussianSplatting::createGbuffers(const glm::vec2& size)
                                                  m_colorFormat, m_depthFormat);
 }
 
+// to be cleaned
+constexpr uint32_t MAX_ELEMENT_COUNT = 1 << 25;
+
 void GaussianSplatting::createVkBuffers()
 {
   nvvkhl::Application::submitResourceFree([vertices = m_vertices, indices = m_indices, alloc = m_alloc]() {
@@ -516,15 +604,71 @@ void GaussianSplatting::createVkBuffers()
     alloc->destroy(const_cast<nvvk::Buffer&>(indices));
   });
 
-  // create the splat index buffer
   const auto splatCount = m_splatSet.positions.size() / 3;
 
-  m_splatIndicesHost = m_alloc->createBuffer(splatCount * sizeof(uint32_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  // All this block for the GPU sorter
+  { 
+    // just for testing
+    int  count = m_splatSet.positions.size() / 3;
+    m_data    = GenerateUniformRandomData(count);
 
-  m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
-                                               VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    // fence
+    VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    vkCreateFence(m_app->getDevice(), &fence_info, NULL, &m_fence);
+
+    // timestamp query pool
+    constexpr int         timestamp_count = 15;
+    VkQueryPoolCreateInfo query_pool_info = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+    query_pool_info.queryType             = VK_QUERY_TYPE_TIMESTAMP;
+    query_pool_info.queryCount            = timestamp_count;
+    vkCreateQueryPool(m_app->getDevice(), &query_pool_info, NULL, &m_queryPool);
+
+    // sorter
+    m_sorter                    = VK_NULL_HANDLE;
+    m_sorterInfo                = {};
+    m_sorterInfo.physicalDevice = m_app->getPhysicalDevice();
+    m_sorterInfo.device         = m_app->getDevice();
+    vrdxCreateSorter(&m_sorterInfo, &m_sorter);
+
+    {  // Create some buffer for GPU sorting
+      m_valuesHost   = m_alloc->createBuffer(splatCount * sizeof(uint32_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      m_valuesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                                                 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+      m_keysHost   = m_alloc->createBuffer(splatCount * sizeof(uint32_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      m_keysDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
+                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                                               | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    }
+    
+    {  // create the output buffer
+    
+      VrdxSorterStorageRequirements requirements;
+      vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
+
+      VkBufferCreateInfo buffer_info                 = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+      buffer_info.size                               = requirements.size;
+      buffer_info.usage                              = requirements.usage;
+      VmaAllocationCreateInfo allocation_create_info = {};
+      allocation_create_info.usage                   = VMA_MEMORY_USAGE_AUTO;
+      vmaCreateBuffer(m_alloc->vma(), &buffer_info, &allocation_create_info, &m_storage.buffer, &m_storage_allocation, NULL);
+    }
+  }
+
+  {  // create the splat index buffer used for CPU sorting
+
+    m_splatIndicesHost = m_alloc->createBuffer(splatCount * sizeof(uint32_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
+                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  }
 
   // Quad with UV coordinates
   const std::vector<uint16_t> indices = {0, 2, 1, 2, 0, 3};
