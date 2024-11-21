@@ -358,15 +358,12 @@ void GaussianSplatting::onUIRender()
 
 void GaussianSplatting::sortingThreadFunc(void)
 {
-
-  bool startSortCopy = false;
-  bool exitSortCopy  = false;
-  while(!exitSortCopy)
+  while(true)
   {
     // wait until a sort or an exit is requested
     std::unique_lock<std::mutex> lock(mutex);
     cond_var.wait(lock, [this] { return sortStart || sortExit; });
-    exitSortCopy = sortExit;
+    const bool exitSortCopy = sortExit;
     lock.unlock();
     if(exitSortCopy)
       return;
@@ -412,14 +409,13 @@ void GaussianSplatting::sortingThreadFunc(void)
     lock.lock();
     sortDone     = true;
     sortStart    = false;
-    exitSortCopy = sortExit;  // state may have changed while sorting
     lock.unlock();
   }
 }
 
 void GaussianSplatting::createScene()
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_7000\\point_cloud.ply");
+  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_30000\\point_cloud.ply");
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
