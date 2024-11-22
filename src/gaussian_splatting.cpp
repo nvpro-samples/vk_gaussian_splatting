@@ -155,6 +155,38 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
 
     const int  count = m_splatSet.positions.size() / 3;
+
+    const glm::vec4 plane(sortDir[0], sortDir[1], sortDir[2],
+                         -sortDir[0] * sortCop[0] - sortDir[1] * sortCop[1] - sortDir[2] * sortCop[2]);
+    const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
+    
+    const auto pointCount = m_splatSet.positions.size() / 3;
+    m_dist.resize(pointCount);
+    float minDist = 3000000000000000.0f;
+    float maxDist = -3000000000000000.0f;
+    for(int i = 0; i < pointCount; ++i)
+    {
+      const auto pos = &(m_splatSet.positions[i * 3]);
+      // distance to plane
+      const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+      
+      m_dist[i] = dist;
+      minDist = std::min(minDist, dist);
+      maxDist = std::max(maxDist, dist);
+    }
+    distArray.resize(pointCount);
+    for(int i = 0; i < pointCount; ++i)
+    {
+      constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
+      // Calculate the scale factor for the float
+      const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
+      // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
+      const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
+      //
+      m_data.keys[i]   = MAX_UINT32-quantized; // because vrdx sort does sort from largest to smallest
+      m_data.values[i] = i;
+    }
+
     { // copy key + values + count
       
       // copy into stagging buffer
@@ -189,7 +221,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       m_storageDevice.buffer, 0, queryPool, 0);
     m_app->submitAndWaitTempCmdBuffer(cpuCmd);
 
-   { // read back
+   if (false){ // read back
       // reset staging for debug
       uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
       std::memset(stagingBuffer, 0, (2 * count + 1) * sizeof(uint32_t));
@@ -372,9 +404,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                        sizeof(DH::PushConstant), &m_pushConst);
 
     vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-    vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+    //vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+    const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+    vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);  // buffer.values contains the index
     vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(cmd, 6, (uint32_t)m_splatSet.positions.size() / 3, 0, 0, 0);
+    vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
   }
   // TODOC
   vkCmdEndRendering(cmd);
@@ -668,8 +702,8 @@ void GaussianSplatting::createVkBuffers()
                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
       m_keysDevice = m_alloc->createBuffer((splatCount * 2 + 1) * sizeof(uint32_t),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-                                               | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                               | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
       VrdxSorterStorageRequirements requirements;

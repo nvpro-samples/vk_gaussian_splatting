@@ -314,6 +314,7 @@ private:  // Attributes
   VrdxSorterCreateInfo m_sorterInfo;
   VkFence     m_fence;
   VkQueryPool m_queryPool;
+  std::vector<float>   m_dist;
 
   nvvk::Buffer m_keysDevice;    // will contain values and splat count
   nvvk::Buffer m_stagingHost;  // will contain values and splat count
