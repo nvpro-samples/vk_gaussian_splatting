@@ -231,6 +231,7 @@ private:  // Methods
     frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
     frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
+    frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
   }
 
   // Find the 3D position under the mouse cursor and set the camera interest to this position
@@ -292,6 +293,9 @@ private:  // Attributes
   glm::vec2 colorsMapSize             = {0, 0};
   glm::vec2 covariancesMapSize        = {0, 0};
   glm::vec2 sphericalHarmonicsMapSize = {0, 0};
+
+  //
+  bool gpuSortingEnabled = true;
 
   // threaded sorting
   std::vector<std::pair<float, int>> distArray;

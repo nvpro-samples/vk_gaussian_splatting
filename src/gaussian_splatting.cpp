@@ -148,123 +148,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   if(!m_gBuffers)
     return;
 
-  // temp here try a GPU sort
-  // Prepare buffer on host using sorted indices
-  if(true)
-  {
-    VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
-
-    const int  count = m_splatSet.positions.size() / 3;
-
-    const glm::vec4 plane(sortDir[0], sortDir[1], sortDir[2],
-                         -sortDir[0] * sortCop[0] - sortDir[1] * sortCop[1] - sortDir[2] * sortCop[2]);
-    const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
-    
-    const auto pointCount = m_splatSet.positions.size() / 3;
-    m_dist.resize(pointCount);
-    float minDist = 3000000000000000.0f;
-    float maxDist = -3000000000000000.0f;
-    for(int i = 0; i < pointCount; ++i)
-    {
-      const auto pos = &(m_splatSet.positions[i * 3]);
-      // distance to plane
-      const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-      
-      m_dist[i] = dist;
-      minDist = std::min(minDist, dist);
-      maxDist = std::max(maxDist, dist);
-    }
-    distArray.resize(pointCount);
-    for(int i = 0; i < pointCount; ++i)
-    {
-      constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
-      // Calculate the scale factor for the float
-      const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
-      // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
-      const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
-      //
-      m_data.keys[i]   = MAX_UINT32-quantized; // because vrdx sort does sort from largest to smallest
-      m_data.values[i] = i;
-    }
-
-    { // copy key + values + count
-      
-      // copy into stagging buffer
-      uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
-      std::memcpy(stagingBuffer, m_data.keys.data(), count * sizeof(uint32_t));
-      std::memcpy(stagingBuffer + count , m_data.values.data(), count * sizeof(uint32_t));
-      std::memcpy(stagingBuffer + 2 * count, &count, sizeof(uint32_t));
-      m_alloc->unmap(m_stagingHost);
-      //VkCommandBuffer copyCmd = m_app->createTempCmdBuffer();
-      // copy from host to device
-      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * count + 1) * sizeof(uint32_t)};
-      vkCmdCopyBuffer(cpuCmd, m_stagingHost.buffer, m_keysDevice.buffer, 1, &bc);
-      // sync with end of copy to device
-      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.buffer              = m_keysDevice.buffer;
-      bmb.size                = VK_WHOLE_SIZE;
-      vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-    }
-
-    // sort
-    
-    VkQueryPool     queryPool = VK_NULL_HANDLE;
-    vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, count, 
-      m_keysDevice.buffer, 2 * count * sizeof(uint32_t),
-      m_keysDevice.buffer, 0, 
-      m_keysDevice.buffer, count * sizeof(uint32_t),
-      m_storageDevice.buffer, 0, queryPool, 0);
-    m_app->submitAndWaitTempCmdBuffer(cpuCmd);
-
-   if (false){ // read back
-      // reset staging for debug
-      uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
-      std::memset(stagingBuffer, 0, (2 * count + 1) * sizeof(uint32_t));
-      m_alloc->unmap(m_stagingHost);
-
-      // copy from device to host
-      /*
-      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * count + 1) * sizeof(uint32_t)};
-      vkCmdCopyBuffer(cmd, m_keysDevice.buffer, m_stagingHost.buffer, 1, &bc);
-      // sync with end of copy to device
-      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.buffer              = m_keysDevice.buffer;
-      bmb.size                = VK_WHOLE_SIZE;
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-                           */
-      //
-      VkCommandBuffer copyCmd = m_app->createTempCmdBuffer();
-      VkBufferCopy region = {};
-      region.srcOffset = 0;
-      region.dstOffset = 0;
-      region.size      = 2 * count * sizeof(uint32_t);
-      vkCmdCopyBuffer(copyCmd, m_keysDevice.buffer, m_stagingHost.buffer, 1, &region);
-      m_app->submitAndWaitTempCmdBuffer(copyCmd);
-
-      // copy stagging buffer to result
-      SortData   result;
-      result.keys.resize(count);
-      result.values.resize(count);
-      stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
-      std::memcpy(result.keys.data(), stagingBuffer, count * sizeof(uint32_t));
-      std::memcpy(result.values.data(), stagingBuffer + count, count * sizeof(uint32_t));
-      m_alloc->unmap(m_stagingHost);
-
-      auto n = 1;
-    }
-
-  }// end test
-
   //
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
 
@@ -333,26 +216,107 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   // update splat index buffer if a new sorting result is available
   if(newIndexAvailable)
   {
-    // Prepare buffer on host using sorted indices
-    uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-    for(int i = 0; i < splatCount; ++i)
-    {
-      hostBuffer[i] = distArray[i].second;
+    if(!gpuSortingEnabled)
+    { // CPU sort
+      // Prepare buffer on host using sorted indices
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
+      for(int i = 0; i < splatCount; ++i)
+      {
+        hostBuffer[i] = distArray[i].second;
+      }
+      m_alloc->unmap(m_splatIndicesHost);
+      // copy buffer to device
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_splatIndicesDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
     }
-    m_alloc->unmap(m_splatIndicesHost);
-    // copy buffer to device
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
-    vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
-    // sync with end of copy to device
-    VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-    bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-    bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.buffer              = m_splatIndicesDevice.buffer;
-    bmb.size                = VK_WHOLE_SIZE;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                         VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+    else
+    { // GPU sort
+
+      VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
+      {  // copy key + values + count
+
+        // copy into stagging buffer
+        uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
+        std::memcpy(stagingBuffer, m_data.keys.data(), splatCount * sizeof(uint32_t));
+        std::memcpy(stagingBuffer + splatCount, m_data.values.data(), splatCount * sizeof(uint32_t));
+        std::memcpy(stagingBuffer + 2 * splatCount, &splatCount, sizeof(uint32_t));
+        m_alloc->unmap(m_stagingHost);
+        // copy from host to device
+        VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * splatCount + 1) * sizeof(uint32_t)};
+        vkCmdCopyBuffer(cpuCmd, m_stagingHost.buffer, m_keysDevice.buffer, 1, &bc);
+        // sync with end of copy to device
+        VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+        bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+        bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bmb.buffer              = m_keysDevice.buffer;
+        bmb.size                = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+      }
+
+      // sort
+
+      VkQueryPool queryPool = VK_NULL_HANDLE;
+      vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
+                                  m_keysDevice.buffer, 0, m_keysDevice.buffer, splatCount * sizeof(uint32_t),
+                                  m_storageDevice.buffer, 0, queryPool, 0);
+      m_app->submitAndWaitTempCmdBuffer(cpuCmd);
+
+      if(false)
+      {  // read back
+        // reset staging for debug
+        uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
+        std::memset(stagingBuffer, 0, (2 * splatCount + 1) * sizeof(uint32_t));
+        m_alloc->unmap(m_stagingHost);
+
+        // copy from device to host
+        /*
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * count + 1) * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_keysDevice.buffer, m_stagingHost.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_keysDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+                           */
+        //
+        VkCommandBuffer copyCmd = m_app->createTempCmdBuffer();
+        VkBufferCopy    region  = {};
+        region.srcOffset        = 0;
+        region.dstOffset        = 0;
+        region.size             = 2 * splatCount * sizeof(uint32_t);
+        vkCmdCopyBuffer(copyCmd, m_keysDevice.buffer, m_stagingHost.buffer, 1, &region);
+        m_app->submitAndWaitTempCmdBuffer(copyCmd);
+
+        // copy stagging buffer to result
+        SortData result;
+        result.keys.resize(splatCount);
+        result.values.resize(splatCount);
+        stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
+        std::memcpy(result.keys.data(), stagingBuffer, splatCount * sizeof(uint32_t));
+        std::memcpy(result.values.data(), stagingBuffer + splatCount, splatCount * sizeof(uint32_t));
+        m_alloc->unmap(m_stagingHost);
+
+        auto n = 1;
+      }
+    }
   }
 
   // Update frame parameters uniform buffer
@@ -404,9 +368,15 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                        sizeof(DH::PushConstant), &m_pushConst);
 
     vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-    //vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-    const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-    vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);  // buffer.values contains the index
+    if(!gpuSortingEnabled)
+    {
+      vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+    }
+    else
+    {
+      const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+      vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);  // buffer.values contains the index
+    }
     vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
   }
@@ -487,6 +457,11 @@ void GaussianSplatting::onUIRender()
           [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
       frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
 
+      bool disableGpuSorting = !gpuSortingEnabled;
+      PE::entry(
+          "Disable GPU sorting ", [&]() { return ImGui::Checkbox("##DisableGPUSorting", &disableGpuSorting); }, "TODOC");
+      gpuSortingEnabled = !disableGpuSorting;
+
       PE::end();
     }
     if(ImGui::CollapsingHeader("3DGS statistics", ImGuiTreeNodeFlags_DefaultOpen))
@@ -528,29 +503,64 @@ void GaussianSplatting::sortingThreadFunc(void)
     const glm::vec4 plane(sortDir[0], sortDir[1], sortDir[2],
                           -sortDir[0] * sortCop[0] - sortDir[1] * sortCop[1] - sortDir[2] * sortCop[2]);
     const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
-    // prepare an array of pair <distance, original index>
+   
     const auto pointCount = m_splatSet.positions.size() / 3;
-    distArray.resize(pointCount);
-    for(int i = 0; i < pointCount; ++i)
-    {
-      const auto pos = &(m_splatSet.positions[i * 3]);
-      // distance to plane
-      const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-      distArray[i].first  = dist;
-      distArray[i].second = i;
-    }
 
-    // Sorting the array with respect to distance keys
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-    std::sort(distArray.begin(), distArray.end(), compare);
-#else
-    std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
-#endif
-    // create the sorted index array
-    sortGsIndex.resize(pointCount);
-    for(int i = 0; i < pointCount; ++i)
+    if(!gpuSortingEnabled)
     {
-      sortGsIndex[i] = distArray[i].second;
+      // prepare an array of pair <distance, original index>
+      distArray.resize(pointCount);
+      for(int i = 0; i < pointCount; ++i)
+      {
+        const auto pos = &(m_splatSet.positions[i * 3]);
+        // distance to plane
+        const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+        distArray[i].first  = dist;
+        distArray[i].second = i;
+      }
+
+      // Sorting the array with respect to distance keys
+#if defined(SEQUENTIAL) || !defined(_WIN32)
+      std::sort(distArray.begin(), distArray.end(), compare);
+#else
+      std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
+#endif
+      // create the sorted index array
+      sortGsIndex.resize(pointCount);
+      for(int i = 0; i < pointCount; ++i)
+      {
+        sortGsIndex[i] = distArray[i].second;
+      }
+    }
+    else
+    {
+      // GPU sorting we just compute and quantize distances
+      // actual sort will be done by onRender
+      m_dist.resize(pointCount);
+      float minDist = std::numeric_limits<float>::max();
+      float maxDist = -std::numeric_limits<float>::max();
+      for(int i = 0; i < pointCount; ++i)
+      {
+        const auto pos = &(m_splatSet.positions[i * 3]);
+        // distance to plane
+        const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+
+        m_dist[i] = dist;
+        minDist   = std::min(minDist, dist);
+        maxDist   = std::max(maxDist, dist);
+      }
+      distArray.resize(pointCount);
+      for(int i = 0; i < pointCount; ++i)
+      {
+        constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
+        // Calculate the scale factor for the float
+        const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
+        // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
+        const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
+        //
+        m_data.keys[i]   = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
+        m_data.values[i] = i;
+      }
     }
 
     auto end   = std::chrono::high_resolution_clock::now();
