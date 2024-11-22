@@ -112,37 +112,6 @@ void GaussianSplatting::onResize(uint32_t width, uint32_t height)
   createGbuffers({width, height});
 }
 
-// following to be removed after war
-#include <random>
-
-
-SortData GenerateUniformRandomData(uint32_t size, uint32_t bits = 32)
-{
-  std::random_device                      rd;
-  std::mt19937                            gen(rd());
-  std::uniform_int_distribution<uint32_t> dist_values;
-  std::uniform_int_distribution<uint32_t> dist_keys;
-  if(bits < 32)
-    dist_keys = std::uniform_int_distribution<uint32_t>(0, (1u << bits) - 1);
-
-  SortData data;
-  data.keys.reserve(size);
-  data.values.reserve(size);
-  for(int i = 0; i < size; ++i)
-  {
-    const auto a = dist_keys(gen);
-    data.keys.push_back(a);
-    data.values.push_back(a);
-  }
-  /*
-  for(int i = 0; i < size; ++i)
-  {
-    data.values.push_back(dist_values(gen));
-  }*/
-  return data;
-}
-// end statment to remove
-
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
 {
   if(!m_gBuffers)
@@ -176,7 +145,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       if(sortDoneCopy)
       {
         if(!gpuSortingEnabled)
-        { 
+        {
           gsIndex.swap(sortGsIndex);
         }
         else
@@ -230,7 +199,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
       for(int i = 0; i < splatCount; ++i)
       {
-        hostBuffer[i] = distArray[i].second;
+        hostBuffer[i] = gsIndex[i];
       }
       m_alloc->unmap(m_splatIndicesHost);
       // copy buffer to device
@@ -440,13 +409,36 @@ void GaussianSplatting::sortingThreadFunc(void)
     {
       // prepare an array of pair <distance, original index>
       distArray.resize(splatCount);
-      for(int i = 0; i < splatCount; ++i)
-      {
-        const auto pos = &(m_splatSet.positions[i * 3]);
-        // distance to plane
-        const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-        distArray[i].first  = dist;
-        distArray[i].second = i;
+      
+      // Sequential version of compute distances
+      if (false){
+        for(int i = 0; i < splatCount; ++i)
+        {
+          const auto pos = &(m_splatSet.positions[i * 3]);
+          // distance to plane
+          const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+          distArray[i].first  = dist;
+          distArray[i].second = i;
+        }
+        
+      }
+      
+      // parallel for, compute distances
+      if ( true) {
+        
+        auto& tmpArray = distArray;
+        auto& splatSet = m_splatSet;
+        std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
+        //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
+                                       [&tmpArray, &splatSet, &plane, &divider](std::pair<float, int> const& val) {
+                                         size_t     i   = &val - &tmpArray[0];
+                                         const auto pos = &(splatSet.positions[i * 3]);
+                                         // distance to plane
+                                         const float dist =
+                                             std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+                                         tmpArray[i].first  = dist;
+                                         tmpArray[i].second = i;
+                                       });
       }
 
       // Sorting the array with respect to distance keys
@@ -480,7 +472,8 @@ void GaussianSplatting::sortingThreadFunc(void)
         minDist   = std::min(minDist, dist);
         maxDist   = std::max(maxDist, dist);
       }
-      distArray.resize(splatCount);
+      m_data.keys.resize(splatCount);
+      m_data.values.resize(splatCount);
       for(int i = 0; i < splatCount; ++i)
       {
         constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
@@ -531,8 +524,8 @@ void GaussianSplatting::sortingThreadFunc(void)
     m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
     lock.lock();
-    sortDone     = true;
-    sortStart    = false;
+    sortDone  = true;
+    sortStart = false;
     lock.unlock();
   }
 }
@@ -644,12 +637,15 @@ void GaussianSplatting::createVkBuffers()
   });
 
   const auto splatCount = m_splatSet.positions.size() / 3;
+  
+  // this has nothing to do here
+  distArray.resize(splatCount);
+  distArray2.resize(splatCount);  
+  gsIndex.resize(splatCount);
+  sortGsIndex.resize(splatCount);
 
   // All this block for the GPU sorter
   { 
-    // just for testing
-    const int  count = m_splatSet.positions.size() / 3;
-    m_data    = GenerateUniformRandomData(count);
 
     // fence
     VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};

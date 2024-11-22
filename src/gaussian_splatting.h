@@ -295,10 +295,11 @@ private:  // Attributes
   glm::vec2 sphericalHarmonicsMapSize = {0, 0};
 
   //
-  bool gpuSortingEnabled = true;
+  bool gpuSortingEnabled = false;
 
   // threaded sorting
   std::vector<std::pair<float, int>> distArray;
+  std::vector<std::pair<float, int>> distArray2;
   std::thread                        sortingThread;
   std::mutex                         mutex;
   std::condition_variable            cond_var;
