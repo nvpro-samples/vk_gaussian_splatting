@@ -50,7 +50,7 @@
 #include <condition_variable>
 #include <mutex>
 // time
-#include<chrono>
+#include <chrono>
 // GPU radix sort
 #include <vk_radix_sort.h>
 
@@ -99,55 +99,52 @@ const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::
 const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
 #endif  // USE_HLSL
 
-// 
-struct SampleTexture {
+//
+struct SampleTexture
+{
 private:
   VkDevice          m_device{};
-  uint32_t          m_queueIndex{ 0 };
-  VkExtent2D        m_size{ 0, 0 };
+  uint32_t          m_queueIndex{0};
+  VkExtent2D        m_size{0, 0};
   nvvk::Texture     m_texture;
-  nvvkhl::AllocVma* m_alloc{ nullptr };
+  nvvkhl::AllocVma* m_alloc{nullptr};
 
 public:
-
   SampleTexture(VkDevice device, uint32_t queueIndex, nvvkhl::AllocVma* a)
-    : m_device(device)
-    , m_queueIndex(queueIndex)
-    , m_alloc(a)
+      : m_device(device)
+      , m_queueIndex(queueIndex)
+      , m_alloc(a)
   {
   }
 
-  ~SampleTexture(){
-    destroy();
-  }
+  ~SampleTexture() { destroy(); }
 
   // Create the image, the sampler and the image view + generate the mipmap level for all
   void create(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format)
   {
-    const VkSamplerCreateInfo sampler_info{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
-    m_size = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
-    const VkImageCreateInfo   create_info = nvvk::makeImage2DCreateInfo(m_size, format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
+    const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    m_size                              = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+    const VkImageCreateInfo create_info = nvvk::makeImage2DCreateInfo(m_size, format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
     nvvk::CommandPool cpool(m_device, m_queueIndex);
     VkCommandBuffer   cmd = cpool.createCommandBuffer();
-    m_texture = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
+    m_texture             = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
     // no need nvvk::cmdGenerateMipmaps(cmd, m_texture.image, format, m_size, create_info.mipLevels);
     cpool.submitAndWait(cmd);
   }
 
-  void destroy() 
+  void destroy()
   {
     // Destroying in next frame, avoid deleting while using
-    nvvkhl::Application::submitResourceFree( [tex = m_texture, a = m_alloc]() { a->destroy(const_cast<nvvk::Texture&>(tex)); });
+    nvvkhl::Application::submitResourceFree(
+        [tex = m_texture, a = m_alloc]() { a->destroy(const_cast<nvvk::Texture&>(tex)); });
   }
 
   void               setSampler(const VkSampler& sampler) { m_texture.descriptor.sampler = sampler; }
   [[nodiscard]] bool isValid() const { return m_texture.image != nullptr; }
   [[nodiscard]] const VkDescriptorImageInfo& descriptor() const { return m_texture.descriptor; }
-  [[nodiscard]] const VkExtent2D& getSize() const { return m_size; }
+  [[nodiscard]] const VkExtent2D&            getSize() const { return m_size; }
   [[nodiscard]] float getAspect() const { return static_cast<float>(m_size.width) / static_cast<float>(m_size.height); }
-
-
 };
 
 
@@ -167,52 +164,49 @@ struct SortData
 // TODO: class documentation
 class GaussianSplatting : public nvvkhl::IAppElement
 {
-public: // Methods specializing IAppElement
+public:  // Methods specializing IAppElement
+  GaussianSplatting()
+      : sortingThread([this] { this->sortingThreadFunc(); })  // starts the splat sorting thread
+      {};
 
-  GaussianSplatting():
-    sortingThread([this] { this->sortingThreadFunc(); })  // starts the splat sorting thread
-  {};
-  
-  ~GaussianSplatting() override
-  {  
-    // all threads must be stoped, 
-    // work done in onDetach(), 
-    // could be done here, same result
+  ~GaussianSplatting() override{
+      // all threads must be stoped,
+      // work done in onDetach(),
+      // could be done here, same result
   };
 
   void onAttach(nvvkhl::Application* app) override;
-  
+
   void onDetach() override;
 
   void onResize(uint32_t width, uint32_t height) override;
-  
+
   void onRender(VkCommandBuffer cmd) override;
 
   void onUIRender() override;
-    
+
   void onUIMenu() override {}
 
-  void onFileDrop(const char* filename) override {} 
+  void onFileDrop(const char* filename) override {}
 
-private: // structures and types
-
+private:  // structures and types
   // Storage for a 3D gaussian splatting (3DGS) model loaded from PLY file
-  struct SplatSet {
+  struct SplatSet
+  {
     // standard poiont cloud attributes
-    std::vector<float>       positions; // point positions (x,y,z)
-    std::vector<float>       normals;   // point normals (x,y,z) - not used but stored in file
+    std::vector<float> positions;  // point positions (x,y,z)
+    std::vector<float> normals;    // point normals (x,y,z) - not used but stored in file
     // specific data fields introduced by INRIA for 3DGS
-    std::vector<float>       f_dc;         // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
-    std::vector<float>       f_rest;       // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients
-    std::vector<float>       opacity;      // 1 value per point in ply file
-    std::vector<float>       scale;        // 3 components per point in ply file 
-    std::vector<float>       rotation;     // 4 components per point in ply file - a quaternion
+    std::vector<float> f_dc;      // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
+    std::vector<float> f_rest;    // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients
+    std::vector<float> opacity;   // 1 value per point in ply file
+    std::vector<float> scale;     // 3 components per point in ply file
+    std::vector<float> rotation;  // 4 components per point in ply file - a quaternion
   };
 
-private: // Methods
-
+private:  // Methods
   // main loop of the sorting thread for gaussians
-  // the thread is started by the class constructor 
+  // the thread is started by the class constructor
   // then wait for triggers
   void sortingThreadFunc(void);
 
@@ -226,16 +220,17 @@ private: // Methods
 
   void destroyResources();
 
-  // reset the attributes of the frameInformation that are 
+  // reset the attributes of the frameInformation that are
   // modified by the user interface
-  inline void resetFrameInfo() {
-    frameInfo.splatScale = 1.0f;              // in [0.1,2.0]
-    frameInfo.orthoZoom = 1.0f;               // in ?
-    frameInfo.orthographicMode = 0;           // disabled, in {0,1}
-    frameInfo.pointCloudModeEnabled = 0;      // disabled, in {0,1}
-    frameInfo.sphericalHarmonicsDegree = 2;   // in {0,1,2}
-    frameInfo.sphericalHarmonics8BitMode = 0; // disabled, in {0,1}
-    frameInfo.showShOnly = 0;                 // disabled, in {0,1}
+  inline void resetFrameInfo()
+  {
+    frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
+    frameInfo.orthoZoom                  = 1.0f;  // in ?
+    frameInfo.orthographicMode           = 0;     // disabled, in {0,1}
+    frameInfo.pointCloudModeEnabled      = 0;     // disabled, in {0,1}
+    frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
+    frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
+    frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
   }
 
   // Find the 3D position under the mouse cursor and set the camera interest to this position
@@ -255,8 +250,7 @@ private: // Methods
   // to be placed at a better location
   bool loadPly(std::string filename, SplatSet& output);
 
-private: // Attributes
-
+private:  // Attributes
   nvvkhl::Application*              m_app{nullptr};
   std::unique_ptr<nvvk::DebugUtil>  m_dutil;
   std::shared_ptr<nvvkhl::AllocVma> m_alloc;
@@ -278,13 +272,13 @@ private: // Attributes
   nvvk::Buffer m_frameInfo;
   nvvk::Buffer m_pixelBuffer;
 
-  nvvk::Buffer  m_splatIndicesHost;   // Buffer of splat indices on host for transfers
-  nvvk::Buffer  m_splatIndicesDevice; // Buffer of splat indices on device
+  nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
+  nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
 
   //
-  nvvk::Buffer  m_vertices; // Buffer of the vertices for the splat quad
-  nvvk::Buffer  m_indices;  // Buffer of the indices for the splat quad
-  VkSampler     m_sampler;  // texture sampler
+  nvvk::Buffer m_vertices;  // Buffer of the vertices for the splat quad
+  nvvk::Buffer m_indices;   // Buffer of the indices for the splat quad
+  VkSampler    m_sampler;   // texture sampler
 
   // Data and setting
   SplatSet m_splatSet;
@@ -294,40 +288,39 @@ private: // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
-  glm::vec2 centersMapSize = { 0,0 };
-  glm::vec2 colorsMapSize = { 0,0 };
-  glm::vec2 covariancesMapSize = { 0,0 };
-  glm::vec2 sphericalHarmonicsMapSize = { 0,0 };
+  glm::vec2 centersMapSize            = {0, 0};
+  glm::vec2 colorsMapSize             = {0, 0};
+  glm::vec2 covariancesMapSize        = {0, 0};
+  glm::vec2 sphericalHarmonicsMapSize = {0, 0};
 
   // threaded sorting
   std::vector<std::pair<float, int>> distArray;
-  std::thread sortingThread;
-  std::mutex mutex;
-  std::condition_variable cond_var;
-  bool sortStart = false;
-  bool sortDone = false;
-  bool sortExit = false;
-  glm::vec3 sortDir;
-  glm::vec3 sortCop;
-  std::vector<uint32_t> gsIndex;
-  std::vector<uint32_t> sortGsIndex;
-  int m_sortTime = 0;
+  std::thread                        sortingThread;
+  std::mutex                         mutex;
+  std::condition_variable            cond_var;
+  bool                               sortStart = false;
+  bool                               sortDone  = false;
+  bool                               sortExit  = false;
+  glm::vec3                          sortDir;
+  glm::vec3                          sortCop;
+  std::vector<uint32_t>              gsIndex;
+  std::vector<uint32_t>              sortGsIndex;
+  int                                m_sortTime = 0;
 
   // GPU radix sort
-  nvvk::Buffer         m_valuesHost;
-  nvvk::Buffer         m_valuesDevice;
-  nvvk::Buffer         m_keysHost;
-  nvvk::Buffer         m_keysDevice;
-  nvvk::Buffer           m_storage;
-  VmaAllocation          m_storage_allocation = VK_NULL_HANDLE;
-  VkFence   m_fence; // to rename
+  VmaAllocation        m_storage_allocation = VK_NULL_HANDLE;
+  SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;
-  VkQueryPool            m_queryPool;
-  SortData               m_data;
+  VkFence     m_fence;
+  VkQueryPool m_queryPool;
+
+  nvvk::Buffer m_keysDevice;    // will contain values and splat count
+  nvvk::Buffer m_stagingHost;  // will contain values and splat count
+  nvvk::Buffer m_storageDevice; // used internally (never read or write from to/from host)
 
   // Pipeline
-  DH::PushConstant m_pushConst{};                        // Information sent to the shader
   VkPipeline       m_graphicsPipeline = VK_NULL_HANDLE;  // The graphic pipeline to render
-  DH::FrameInfo    frameInfo{}; // frame parameters, sent to device using a uniform buffer
+  DH::PushConstant m_pushConst{};                        // Information sent to the shader using constant
+  DH::FrameInfo    frameInfo{};                          // frame parameters, sent to device using a uniform buffer
 };
