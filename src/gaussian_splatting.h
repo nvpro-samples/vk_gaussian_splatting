@@ -319,9 +319,10 @@ private:  // Attributes
   VkFence     m_fence;
   VkQueryPool m_queryPool;
   std::vector<float>   m_dist;
+  int                  m_prodIdx = 0;
 
-  nvvk::Buffer m_keysDevice;    // will contain values and splat count
-  nvvk::Buffer m_stagingHost;  // will contain values and splat count
+  nvvk::Buffer m_keysDevice[2]; // will contain values and splat count (swap buffer prod/cons)
+  nvvk::Buffer m_stagingHost;   // will contain values and splat count
   nvvk::Buffer m_storageDevice; // used internally (never read or write from to/from host)
 
   // Pipeline
