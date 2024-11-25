@@ -245,11 +245,21 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       }
 
       // sort
-      VkQueryPool queryPool = VK_NULL_HANDLE;
+
+      constexpr auto timestamp_count = 15;
+      vkCmdResetQueryPool(cpuCmd, m_queryPool, 0, timestamp_count);
+
       vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
                                   m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
-                                  splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, queryPool, 0);
+                                  splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
       m_app->submitAndWaitTempCmdBuffer(cpuCmd);
+
+      std::vector<uint64_t> timestamps(timestamp_count);
+      vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),
+                            timestamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+
+      m_sortTime = (timestamps[timestamp_count - 1] - timestamps[0]) / 1e6; 
+
     }
   }
 
@@ -260,7 +270,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
   // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
   frameInfo.projectionMatrix[1][1] *= -1;
-  //
   frameInfo.cameraPosition         = eye;
   float       devicePixelRatio     = 1.0;
   const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
@@ -269,7 +278,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
   const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
   frameInfo.orthoZoom              = 1.0f;
-  frameInfo.orthographicMode       = 0;  // disabled (uses perspective)
+  frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
   frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
   frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
   frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
@@ -400,10 +409,13 @@ void GaussianSplatting::onUIRender()
     }
     if(ImGui::CollapsingHeader("3DGS statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
+      // TODO: do not use disabled input object to display statistics
       PE::begin();
       ImGui::BeginDisabled();
       PE::entry(
-          "Last sort duration (ms)", [&]() { return ImGui::InputInt("##SortDuration", (int*)&m_sortTime, 0, 100000); }, "TODOC");
+          "Distances  (ms)", [&]() { return ImGui::InputFloat("##DistDuration", (float*)&m_distTime, 0, 100000); }, "TODOC");
+      PE::entry(
+          "Sorting  (ms)", [&]() { return ImGui::InputFloat("##SortDuration", (float*)&m_sortTime, 0, 100000); }, "TODOC");
       const auto splatCount = gsIndex.size();
       PE::entry(
           "Number of splats", [&]() { return ImGui::InputInt("##NbSplats", (int*)&splatCount, 0, 100000); }, "TODOC");
@@ -429,7 +441,7 @@ void GaussianSplatting::sortingThreadFunc(void)
     // since it was not an exit it is a request for a sort
     // we suppose model does not change
     // however during the process dir and cop can change so we use the copy
-    auto start = std::chrono::high_resolution_clock::now();
+    auto startTime = std::chrono::high_resolution_clock::now();
     // we do the sorting if needed
     // find plane passing through COP and with normal dir.
     // we use distance to plane instead of distance to COP as an approximation.
@@ -472,6 +484,9 @@ void GaussianSplatting::sortingThreadFunc(void)
                     });
 #endif
 
+    auto time1   = std::chrono::high_resolution_clock::now();
+    m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
+
     // Sorting the array with respect to distance keys
 #if defined(SEQUENTIAL) || !defined(_WIN32)
     std::sort(distArray.begin(), distArray.end(), compare);
@@ -484,6 +499,9 @@ void GaussianSplatting::sortingThreadFunc(void)
     {
       sortGsIndex[i] = distArray[i].second;
     }
+
+    auto time2 = std::chrono::high_resolution_clock::now();
+    m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
   }
   else
   {
@@ -491,35 +509,82 @@ void GaussianSplatting::sortingThreadFunc(void)
     // compute and quantize distances on CPU
     // sorting done by vrdk library on GPU
     m_dist.resize(splatCount);
-    float minDist = std::numeric_limits<float>::max();
-    float maxDist = -std::numeric_limits<float>::max();
-    for(int i = 0; i < splatCount; ++i)
+#if defined(SEQUENTIAL) || !defined(_WIN32)
     {
-      const auto pos = &(m_splatSet.positions[i * 3]);
-      // distance to plane
-      const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+      float minDist = std::numeric_limits<float>::max();
+      float maxDist = -std::numeric_limits<float>::max();
+      for(int i = 0; i < splatCount; ++i)
+      {
+        const auto pos = &(m_splatSet.positions[i * 3]);
+        // distance to plane
+        const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
 
-      m_dist[i] = dist;
-      minDist   = std::min(minDist, dist);
-      maxDist   = std::max(maxDist, dist);
+        m_dist[i] = dist;
+        minDist   = std::min(minDist, dist);
+        maxDist   = std::max(maxDist, dist);
+      }
+      m_data.keys.resize(splatCount);
+      m_data.values.resize(splatCount);
+      for(int i = 0; i < splatCount; ++i)
+      {
+        constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
+        // Calculate the scale factor for the float
+        const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
+        // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
+        const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
+        //
+        m_data.keys[i]   = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
+        m_data.values[i] = i;
+      }
+
+      auto time1 = std::chrono::high_resolution_clock::now();
+      m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
+      m_sortTime = 0;  // On GPU, cannot be measured here
     }
-    m_data.keys.resize(splatCount);
-    m_data.values.resize(splatCount);
-    for(int i = 0; i < splatCount; ++i)
+#else
     {
-      constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
-      // Calculate the scale factor for the float
-      const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
-      // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
-      const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
-      //
-      m_data.keys[i]   = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
-      m_data.values[i] = i;
+      // parallel for, compute distances
+      auto& tmpArray = m_dist;
+      auto& splatSet = m_splatSet;
+      std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
+                    [&tmpArray, &splatSet, &plane, &divider](float const& val) {
+                      size_t     i   = &val - &tmpArray[0];
+                      const auto pos = &(splatSet.positions[i * 3]);
+                      // distance to plane
+                      const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+                      tmpArray[i] = dist;
+                    });
+
+      // parallel find min/max
+      const float minDist = *std::min_element(std::execution::par, m_dist.begin(), m_dist.end());
+      const float maxDist = *std::max_element(std::execution::par, m_dist.begin(), m_dist.end());
+
+      m_data.keys.resize(splatCount);
+      m_data.values.resize(splatCount);
+
+      // parallel quantization
+      auto& keyArray = m_data.keys;
+      auto& valArray = m_data.values;
+      auto& distArray = m_dist;
+      std::for_each(std::execution::par_unseq, keyArray.begin(), keyArray.end(),
+                    [&keyArray, &valArray, &distArray,&minDist, &maxDist](uint32_t const& val) {
+                      size_t     i   = &val - &keyArray[0];
+                      constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
+                      // Calculate the scale factor for the float
+                      const float scaled = (distArray[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
+                      // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
+                      const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
+                      //
+                      keyArray[i] = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
+                      valArray[i] = i;
+                    });
+
+      auto time1 = std::chrono::high_resolution_clock::now();
+      m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
+      m_sortTime = 0;  // On GPU, cannot be measured here
     }
+#endif
   }
-
-  auto end   = std::chrono::high_resolution_clock::now();
-  m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
   lock.lock();
   sortDone  = true;

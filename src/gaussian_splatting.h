@@ -44,6 +44,7 @@
 #ifdef _WIN32
 #include <ppl.h>
 #include <execution>
+#include <algorithm>
 #endif
 // threading
 #include <thread>
@@ -295,7 +296,9 @@ private:  // Attributes
   glm::vec2 sphericalHarmonicsMapSize = {0, 0};
 
   //
-  bool gpuSortingEnabled = false;
+  bool gpuSortingEnabled = true;
+  float  m_distTime        = 0.0f; // distance update timer
+  float  m_sortTime        = 0.0f; // distance sorting timer
 
   // threaded sorting
   std::vector<std::pair<float, int>> distArray;
@@ -310,8 +313,7 @@ private:  // Attributes
   glm::vec3                          sortCop;
   std::vector<uint32_t>              gsIndex;
   std::vector<uint32_t>              sortGsIndex;
-  int                                m_sortTime = 0;
-
+  
   // GPU radix sort
   VmaAllocation        m_storage_allocation = VK_NULL_HANDLE;
   SortData             m_data;
