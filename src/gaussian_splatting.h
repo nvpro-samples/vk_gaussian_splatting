@@ -94,8 +94,10 @@ const auto& frag_shd = std::vector<uint8_t>{std::begin(raster_fragmentMain), std
 #elif USE_SLANG
 #include "_autogen/raster_slang.h"
 #else
+#include "_autogen/rank.comp.glsl.h"
 #include "_autogen/raster.frag.glsl.h"
 #include "_autogen/raster.vert.glsl.h"
+const auto& comp_shd = std::vector<uint32_t>{std::begin(rank_comp_glsl), std::end(rank_comp_glsl)};
 const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::end(raster_vert_glsl)};
 const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
 #endif  // USE_HLSL
@@ -253,6 +255,7 @@ private:  // Methods
   bool loadPly(std::string filename, SplatSet& output);
 
 private:  // Attributes
+
   nvvkhl::Application*              m_app{nullptr};
   std::unique_ptr<nvvk::DebugUtil>  m_dutil;
   std::shared_ptr<nvvkhl::AllocVma> m_alloc;
@@ -332,4 +335,6 @@ private:  // Attributes
   VkPipeline       m_graphicsPipeline = VK_NULL_HANDLE;  // The graphic pipeline to render
   DH::PushConstant m_pushConst{};                        // Information sent to the shader using constant
   DH::FrameInfo    frameInfo{};                          // frame parameters, sent to device using a uniform buffer
+  //VkPipelineLayout m_computePipelineLayout{};            // The pipeline layout use with compute pipeline
+  VkPipeline       m_computePipeline{};                  // The compute pipeline
 };

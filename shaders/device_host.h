@@ -17,12 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-struct PushConstant
-{
-  mat4 transfo;
-  vec4 color;
-};
-
 // Warning, struct members must 
 // be aligned to 128 bits
 // 
@@ -33,8 +27,10 @@ struct FrameInfo
 
   vec3 cameraPosition;
   float orthoZoom;
+
   vec2  focal;
   vec2  viewport;
+
   vec2  basisViewport;
   int   orthographicMode;
   int   pointCloudModeEnabled;
@@ -43,7 +39,14 @@ struct FrameInfo
   int   sphericalHarmonicsDegree;
   int   sphericalHarmonics8BitMode;
   float splatScale;
+
   int   showShOnly;
   int   opacityGaussianDisabled;
+  int   splatCount;
 };
 
+struct PushConstant
+{
+  mat4 transfo;
+  vec4 color;
+};

@@ -259,6 +259,7 @@ create_sample(gaussian_splatting
     src/gaussian_splatting.h
     src/gaussian_splatting.cpp 
   SHADER_SOURCES 
+    ${SHD_DIR}/rank.comp.glsl
     ${SHD_DIR}/raster.vert.glsl
     ${SHD_DIR}/raster.frag.glsl
   SHADER_HEADERS

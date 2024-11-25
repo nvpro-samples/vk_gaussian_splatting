@@ -91,6 +91,8 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
+  const VkDescriptorBufferInfo keys_desc{m_keysDevice->buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 };
 
@@ -220,8 +222,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     else
     {
       const int       consIdx = (m_prodIdx + 1) % 2;
-
+      
       VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
+      /* Copy from CPu
       { // copy key + values + count
         // copy into stagging buffer
         uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
@@ -242,7 +245,20 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         bmb.size                = VK_WHOLE_SIZE;
         vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-      }
+      }*/
+
+      // invoke the distance compute shader
+      vkCmdBindPipeline(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+      vkCmdBindDescriptorSets(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+
+      constexpr int local_size = 256;
+      vkCmdDispatch(cpuCmd, (splatCount + local_size - 1) / local_size, 1, 1);
+
+      VkMemoryBarrier barrier               = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+      vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                           &barrier, 0, NULL, 0, NULL);
 
       // sort
 
@@ -611,10 +627,12 @@ void GaussianSplatting::createPipeline()
   m_dset->addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->initLayout();
   m_dset->initPool(1);
 
-  const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+  const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
+                                                    0,
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
@@ -624,61 +642,92 @@ void GaussianSplatting::createPipeline()
   writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_unif));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-  VkPipelineRenderingCreateInfo prend_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
-  prend_info.colorAttachmentCount    = 1;
-  prend_info.pColorAttachmentFormats = &m_colorFormat;
-  prend_info.depthAttachmentFormat   = m_depthFormat;
+  {  //  create the rendering pipeline
 
-  // Creating the Pipeline
-  nvvk::GraphicsPipelineState pstate;
-  pstate.rasterizationState.cullMode = VK_CULL_MODE_NONE;
+    VkPipelineRenderingCreateInfo prend_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
+    prend_info.colorAttachmentCount    = 1;
+    prend_info.pColorAttachmentFormats = &m_colorFormat;
+    prend_info.depthAttachmentFormat   = m_depthFormat;
 
-  // activates blending and set blend func
-  pstate.setBlendAttachmentCount(1);  // 1 color attachment
-  {
-    VkPipelineColorBlendAttachmentState blend_state{};
-    blend_state.blendEnable = VK_TRUE;
-    blend_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    blend_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blend_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blend_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    pstate.setBlendAttachmentState(0, blend_state);
-  }
+    // Creating the Pipeline
+    nvvk::GraphicsPipelineState pstate;
+    pstate.rasterizationState.cullMode = VK_CULL_MODE_NONE;
 
-  pstate.addBindingDescriptions({{0, sizeof(Vertex)}});
-  pstate.addAttributeDescriptions({
-      {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, pos))},  // Position
-      //{1, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, uv))},     // UVCoord
-  });
+    // activates blending and set blend func
+    pstate.setBlendAttachmentCount(1);  // 1 color attachment
+    {
+      VkPipelineColorBlendAttachmentState blend_state{};
+      blend_state.blendEnable = VK_TRUE;
+      blend_state.colorWriteMask =
+          VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      blend_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      blend_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      blend_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      pstate.setBlendAttachmentState(0, blend_state);
+    }
 
-  pstate.addBindingDescriptions({{1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
-  pstate.addAttributeDescriptions({
-      {1, 1, VK_FORMAT_R32_UINT, 0},  //
-  });
+    pstate.addBindingDescriptions({{0, sizeof(Vertex)}});
+    pstate.addAttributeDescriptions({
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, pos))},  // Position
+        //{1, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, uv))},     // UVCoord
+    });
 
-  // By default disable depth test for the pipeline
-  pstate.depthStencilState.depthTestEnable = VK_FALSE;
-  // The dynamic state is used to change the depth test state dynamically
-  pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+    pstate.addBindingDescriptions({{1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
+    pstate.addAttributeDescriptions({
+        {1, 1, VK_FORMAT_R32_UINT, 0},  //
+    });
 
-  // create the pipeline
-  nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
+    // By default disable depth test for the pipeline
+    pstate.depthStencilState.depthTestEnable = VK_FALSE;
+    // The dynamic state is used to change the depth test state dynamically
+    pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+
+    // create the pipeline
+    nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
 
 #if USE_SLANG
-  VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
-  pgen.addShader(shaderModule, VK_SHADER_STAGE_VERTEX_BIT, "vertexMain");
-  pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
+    VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
+    pgen.addShader(shaderModule, VK_SHADER_STAGE_VERTEX_BIT, "vertexMain");
+    pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
 #else
-  pgen.addShader(vert_shd, VK_SHADER_STAGE_VERTEX_BIT, USE_GLSL ? "main" : "vertexMain");
-  pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
+    pgen.addShader(vert_shd, VK_SHADER_STAGE_VERTEX_BIT, USE_GLSL ? "main" : "vertexMain");
+    pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
 #endif
 
-  m_graphicsPipeline = pgen.createPipeline();
-  m_dutil->setObjectName(m_graphicsPipeline, "Graphics");
-  pgen.clearShaders();
+    m_graphicsPipeline = pgen.createPipeline();
+    m_dutil->setObjectName(m_graphicsPipeline, "Graphics");
+    pgen.clearShaders();
 #if USE_SLANG
-  vkDestroyShaderModule(m_device, shaderModule, nullptr);
+    vkDestroyShaderModule(m_device, shaderModule, nullptr);
 #endif
+  }
+  { // create the compute pipeline
+     
+    /*-- Creating the pipeline to run the compute shader -*/
+    const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                              .codeSize = sizeof(rank_comp_glsl),
+                                              .pCode    = &rank_comp_glsl[0]};
+    VkShaderModule compute{};
+    vkCreateShaderModule(m_device, &createInfo, nullptr, &compute);
+
+    auto pipelineLayout = m_dset->getPipeLayout();
+
+    VkComputePipelineCreateInfo pipelineInfo{
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            {
+                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = compute,
+                .pName  = "main",
+            },
+        .layout = pipelineLayout,
+    };
+    vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
+    
+    /*-- Clean up the shader module -*/
+    vkDestroyShaderModule(m_device, compute, nullptr);
+  }
 }
 
 void GaussianSplatting::createGbuffers(const glm::vec2& size)
