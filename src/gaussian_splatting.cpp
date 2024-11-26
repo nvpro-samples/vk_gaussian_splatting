@@ -93,6 +93,8 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
   const VkDescriptorBufferInfo keys_desc{m_keysDevice[0].buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
+  const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 6, &indirect_desc));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 };
 
@@ -256,12 +258,12 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       // invoke the distance compute shader
       constexpr auto timestamp_count = 15;
       vkCmdResetQueryPool(cmd, m_queryPool, 0, timestamp_count);
-      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
+      //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
 
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
       vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
       
-      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
+      //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
 
       constexpr int local_size = 256;
       vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
@@ -273,27 +275,27 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                            &barrier, 0, NULL, 0, NULL);
       
       
-      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
+      //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
 
       // sort
-      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
+      //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
       vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
         m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
         m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
         splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
 
-      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
+      //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
 
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
-
+      /*
       std::vector<uint64_t> timestamps(timestamp_count);
       vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),
                             timestamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
       
       m_distTime = (timestamps[2] - timestamps[1]) / 1e6;
       m_sortTime = (timestamps[4] - timestamps[3]) / 1e6; 
-      
+      */
 
       // read back for debug
       if(false)
@@ -340,7 +342,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   // overrides the pipeline setup for depth test/write
   vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
   const VkDeviceSize offsets{0};
-  // display the quad
+  // display the quad as many times as we have visible splats
   {
     // TODOC, unused for the time beeing
     m_pushConst.transfo = glm::mat4(1.0);                 // identity
@@ -362,9 +364,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+    // vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
+    // vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
 
-    //
-    // void vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
   }
   // TODOC
   vkCmdEndRendering(cmd);
@@ -655,6 +657,7 @@ void GaussianSplatting::createPipeline()
   m_dset->addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->initLayout();
   m_dset->initPool(1);
 
@@ -849,8 +852,17 @@ void GaussianSplatting::createVkBuffers()
   vertices[2] = {{1.0F, 1.0F, 0.0F}};    //{1.0F, 1.0F} };
   vertices[3] = {{-1.0F, 1.0F, 0.0F}};   //{0.0F, 1.0F} };
 
+  // parameters for DrawIndexIndirect
+  // uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance
+  // vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+  const std::vector<uint32_t> indirect = {6, 0, 0, 0, 0}; // the second value will be set to visible_splat_count after culling
+  
   //
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
+
+  // create the buffer for indirect
+  m_indirect = m_alloc->createBuffer(cmd, indirect, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+  m_dutil->DBG_NAME(m_indirect.buffer);
 
   // create the quad buffers
   m_vertices = m_alloc->createBuffer(cmd, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);

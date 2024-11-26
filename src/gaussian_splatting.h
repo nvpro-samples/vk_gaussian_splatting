@@ -280,6 +280,7 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
   nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
 
+  nvvk::Buffer m_indirect;  // parametter buffer for vkCmdDrawIndexedIndirect
   //
   nvvk::Buffer m_vertices;  // Buffer of the vertices for the splat quad
   nvvk::Buffer m_indices;   // Buffer of the indices for the splat quad
@@ -319,6 +320,7 @@ private:  // Attributes
   
   // GPU radix sort
   VmaAllocation        m_storage_allocation = VK_NULL_HANDLE;
+
   SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;

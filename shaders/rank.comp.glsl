@@ -18,9 +18,14 @@ layout(local_size_x = 256) in;
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
 // Key contains nbSplat keys + nbSplatSamples + nbSplats
-layout(std430, set = 0, binding = 5) writeonly buffer InstanceKey
+layout(std430, set = 0, binding = 5) buffer InstanceKey
 {
   uint32_t key[];
+};
+
+layout(std430, set = 0, binding = 6) buffer IndirectParams
+{
+  uint32_t indirect[];
 };
 
 vec2 getDataUV(in uint index, in int stride, in int offset, in vec2 dimensions)
@@ -52,12 +57,14 @@ void main() {
   float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
-  // if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
+  //if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
+    // increments the visible splat counter in the indirect buffer (second entry of the array)
+    atomicAdd(indirect[1], 1);
     // increments the visible splat counter
     uint instance_index = atomicAdd(key[frameInfo.splatCount*2], 1);
     // stores the key
     key[instance_index] = encodeMinMaxFp32(- depth);
-    // stores th value
+    // stores the value
     key[frameInfo.splatCount + instance_index ] = id;
   //}
 }
