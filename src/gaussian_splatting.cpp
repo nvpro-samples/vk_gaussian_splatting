@@ -132,69 +132,99 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   bool       newIndexAvailable = false;
   const auto splatCount        = m_splatSet.positions.size() / 3;
 
-  if(!frameInfo.opacityGaussianDisabled)
+  if(!gpuSortingEnabled)
   {
-    // Splatting/blending is on, we check for a newly sorted index table
-    std::unique_lock<std::mutex> lock(mutex);
-    bool                         sortDoneCopy = sortDone;
-    if(sortDone)
-      sortDone = false;
-    lock.unlock();
-    if(sortDoneCopy || !sortStart)
+    if(!frameInfo.opacityGaussianDisabled)
     {
-      // sorter is sleeping, we can work on shared data
-      // we take into account the result of the sort
-      if(sortDoneCopy)
+      // Splatting/blending is on, we check for a newly sorted index table
+      std::unique_lock<std::mutex> lock(mutex);
+      bool                         sortDoneCopy = sortDone;
+      if(sortDone)
+        sortDone = false;
+      lock.unlock();
+      if(sortDoneCopy || !sortStart)
       {
-        if(!gpuSortingEnabled)
+        // sorter is sleeping, we can work on shared data
+        // we take into account the result of the sort
+        if(sortDoneCopy)
         {
-          gsIndex.swap(sortGsIndex);
+          if(!gpuSortingEnabled)
+          {
+            gsIndex.swap(sortGsIndex);
+          }
+          else
+          {
+            m_prodIdx = (m_prodIdx + 1) % 2;
+          }
+          //
+          newIndexAvailable = true;
         }
-        else
+        // then if view point has changed we restart a sort
+        const auto nrmDir = glm::normalize(center - eye);
+        if(sortDir != nrmDir || sortCop != eye)
         {
-          m_prodIdx = (m_prodIdx + 1) % 2;
+          // now we wake the sorting thread with new
+          // camera information
+          sortDir   = nrmDir;
+          sortCop   = eye;
+          sortStart = true;
+          // let's wakeup teh sorting thread
+          lock.lock();
+          cond_var.notify_one();
+          lock.unlock();
         }
-        //
+      }
+    }
+    else
+    {
+      // splatting off, we disable the sorting
+      // indices would not be needed for non splatted points
+      // however, uisng the same mechanism allows to use exactly the same shader
+      // so if splatting/blending is off we provide an ordered table of indices 0->splatcount
+      bool refill = (gsIndex.size() != splatCount);
+      if(refill)
+      {
+        gsIndex.resize(splatCount);
+        for(int i = 0; i < splatCount; ++i)
+        {
+          gsIndex[i] = i;
+        }
         newIndexAvailable = true;
       }
-      // then if view point has changed we restart a sort
-      const auto nrmDir = glm::normalize(center - eye);
-      if(sortDir != nrmDir || sortCop != eye)
-      {
-        // now we wake the sorting thread with new
-        // camera information
-        sortDir   = nrmDir;
-        sortCop   = eye;
-        sortStart = true;
-        // let's wakeup teh sorting thread
-        lock.lock();
-        cond_var.notify_one();
-        lock.unlock();
-      }
+      m_sortTime = 0;
     }
   }
-  else
-  {
-    // splatting off, we disable the sorting
-    // indices would not be needed for non splatted points
-    // however, uisng the same mechanism allows to use exactly the same shader
-    // so if splatting/blending is off we provide an ordered table of indices 0->splatcount
-    bool refill = (gsIndex.size() != splatCount);
-    if(refill)
-    {
-      gsIndex.resize(splatCount);
-      for(int i = 0; i < splatCount; ++i)
-      {
-        gsIndex[i] = i;
-      }
-      newIndexAvailable = true;
-    }
-    m_sortTime = 0;
-  }
+
+  // Update frame parameters uniform buffer
+  // some attributes of frameInfo were set by the user interface
+  const glm::vec2& clip      = CameraManip.getClipPlanes();
+  frameInfo.splatCount       = splatCount;
+  frameInfo.viewMatrix       = CameraManip.getMatrix();
+  frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
+  // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
+  frameInfo.projectionMatrix[1][1] *= -1;
+  frameInfo.cameraPosition         = eye;
+  float       devicePixelRatio     = 1.0;
+  const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+  const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+  const bool  isOrthographicCamera = false;
+  const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
+  const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
+  frameInfo.orthoZoom              = 1.0f;
+  frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
+  frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
+  frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
+  frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
+  frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+
+  vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
+
+  // 
+  uint32_t visibleSplatCount;
 
   // update splat index buffer if a new sorting result 
   // (CPU cort) or distance buffer (GPU sort) is available
-  if(newIndexAvailable)
+  if(true)//newIndexAvailable)
   {
     if(!gpuSortingEnabled)
     {  // CPU sort
@@ -223,7 +253,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     {
       const int consIdx = 0;  //(m_prodIdx + 1) % 2;
       
-      VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
+      // VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
+      auto& cpuCmd = cmd;
       /* Copy from CPu
       { // copy key + values + count
         // copy into stagging buffer
@@ -248,8 +279,14 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       }*/
 
       // invoke the distance compute shader
+      constexpr auto timestamp_count = 15;
+      vkCmdResetQueryPool(cpuCmd, m_queryPool, 0, timestamp_count);
+      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
+
       vkCmdBindPipeline(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
       vkCmdBindDescriptorSets(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+      
+      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
 
       constexpr int local_size = 256;
       vkCmdDispatch(cpuCmd, (splatCount + local_size - 1) / local_size, 1, 1);
@@ -259,48 +296,67 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
       vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
+      
+      
+      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
 
       // sort
-      constexpr auto timestamp_count = 15;
-      vkCmdResetQueryPool(cpuCmd, m_queryPool, 0, timestamp_count);
-
+      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
       vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, 
         m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
         m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
         splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
-      m_app->submitAndWaitTempCmdBuffer(cpuCmd);
+
+      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
+
+
+      /*
+      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+      */
+      vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
+                           &barrier, 0, NULL, 0, NULL);
+
+      // m_app->submitAndWaitTempCmdBuffer(cpuCmd);
 
       std::vector<uint64_t> timestamps(timestamp_count);
       vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),
                             timestamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+      
+      m_distTime = (timestamps[2] - timestamps[1]) / 1e6;
+      m_sortTime = (timestamps[4] - timestamps[3]) / 1e6; 
+      
 
-      m_sortTime = (timestamps[timestamp_count - 1] - timestamps[0]) / 1e6; 
+      // read back
+      if(false)
+      {
+        // reset staging for debug
+        uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
+        //std::memset(stagingBuffer, 0, (2 * splatCount + 1) * sizeof(uint32_t));
 
+
+        // copy from device to host
+        VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * splatCount + 1) * sizeof(uint32_t)};
+        vkCmdCopyBuffer(cmd, m_keysDevice[0].buffer, m_stagingHost.buffer, 1, &bc);
+        // sync with end of copy to device
+        VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+        bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+        bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bmb.buffer              = m_keysDevice[0].buffer;
+        bmb.size                = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                             VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+
+        int i = 0;
+        m_alloc->unmap(m_stagingHost);
+      }
     }
   }
 
-  // Update frame parameters uniform buffer
-  // some attributes of frameInfo were set by the user interface
-  const glm::vec2& clip      = CameraManip.getClipPlanes();
-  frameInfo.viewMatrix       = CameraManip.getMatrix();
-  frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-  // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
-  frameInfo.projectionMatrix[1][1] *= -1;
-  frameInfo.cameraPosition         = eye;
-  float       devicePixelRatio     = 1.0;
-  const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-  const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
-  const bool  isOrthographicCamera = false;
-  const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
-  const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
-  frameInfo.orthoZoom              = 1.0f;
-  frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
-  frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
-  frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-  frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
-  frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
 
-  vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
 
   // Drawing the primitives in the G-Buffer
   nvvk::createRenderingInfo r_info({{0, 0}, m_gBuffers->getSize()}, {m_gBuffers->getColorImageView()},
@@ -339,6 +395,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+
+    //
+    // void vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
   }
   // TODOC
   vkCmdEndRendering(cmd);

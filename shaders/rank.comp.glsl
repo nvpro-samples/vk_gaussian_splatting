@@ -32,6 +32,13 @@ vec2 getDataUV(in uint index, in int stride, in int offset, in vec2 dimensions)
   return samplerUV;
 }
 
+uint encodeMinMaxFp32(float val)
+{
+  uint bits = floatBitsToUint(val);
+  bits ^= (int(bits) >> 31) | 0x80000000u;
+  return bits;
+}
+
 void main() {
   uint id = gl_GlobalInvocationID.x;
   if(id >= frameInfo.splatCount)
@@ -45,12 +52,12 @@ void main() {
   float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
-  if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
+  // if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
     // increments the visible splat counter
     uint instance_index = atomicAdd(key[frameInfo.splatCount*2], 1);
     // stores the key
-    key[instance_index] = floatBitsToUint(1.f - depth);
+    key[instance_index] = encodeMinMaxFp32(- depth);
     // stores th value
     key[frameInfo.splatCount + instance_index ] = id;
-  }
+  //}
 }
