@@ -91,7 +91,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
-  const VkDescriptorBufferInfo keys_desc{m_keysDevice->buffer, 0, VK_WHOLE_SIZE};
+  const VkDescriptorBufferInfo keys_desc{m_keysDevice[0].buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 };
@@ -221,7 +221,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     else
     {
-      const int       consIdx = (m_prodIdx + 1) % 2;
+      const int consIdx = 0;  //(m_prodIdx + 1) % 2;
       
       VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
       /* Copy from CPu
@@ -254,20 +254,20 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       constexpr int local_size = 256;
       vkCmdDispatch(cpuCmd, (splatCount + local_size - 1) / local_size, 1, 1);
 
-      VkMemoryBarrier barrier               = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-      barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
       vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
 
       // sort
-
       constexpr auto timestamp_count = 15;
       vkCmdResetQueryPool(cpuCmd, m_queryPool, 0, timestamp_count);
 
-      vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
-                                  m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
-                                  splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
+      vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, 
+        m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
+        m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
+        splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
       m_app->submitAndWaitTempCmdBuffer(cpuCmd);
 
       std::vector<uint64_t> timestamps(timestamp_count);
@@ -334,7 +334,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     else
     {
       const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-      vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice[(m_prodIdx + 1) % 2].buffer, &valueOffsets);  // buffer.values contains the index
+      //vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice[(m_prodIdx + 1) % 2].buffer, &valueOffsets);  // buffer.values contains the index
+      vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice[0].buffer, &valueOffsets);  // buffer.values contains the index
     }
     vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);

@@ -18,12 +18,12 @@ layout(local_size_x = 256) in;
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
 // Key contains nbSplat keys + nbSplatSamples + nbSplats
-layout(std430, set = 0, binding = 3) writeonly buffer InstanceKey
+layout(std430, set = 0, binding = 5) writeonly buffer InstanceKey
 {
   uint32_t key[];
 };
 
-vec2 getDataUV(in int index, in int stride, in int offset, in vec2 dimensions)
+vec2 getDataUV(in uint index, in int stride, in int offset, in vec2 dimensions)
 {
   vec2  samplerUV = vec2(0.0, 0.0);
   float d         = float(index * uint(stride) + uint(offset)) / dimensions.x;
@@ -37,7 +37,8 @@ void main() {
   if(id >= frameInfo.splatCount)
     return;
   
-  vec4 pos = vec3(texture(centersTexture, getDataUV(id, 1, 0, textureSize(centersTexture, 0))),1.0f);
+  vec4 pos = texture(centersTexture, getDataUV(id, 1, 0, textureSize(centersTexture, 0)));
+  pos.w    = 1.0;
   //pos = projection * view * model * pos;
   pos         = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
   pos = pos / pos.w;
@@ -45,9 +46,11 @@ void main() {
 
   // valid only when center is inside NDC clip space.
   if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
-    uint instance_index = atomicAdd(visible_point_count, 1);
+    // increments the visible splat counter
+    uint instance_index = atomicAdd(key[frameInfo.splatCount*2], 1);
+    // stores the key
     key[instance_index] = floatBitsToUint(1.f - depth);
-    index[instance_index] = id;
+    // stores th value
+    key[frameInfo.splatCount + instance_index ] = id;
   }
-  */
 }
