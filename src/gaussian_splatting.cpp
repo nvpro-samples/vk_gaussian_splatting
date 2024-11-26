@@ -252,73 +252,40 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     else
     {
       const int consIdx = 0;  //(m_prodIdx + 1) % 2;
-      
-      // VkCommandBuffer cpuCmd = m_app->createTempCmdBuffer();
-      auto& cpuCmd = cmd;
-      /* Copy from CPu
-      { // copy key + values + count
-        // copy into stagging buffer
-        uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
-        std::memcpy(stagingBuffer, m_data.keys.data(), splatCount * sizeof(uint32_t));
-        std::memcpy(stagingBuffer + splatCount, m_data.values.data(), splatCount * sizeof(uint32_t));
-        std::memcpy(stagingBuffer + 2 * splatCount, &splatCount, sizeof(uint32_t));
-        m_alloc->unmap(m_stagingHost);
-        // copy from host to device
-        VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * splatCount + 1) * sizeof(uint32_t)};
-        vkCmdCopyBuffer(cpuCmd, m_stagingHost.buffer, m_keysDevice[consIdx].buffer, 1, &bc);
-        // sync with end of copy to device
-        VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-        bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-        bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.buffer              = m_keysDevice[consIdx].buffer;
-        bmb.size                = VK_WHOLE_SIZE;
-        vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-      }*/
 
       // invoke the distance compute shader
       constexpr auto timestamp_count = 15;
-      vkCmdResetQueryPool(cpuCmd, m_queryPool, 0, timestamp_count);
-      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
+      vkCmdResetQueryPool(cmd, m_queryPool, 0, timestamp_count);
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
 
-      vkCmdBindPipeline(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
-      vkCmdBindDescriptorSets(cpuCmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
       
-      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
 
       constexpr int local_size = 256;
-      vkCmdDispatch(cpuCmd, (splatCount + local_size - 1) / local_size, 1, 1);
+      vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
 
       VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
       barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
       barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-      vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
       
       
-      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
 
       // sort
-      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
-      vrdxCmdSortKeyValueIndirect(cpuCmd, m_sorter, splatCount, 
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
+      vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
         m_keysDevice[consIdx].buffer, 2 * splatCount * sizeof(uint32_t),
         m_keysDevice[consIdx].buffer, 0, m_keysDevice[consIdx].buffer,
         splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, m_queryPool, 0);
 
-      vkCmdWriteTimestamp(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
+      vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
 
-
-      /*
-      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-      barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
-      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-      */
-      vkCmdPipelineBarrier(cpuCmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
-
-      // m_app->submitAndWaitTempCmdBuffer(cpuCmd);
 
       std::vector<uint64_t> timestamps(timestamp_count);
       vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),
@@ -328,7 +295,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       m_sortTime = (timestamps[4] - timestamps[3]) / 1e6; 
       
 
-      // read back
+      // read back for debug
       if(false)
       {
         // reset staging for debug
