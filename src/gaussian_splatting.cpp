@@ -287,7 +287,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
       vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
-        m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
+        m_indirect.buffer, sizeof(uint32_t),
         m_keysDevice.buffer, 0, 
         m_keysDevice.buffer, splatCount * sizeof(uint32_t),
         m_storageDevice.buffer, 0, 0, 0);
@@ -351,20 +351,19 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                          sizeof(DH::PushConstant), &m_pushConst);
 
+      vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
       vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
       if(!gpuSortingEnabled)
       {
         vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+        vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
       }
       else
       {
         const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
         vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
+        vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
       }
-      vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-      //vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-      // vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
-      vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
     }
     // TODOC
     vkCmdEndRendering(cmd);
