@@ -58,7 +58,9 @@ int main(int argc, char** argv)
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());
   app->addElement(std::make_shared<nvvkhl::ElementDefaultMenu>());
   app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", SHADER_LANGUAGE_STR)));  // Window title info
-  app->addElement(std::make_shared<GaussianSplatting>());
+  auto elementProfiler = std::make_shared<nvvkhl::ElementProfiler>(true);
+  app->addElement(elementProfiler);
+  app->addElement(std::make_shared<GaussianSplatting>(elementProfiler));
 
   app->run();
   app.reset();
@@ -242,38 +244,37 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
   if(gpuSortingEnabled)
   {
-    // invoke the distance compute shader
-    constexpr auto timestamp_count = 15;
-    vkCmdResetQueryPool(cmd, m_queryPool, 0, timestamp_count);
-    //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, 0);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-
-    //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 1);
-
-    constexpr int local_size = 256;
-    vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
-
     VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                         &barrier, 0, NULL, 0, NULL);
 
+    // invoke the distance compute shader
+    {
+      auto timerSection = m_profiler->timeRecurring("Gpu Dist", cmd);
 
-    //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 2);
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+
+      constexpr int local_size = 256;
+      vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
+
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                           &barrier, 0, NULL, 0, NULL);
+    }
 
     // sort
-    //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 3);
-    vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
-                                m_keysDevice.buffer, 0, m_keysDevice.buffer, splatCount * sizeof(uint32_t),
-                                m_storageDevice.buffer, 0, m_queryPool, 0);
+    {
+      auto timerSection2 = m_profiler->timeRecurring("Gpu Sort", cmd);
 
-    //vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_queryPool, 4);
+      vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
+                                  m_keysDevice.buffer, 0, m_keysDevice.buffer, splatCount * sizeof(uint32_t),
+                                  m_storageDevice.buffer, 0, 0, 0);
 
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1, &barrier,
-                         0, NULL, 0, NULL);
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
+                           &barrier, 0, NULL, 0, NULL);
+
+    }
+
     /*
       std::vector<uint64_t> timestamps(timestamp_count);
       vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),

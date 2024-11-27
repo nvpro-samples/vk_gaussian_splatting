@@ -78,6 +78,7 @@
 #include "nvvkhl/element_benchmark_parameters.hpp"
 #include "nvvkhl/element_camera.hpp"
 #include "nvvkhl/element_gui.hpp"
+#include "nvvkhl/element_profiler.hpp"
 #include "nvvkhl/gbuffer.hpp"
 #include "nvvkhl/pipeline_container.hpp"
 
@@ -168,8 +169,9 @@ struct SortData
 class GaussianSplatting : public nvvkhl::IAppElement
 {
 public:  // Methods specializing IAppElement
-  GaussianSplatting()
-      : sortingThread([this] { this->sortingThreadFunc(); })  // starts the splat sorting thread
+  GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
+      : sortingThread([this] { this->sortingThreadFunc(); }),  // starts the splat sorting thread
+      m_profiler(profiler)
       {};
 
   ~GaussianSplatting() override{
@@ -254,9 +256,14 @@ private:  // Methods
   // to be placed at a better location
   bool loadPly(std::string filename, SplatSet& output);
 
+public:
+
+  
+
 private:  // Attributes
 
   nvvkhl::Application*              m_app{nullptr};
+  std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
   std::unique_ptr<nvvk::DebugUtil>  m_dutil;
   std::shared_ptr<nvvkhl::AllocVma> m_alloc;
 
