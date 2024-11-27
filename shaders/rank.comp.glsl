@@ -57,7 +57,12 @@ void main() {
   float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
-  if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
+  // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
+  // the culling is not good since we only take into account 
+  // the center of each splat instead of its extent.
+  // for the time being we just add 0.1 to the NDC as a margin which 
+  // make the job with most models
+  if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f) {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     uint instance_index = atomicAdd(indirect[1], 1);
     // stores the key

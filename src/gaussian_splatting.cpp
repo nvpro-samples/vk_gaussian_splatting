@@ -335,22 +335,27 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
+    // let's throw some pixels !!
     vkCmdBeginRendering(cmd, &r_info);
     m_app->setViewport(cmd);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
     // overrides the pipeline setup for depth test/write
     vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-    const VkDeviceSize offsets{0};
+    
     // display the quad as many times as we have visible splats
     {
-      // TODOC, unused for the time beeing
+      /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
+      // transfo/color unused for the time beeing, could transform the whole 3DGS model
+      // if used, could also be placed in the FrameOnfo or all the frameInfo placed in push_constant
       m_pushConst.transfo = glm::mat4(1.0);                 // identity
       m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
 
       vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                          sizeof(DH::PushConstant), &m_pushConst);
-
+      */
+      
+      const VkDeviceSize offsets{0};
       vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
       vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
       if(!gpuSortingEnabled)
@@ -481,6 +486,10 @@ void GaussianSplatting::sortingThreadFunc(void)
     lock.unlock();
     if(exitSortCopy)
       return;
+
+    // There is no reason this arrives but we test just in case
+    assert(!gpuSortingEnabled);
+
     // since it was not an exit it is a request for a sort
     // we suppose model does not change
     // however during the process dir and cop can change so we use the copy
@@ -495,139 +504,54 @@ void GaussianSplatting::sortingThreadFunc(void)
 
     const auto splatCount = m_splatSet.positions.size() / 3;
 
-    if(!gpuSortingEnabled)
-    {
-      // prepare an array of pair <distance, original index>
-      distArray.resize(splatCount);
+    // prepare an array of pair <distance, original index>
+    distArray.resize(splatCount);
 
-      // Sequential version of compute distances
+    // Sequential version of compute distances
 #if defined(SEQUENTIAL) || !defined(_WIN32)
-      for(int i = 0; i < splatCount; ++i)
-      {
-        const auto pos = &(m_splatSet.positions[i * 3]);
-        // distance to plane
-        const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-        distArray[i].first  = dist;
-        distArray[i].second = i;
-      }
-    }
-#else
-      // parallel for, compute distances
-      auto& tmpArray = distArray;
-      auto& splatSet = m_splatSet;
-      std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
-                    //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
-                    [&tmpArray, &splatSet, &plane, &divider](std::pair<float, int> const& val) {
-                      size_t i = &val - &tmpArray[0];
-                      const auto pos = &(splatSet.positions[i * 3]);
-                      // distance to plane
-                      const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-                      tmpArray[i].first = dist;
-                      tmpArray[i].second = i;
-                    });
-#endif
-
-    auto time1 = std::chrono::high_resolution_clock::now();
-    m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
-
-    // Sorting the array with respect to distance keys
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-    std::sort(distArray.begin(), distArray.end(), compare);
-#else
-      std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
-#endif
-    // create the sorted index array
-    sortGsIndex.resize(splatCount);
     for(int i = 0; i < splatCount; ++i)
     {
-      sortGsIndex[i] = distArray[i].second;
+      const auto pos = &(m_splatSet.positions[i * 3]);
+      // distance to plane
+      const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+      distArray[i].first  = dist;
+      distArray[i].second = i;
     }
-
-    auto time2 = std::chrono::high_resolution_clock::now();
-    m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
   }
-  else
-  {
-    // GPU sorting
-    // compute and quantize distances on CPU
-    // sorting done by vrdk library on GPU
-    m_dist.resize(splatCount);
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-    {
-      float minDist = std::numeric_limits<float>::max();
-      float maxDist = -std::numeric_limits<float>::max();
-      for(int i = 0; i < splatCount; ++i)
-      {
-        const auto pos = &(m_splatSet.positions[i * 3]);
-        // distance to plane
-        const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-
-        m_dist[i] = dist;
-        minDist   = std::min(minDist, dist);
-        maxDist   = std::max(maxDist, dist);
-      }
-      m_data.keys.resize(splatCount);
-      m_data.values.resize(splatCount);
-      for(int i = 0; i < splatCount; ++i)
-      {
-        constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
-        // Calculate the scale factor for the float
-        const float scaled = (m_dist[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
-        // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
-        const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
-        //
-        m_data.keys[i]   = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
-        m_data.values[i] = i;
-      }
-
-      auto time1 = std::chrono::high_resolution_clock::now();
-      m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
-      m_sortTime = 0;  // On GPU, cannot be measured here
-    }
 #else
-      {
-        // parallel for, compute distances
-        auto& tmpArray = m_dist;
-        auto& splatSet = m_splatSet;
-        std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
-                      [&tmpArray, &splatSet, &plane, &divider](float const& val) {
-                        size_t i = &val - &tmpArray[0];
-                        const auto pos = &(splatSet.positions[i * 3]);
-                        // distance to plane
-                        const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-                        tmpArray[i] = dist;
-                      });
-
-        // parallel find min/max
-        const float minDist = *std::min_element(std::execution::par, m_dist.begin(), m_dist.end());
-        const float maxDist = *std::max_element(std::execution::par, m_dist.begin(), m_dist.end());
-
-        m_data.keys.resize(splatCount);
-        m_data.values.resize(splatCount);
-
-        // parallel quantization
-        auto& keyArray = m_data.keys;
-        auto& valArray = m_data.values;
-        auto& distArray = m_dist;
-        std::for_each(std::execution::par_unseq, keyArray.begin(), keyArray.end(),
-                      [&keyArray, &valArray, &distArray, &minDist, &maxDist](uint32_t const& val) {
-                        size_t i = &val - &keyArray[0];
-                        constexpr uint32_t MAX_UINT32 = 4294967295;  // 2^32 - 1
-                        // Calculate the scale factor for the float
-                        const float scaled = (distArray[i] - minDist) / (maxDist - minDist);  // Normalize x to [0, 1]
-                        // Quantize to 32-bit unsigned integer (range 0 to 2^32 - 1)
-                        const uint32_t quantized = static_cast<uint32_t>(round(scaled * MAX_UINT32));
-                        //
-                        keyArray[i] = MAX_UINT32 - quantized;  // because vrdx sort does sort from largest to smallest
-                        valArray[i] = i;
-                      });
-
-        auto time1 = std::chrono::high_resolution_clock::now();
-        m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
-        m_sortTime = 0;  // On GPU, cannot be measured here
-      }
+    // parallel for, compute distances
+    auto& tmpArray = distArray;
+    auto& splatSet = m_splatSet;
+    std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
+                  //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
+                  [&tmpArray, &splatSet, &plane, &divider](std::pair<float, int> const& val) {
+                    size_t     i   = &val - &tmpArray[0];
+                    const auto pos = &(splatSet.positions[i * 3]);
+                    // distance to plane
+                    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+                    tmpArray[i].first  = dist;
+                    tmpArray[i].second = i;
+                  });
 #endif
+
+  auto time1 = std::chrono::high_resolution_clock::now();
+  m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
+
+  // Sorting the array with respect to distance keys
+#if defined(SEQUENTIAL) || !defined(_WIN32)
+  std::sort(distArray.begin(), distArray.end(), compare);
+#else
+    std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
+#endif
+  // create the sorted index array
+  sortGsIndex.resize(splatCount);
+  for(int i = 0; i < splatCount; ++i)
+  {
+    sortGsIndex[i] = distArray[i].second;
   }
+
+  auto time2 = std::chrono::high_resolution_clock::now();
+  m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
 
   lock.lock();
   sortDone  = true;
@@ -642,6 +566,7 @@ void GaussianSplatting::createScene()
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
+  // we know that INRIA models are upside down so we set the up vector to 0,-1,0
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
 
   resetFrameInfo();
