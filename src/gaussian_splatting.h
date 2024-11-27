@@ -331,11 +331,11 @@ private:  // Attributes
   SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;
-  VkFence              m_fence;
+  //VkFence              m_fence;
   VkQueryPool          m_queryPool;
   std::vector<float>   m_dist;
 
-  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and splat count
+  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
   nvvk::Buffer m_stagingHost;   // will contain values and splat count
   nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
 

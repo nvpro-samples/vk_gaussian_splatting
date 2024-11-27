@@ -57,7 +57,7 @@ void main() {
   float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
-  //if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
+  // if (abs(pos.x) <= 1.f && abs(pos.y) <= 1.f && pos.z >= 0.f && pos.z <= 1.f) {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     atomicAdd(indirect[1], 1);
     // increments the visible splat counter
@@ -66,5 +66,5 @@ void main() {
     key[instance_index] = encodeMinMaxFp32(- depth);
     // stores the value
     key[frameInfo.splatCount + instance_index ] = id;
-  //}
+  // }
 }

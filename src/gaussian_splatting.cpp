@@ -216,29 +216,49 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
 
+  { //
+    std::vector<uint32_t> drawIndexedIndirectParams{6, 0, 0, 0, 0};
+    vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, drawIndexedIndirectParams.size() * sizeof(uint32_t),
+                      drawIndexedIndirectParams.data());
+
+    VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                         &barrier, 0, NULL, 0, NULL);
+  }
+
   // if CPU sorting we test for asyncronous sorting result to push to GPU
-  if(!gpuSortingEnabled && newIndexAvailable)
-  {  // CPU sort
-    // Prepare buffer on host using sorted indices
-    uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-    for(int i = 0; i < splatCount; ++i)
+  if(!gpuSortingEnabled)
+  {
+    auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
+
+    if(newIndexAvailable)
     {
-      hostBuffer[i] = gsIndex[i];
+
+      // CPU sort
+      // Prepare buffer on host using sorted indices
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
+      for(int i = 0; i < splatCount; ++i)
+      {
+        hostBuffer[i] = gsIndex[i];
+      }
+      m_alloc->unmap(m_splatIndicesHost);
+      // copy buffer to device
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_splatIndicesDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
     }
-    m_alloc->unmap(m_splatIndicesHost);
-    // copy buffer to device
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
-    vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
-    // sync with end of copy to device
-    VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-    bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-    bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.buffer              = m_splatIndicesDevice.buffer;
-    bmb.size                = VK_WHOLE_SIZE;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                         VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
   }
 
   // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
@@ -250,7 +270,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     // invoke the distance compute shader
     {
-      auto timerSection = m_profiler->timeRecurring("Gpu Dist", cmd);
+      auto timerSection = m_profiler->timeRecurring("GPU Dist", cmd);
 
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
       vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
@@ -264,25 +284,18 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     // sort
     {
-      auto timerSection2 = m_profiler->timeRecurring("Gpu Sort", cmd);
+      auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
-      vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
-                                  m_keysDevice.buffer, 0, m_keysDevice.buffer, splatCount * sizeof(uint32_t),
-                                  m_storageDevice.buffer, 0, 0, 0);
+      vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
+        m_keysDevice.buffer, 2 * splatCount * sizeof(uint32_t),
+        m_keysDevice.buffer, 0, 
+        m_keysDevice.buffer, splatCount * sizeof(uint32_t),
+        m_storageDevice.buffer, 0, 0, 0);
 
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
                            &barrier, 0, NULL, 0, NULL);
 
     }
-
-    /*
-      std::vector<uint64_t> timestamps(timestamp_count);
-      vkGetQueryPoolResults(m_device, m_queryPool, 0, timestamps.size(), timestamps.size() * sizeof(uint64_t),
-                            timestamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
-      
-      m_distTime = (timestamps[2] - timestamps[1]) / 1e6;
-      m_sortTime = (timestamps[4] - timestamps[3]) / 1e6; 
-      */
 
     // read back m_keysDevice for debug
     if(false)
@@ -312,47 +325,51 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   }
 
   // Drawing the primitives in the G-Buffer
-  nvvk::createRenderingInfo r_info({{0, 0}, m_gBuffers->getSize()}, {m_gBuffers->getColorImageView()},
-                                   m_gBuffers->getDepthImageView(), VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                   VK_ATTACHMENT_LOAD_OP_CLEAR, m_clearColor);
-  r_info.pStencilAttachment = nullptr;
-
-  nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-  vkCmdBeginRendering(cmd, &r_info);
-  m_app->setViewport(cmd);
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-  // overrides the pipeline setup for depth test/write
-  vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-  const VkDeviceSize offsets{0};
-  // display the quad as many times as we have visible splats
   {
-    // TODOC, unused for the time beeing
-    m_pushConst.transfo = glm::mat4(1.0);                 // identity
-    m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
+    auto timerSection = m_profiler->timeRecurring("Splatting", cmd);
 
-    vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(DH::PushConstant), &m_pushConst);
+    nvvk::createRenderingInfo r_info({{0, 0}, m_gBuffers->getSize()}, {m_gBuffers->getColorImageView()},
+                                     m_gBuffers->getDepthImageView(), VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                     VK_ATTACHMENT_LOAD_OP_CLEAR, m_clearColor);
+    r_info.pStencilAttachment = nullptr;
 
-    vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-    if(!gpuSortingEnabled)
+    nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    vkCmdBeginRendering(cmd, &r_info);
+    m_app->setViewport(cmd);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+    // overrides the pipeline setup for depth test/write
+    vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
+    const VkDeviceSize offsets{0};
+    // display the quad as many times as we have visible splats
     {
-      vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+      // TODOC, unused for the time beeing
+      m_pushConst.transfo = glm::mat4(1.0);                 // identity
+      m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
+
+      vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                         sizeof(DH::PushConstant), &m_pushConst);
+
+      vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
+      if(!gpuSortingEnabled)
+      {
+        vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+      }
+      else
+      {
+        const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+        vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
+      }
+      vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+      //vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+      // vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
+      vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
     }
-    else
-    {
-      const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-      vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
-    }
-    vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-    // vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
-    // vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    // TODOC
+    vkCmdEndRendering(cmd);
+    nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
   }
-  // TODOC
-  vkCmdEndRendering(cmd);
-  nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 void GaussianSplatting::onUIRender()
@@ -754,6 +771,7 @@ constexpr uint32_t MAX_ELEMENT_COUNT = 1 << 25;
 
 void GaussianSplatting::createVkBuffers()
 {
+  // TODO: free all other buffers so createVKBuffers can be used on a scene reset
   nvvkhl::Application::submitResourceFree([vertices = m_vertices, indices = m_indices, alloc = m_alloc]() {
     alloc->destroy(const_cast<nvvk::Buffer&>(vertices));
     alloc->destroy(const_cast<nvvk::Buffer&>(indices));
@@ -771,8 +789,8 @@ void GaussianSplatting::createVkBuffers()
   {
 
     // fence
-    VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    vkCreateFence(m_app->getDevice(), &fence_info, NULL, &m_fence);
+    //VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    //vkCreateFence(m_app->getDevice(), &fence_info, NULL, &m_fence);
 
     // timestamp query pool
     constexpr int         timestamp_count = 15;
