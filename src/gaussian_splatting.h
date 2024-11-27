@@ -324,14 +324,13 @@ private:  // Attributes
   SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;
-  VkFence     m_fence;
-  VkQueryPool m_queryPool;
+  VkFence              m_fence;
+  VkQueryPool          m_queryPool;
   std::vector<float>   m_dist;
-  int                  m_prodIdx = 0;
 
-  nvvk::Buffer m_keysDevice[2]; // will contain values and splat count (swap buffer prod/cons)
+  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and splat count
   nvvk::Buffer m_stagingHost;   // will contain values and splat count
-  nvvk::Buffer m_storageDevice; // used internally (never read or write from to/from host)
+  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline = VK_NULL_HANDLE;  // The graphic pipeline to render
