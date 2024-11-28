@@ -562,7 +562,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 
 void GaussianSplatting::createScene()
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_7000\\point_cloud.ply");
+  std::string path("C:\\Users\\jmarvie\\Datasets\\garden\\point_cloud\\iteration_30000\\point_cloud.ply");
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
@@ -782,7 +782,7 @@ void GaussianSplatting::createVkBuffers()
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // create the buffer for indirect
-  m_indirect = m_alloc->createBuffer(cmd, indirect, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+  m_indirect = m_alloc->createBuffer(cmd, indirect, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
   m_dutil->DBG_NAME(m_indirect.buffer);
 
   // create the quad buffers
@@ -947,9 +947,10 @@ void GaussianSplatting::create3dgsTextures(void)
   assert(m_centersMap->isValid());
   m_centersMap->setSampler(m_alloc->acquireSampler(sampler_info));  // sampler will be released by texture
 
-  // colors
+  // SH degree 0 is not view dependent, so we directly transform to base color
+  // this will make some economy of processing in the shader at eatch frame
   colorsMapSize = computeDataTextureSize(4, 4, splatCount);
-  std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes the padding
+  std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes some padding
   for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
   {
     const auto  stride3 = splatIdx * 3;
@@ -960,7 +961,7 @@ void GaussianSplatting::create3dgsTextures(void)
     colors[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
     colors[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
   }
-  //colorsMap.init(GL_RGBA, colorsMapSize.x, colorsMapSize.y, GL_RGBA, GL_UNSIGNED_BYTE, (void*)colors.data(), NEAREST);
+  // place the result in a texture map dedicated to splat colors
   m_colorsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_colorsMap->create(colorsMapSize.x, colorsMapSize.y, colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM);
   assert(m_colorsMap->isValid());
@@ -1012,16 +1013,20 @@ void GaussianSplatting::create3dgsTextures(void)
   const int sphericalHarmonicsElementsPerTexel       = 4;
   const int totalSphericalHarmonicsComponentCount    = m_splatSet.f_rest.size() / splatCount;
   const int sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
-  int       sphericalHarmonicsDegree                 = 0;
+  // find the maximum SH degree stored in the file
+  int sphericalHarmonicsDegree = 0;
   if(sphericalHarmonicsCoefficientsPerChannel >= 3)
     sphericalHarmonicsDegree = 1;
   if(sphericalHarmonicsCoefficientsPerChannel >= 8)
     sphericalHarmonicsDegree = 2;
+
+  // add some padding at each splat if needed for easy texture lookups
   const int sphericalHarmonicsComponentCount = (sphericalHarmonicsDegree == 1) ? 9 : ((sphericalHarmonicsDegree == 2) ? 24 : 0);
   int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
   if(paddedSphericalHarmonicsComponentCount % 2 != 0)
     paddedSphericalHarmonicsComponentCount++;
 
+  //
   sphericalHarmonicsMapSize =
       computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
 
@@ -1029,34 +1034,49 @@ void GaussianSplatting::create3dgsTextures(void)
 
   for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
   {
-    const auto srcBase  = totalSphericalHarmonicsComponentCount * splatIdx;
-    const auto destBase = paddedSphericalHarmonicsComponentCount * splatIdx;
-    int        dstShift = 0;
-    // degree 1
+    const auto srcBase   = totalSphericalHarmonicsComponentCount * splatIdx;
+    const auto destBase  = paddedSphericalHarmonicsComponentCount * splatIdx;
+    int        dstOffset = 0;
+    // degree 1, three coefs per component
     for(auto i = 0; i < 3; i++)
     {
       for(auto rgb = 0; rgb < 3; rgb++)
       {
-        const auto srcIndex                = srcBase + (i + sphericalHarmonicsCoefficientsPerChannel * rgb);
-        paddedSHArray[destBase + dstShift] = m_splatSet.f_rest[srcIndex];
-        ++dstShift;
+        const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
+        const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+        paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
       }
     }
-    // degree 2
+
+    // degree 2, five coefs per component
     for(auto i = 0; i < 5; i++)
     {
       for(auto rgb = 0; rgb < 3; rgb++)
       {
-        const auto srcIndex                = srcBase + (i + sphericalHarmonicsCoefficientsPerChannel * rgb + 3);
-        paddedSHArray[destBase + dstShift] = m_splatSet.f_rest[srcIndex];
-        ++dstShift;
+        const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
+        const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+        paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
       }
     }
     /*
-		for (auto i = 0; i < sphericalHarmonicsComponentCount; i++) {
-				paddedSHArray[destBase + i] = model->f_rest[srcBase + i];
-		}*/
+    if(splatIdx <=  1 )
+      std::cout << " degree 3 " << std::endl;
+    // degree 3 TODO
+    for(auto i = 0; i < 7; i++)
+    {
+      for(auto rgb = 0; rgb < 3; rgb++)
+      {
+        const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 8 + i);
+        const auto dstIndex = destBase + 24 + (i * 3 + rgb);
+        
+        paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+      }
+    }
+    */
   }
+
   // sphericalHarmonicsMap.init(GL_RGBA32F_ARB, sphericalHarmonicsMapSize.x, sphericalHarmonicsMapSize.y, GL_RGBA, GL_FLOAT, (void*)paddedSHArray.data(), NEAREST);
   m_sphericalHarmonicsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_sphericalHarmonicsMap->create(sphericalHarmonicsMapSize.x, sphericalHarmonicsMapSize.y, paddedSHArray.size() * sizeof(float),
