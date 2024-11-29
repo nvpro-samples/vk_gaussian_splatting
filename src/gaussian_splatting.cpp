@@ -562,7 +562,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 
 void GaussianSplatting::createScene()
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\garden\\point_cloud\\iteration_30000\\point_cloud.ply");
+  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_30000\\point_cloud.ply");
   loadPly(path, m_splatSet);
 
   CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
@@ -927,9 +927,9 @@ void GaussianSplatting::create3dgsTextures(void)
   sampler_info.minFilter  = VK_FILTER_NEAREST;
   sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-  // centers
+  // centers - TODO: pack as covariances not to waste alpha chanel - but compare performance (1 lookup vs 2 lookups due to packing)
   centersMapSize = computeDataTextureSize(3, 3, splatCount);
-  std::vector<float> centers(splatCount * 4);  // m_splatSet.positions.size()); // init with positions
+  std::vector<float> centers(splatCount * 4);  // init with positions
   for(int i = 0; i < splatCount; ++i)
   {
     for(int cmp = 0; cmp < 3; ++cmp)
@@ -940,7 +940,7 @@ void GaussianSplatting::create3dgsTextures(void)
 
   centers.resize(centersMapSize.x * centersMapSize.y * 4);  // adds the padding
 
-  //centersMap.init(GL_RGB32F, centersMapSize.x, centersMapSize.y, GL_RGB, GL_FLOAT, (void*)centers.data(), NEAREST);
+  // place the result in the dedicated texture map 
   m_centersMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_centersMap->create(centersMapSize.x, centersMapSize.y, centers.size() * sizeof(float), (void*)centers.data(),
                        VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -961,7 +961,7 @@ void GaussianSplatting::create3dgsTextures(void)
     colors[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
     colors[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
   }
-  // place the result in a texture map dedicated to splat colors
+  // place the result in the dedicated texture map 
   m_colorsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_colorsMap->create(colorsMapSize.x, colorsMapSize.y, colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM);
   assert(m_colorsMap->isValid());
@@ -993,16 +993,16 @@ void GaussianSplatting::create3dgsTextures(void)
     const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
     glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
 
-    covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];  // elements[0]
-    covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];  // elements[3]
-    covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];  // elements[6]
+    covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];  
+    covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];  
+    covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];  
 
-    covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];  // elements[4]
-    covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];  // elements[7]
-    covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];  // elements[8]
+    covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];  
+    covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];  
+    covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];  
   }
 
-  // covariancesMap.init(GL_RGBA32F_ARB, covariancesMapSize.x, covariancesMapSize.y, GL_RGBA, GL_FLOAT, (void*)covariances.data(), NEAREST);
+  // place the result in the dedicated texture map 
   m_covariancesMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_covariancesMap->create(covariancesMapSize.x, covariancesMapSize.y, covariances.size() * sizeof(float),
                            (void*)covariances.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -1061,8 +1061,6 @@ void GaussianSplatting::create3dgsTextures(void)
       }
     }
     /*
-    if(splatIdx <=  1 )
-      std::cout << " degree 3 " << std::endl;
     // degree 3 TODO
     for(auto i = 0; i < 7; i++)
     {
@@ -1077,7 +1075,7 @@ void GaussianSplatting::create3dgsTextures(void)
     */
   }
 
-  // sphericalHarmonicsMap.init(GL_RGBA32F_ARB, sphericalHarmonicsMapSize.x, sphericalHarmonicsMapSize.y, GL_RGBA, GL_FLOAT, (void*)paddedSHArray.data(), NEAREST);
+  // place the result in the dedicated texture map 
   m_sphericalHarmonicsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_sphericalHarmonicsMap->create(sphericalHarmonicsMapSize.x, sphericalHarmonicsMapSize.y, paddedSHArray.size() * sizeof(float),
                                   (void*)paddedSHArray.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
