@@ -123,7 +123,7 @@ public:
 
   ~SampleTexture() { destroy(); }
 
-  // Create the image, the sampler and the image view + generate the mipmap level for all
+  // Create the image, the sampler and the image view 
   void create(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format)
   {
     const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -133,7 +133,7 @@ public:
     nvvk::CommandPool cpool(m_device, m_queueIndex);
     VkCommandBuffer   cmd = cpool.createCommandBuffer();
     m_texture             = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
-    // no need nvvk::cmdGenerateMipmaps(cmd, m_texture.image, format, m_size, create_info.mipLevels);
+
     cpool.submitAndWait(cmd);
   }
 
@@ -255,10 +255,6 @@ private:  // Methods
 
   // to be placed at a better location
   bool loadPly(std::string filename, SplatSet& output);
-
-public:
-
-  
 
 private:  // Attributes
 
