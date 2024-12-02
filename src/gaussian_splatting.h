@@ -26,10 +26,13 @@
 
 // clang-format off
 #define IM_VEC2_CLASS_EXTRA ImVec2(const glm::vec2& f) {x = f.x; y = f.y;} operator glm::vec2() const { return glm::vec2(x, y); }
-
 // clang-format on
+
 #include <string>
 #include <array>
+#include <chrono>
+#include <filesystem>
+//
 #include <vulkan/vulkan_core.h>
 // ply loader
 #define TINYPLY_IMPLEMENTATION
@@ -50,8 +53,6 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
-// time
-#include <chrono>
 // GPU radix sort
 #include <vk_radix_sort.h>
 
@@ -192,7 +193,10 @@ public:  // Methods specializing IAppElement
 
   void onUIMenu() override {}
 
-  void onFileDrop(const char* filename) override {}
+  void onFileDrop(const char* filename) override { 
+    std::cout << "onFileDrop " << filename << std::endl;
+    m_sceneToLoadFilename = filename;
+  }
 
 private:  // structures and types
   // Storage for a 3D gaussian splatting (3DGS) model loaded from PLY file
@@ -215,16 +219,22 @@ private:  // Methods
   // then wait for triggers
   void sortingThreadFunc(void);
 
-  void createScene();
+  void createScene(const std::string& filename);
+
+  void destroyScene();
 
   void createPipeline();
 
+  void destroyPipeline();
+
   void createGbuffers(const glm::vec2& size);
+
+  void destroyGbuffers();
 
   void createVkBuffers();
 
-  void destroyResources();
-
+  void destroyVkBuffers();
+    
   // reset the attributes of the frameInformation that are
   // modified by the user interface
   inline void resetFrameInfo()
@@ -239,13 +249,6 @@ private:  // Methods
     frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
   }
 
-  // Find the 3D position under the mouse cursor and set the camera interest to this position
-  void rasterPicking();
-
-  // Read the depth buffer at the X,Y coordinates
-  // Note: depth format is VK_FORMAT_D32_SFLOAT
-  float getDepth(int x, int y);
-
   // Utility function to compute the texture size according to the size of the data to be stored
   // TODO: doc of parameters
   glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount);
@@ -253,10 +256,14 @@ private:  // Methods
   // create the texture maps on the device and upload the splat set data from host to device
   void create3dgsTextures(void);
 
+  void destroy3dgsTextures(void);
+
   // to be placed at a better location
   bool loadPly(std::string filename, SplatSet& output);
 
 private:  // Attributes
+
+  std::filesystem::path m_sceneToLoadFilename;
 
   nvvkhl::Application*              m_app{nullptr};
   std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;

@@ -82,22 +82,21 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   });  // Allocator
   m_dset        = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
   m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
+  //
+  m_dset->addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 
-  createScene();
-  create3dgsTextures();
+  //
+  createScene(std::string("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_7000\\point_cloud.ply"));
   createVkBuffers();
   createPipeline();
-  // updateTexture
-  std::vector<VkWriteDescriptorSet> writes;
-  writes.emplace_back(m_dset->makeWrite(0, 1, &m_centersMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
-  const VkDescriptorBufferInfo keys_desc{m_keysDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
-  const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 6, &indirect_desc));
-  vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+  create3dgsTextures();
+  
 };
 
 void GaussianSplatting::onDetach()
@@ -110,7 +109,13 @@ void GaussianSplatting::onDetach()
   sortingThread.join();
   // release resources
   vkDeviceWaitIdle(m_device);
-  destroyResources();
+  destroyScene();
+  destroy3dgsTextures();
+  destroyVkBuffers();
+  destroyPipeline();
+  destroyGbuffers();
+  //
+  m_dset->deinit();
 }
 
 void GaussianSplatting::onResize(uint32_t width, uint32_t height)
@@ -121,6 +126,30 @@ void GaussianSplatting::onResize(uint32_t width, uint32_t height)
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
 {
   if(!m_gBuffers)
+    return;
+
+  // do we need to load a ne scenes ?
+  if(!m_sceneToLoadFilename.empty())
+  {
+    //
+    vkDeviceWaitIdle(m_device);
+    destroyScene();
+    destroy3dgsTextures();
+    destroyVkBuffers();
+    destroyPipeline();
+
+    //
+    createScene(m_sceneToLoadFilename.string());
+    createVkBuffers();
+    createPipeline();
+    create3dgsTextures();
+
+    // reset request
+    m_sceneToLoadFilename.clear();
+  }
+
+  //
+  if(m_splatSet.positions.empty())
     return;
 
   //
@@ -560,20 +589,28 @@ void GaussianSplatting::sortingThreadFunc(void)
 }
 }
 
-void GaussianSplatting::createScene()
+void GaussianSplatting::createScene(const std::string& path)
 {
-  std::string path("C:\\Users\\jmarvie\\Datasets\\bicycle\\bicycle\\point_cloud\\iteration_30000\\point_cloud.ply");
+
   loadPly(path, m_splatSet);
 
-  CameraManip.setClipPlanes({0.1F, 2000.0F});  // TODO: use BBox of point cloud
+  // TODO: use BBox of point cloud to set far plane
+  CameraManip.setClipPlanes({0.1F, 2000.0F});  
   // we know that INRIA models are upside down so we set the up vector to 0,-1,0
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
 
+  //
   resetFrameInfo();
+}
+
+void GaussianSplatting::destroyScene()
+{
+  m_splatSet = {};
 }
 
 void GaussianSplatting::createPipeline()
 {
+  /*
   m_dset->addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
@@ -581,6 +618,7 @@ void GaussianSplatting::createPipeline()
   m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  */
   m_dset->initLayout();
   m_dset->initPool(1);
 
@@ -682,12 +720,27 @@ void GaussianSplatting::createPipeline()
   }
 }
 
+void GaussianSplatting::destroyPipeline() {
+
+  m_dset->deinitPool();
+  m_dset->deinitLayout();
+  
+  vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+  
+}
+
 void GaussianSplatting::createGbuffers(const glm::vec2& size)
 {
   m_viewSize = size;
   m_gBuffers = std::make_unique<nvvkhl::GBuffer>(m_device, m_alloc.get(),
                                                  VkExtent2D{static_cast<uint32_t>(size.x), static_cast<uint32_t>(size.y)},
                                                  m_colorFormat, m_depthFormat);
+}
+
+void GaussianSplatting::destroyGbuffers() {
+  
+  m_gBuffers.reset();
+
 }
 
 // to be cleaned
@@ -803,10 +856,8 @@ void GaussianSplatting::createVkBuffers()
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 }
 
-void GaussianSplatting::destroyResources()
+void GaussianSplatting::destroyVkBuffers()
 {
-  //vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-  vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
 
   m_alloc->destroy(m_indirect);
   m_alloc->destroy(m_vertices);
@@ -823,89 +874,6 @@ void GaussianSplatting::destroyResources()
   m_alloc->destroy(m_frameInfo);
   m_alloc->destroy(m_pixelBuffer);
 
-  // destructors will invoke destroy on next frame
-  m_centersMap.reset();
-  m_colorsMap.reset();
-  m_covariancesMap.reset();
-  m_sphericalHarmonicsMap.reset();
-
-  m_dset->deinit();
-  m_gBuffers.reset();
-}
-
-void GaussianSplatting::rasterPicking()
-{
-  glm::vec2       mouse_pos = ImGui::GetMousePos();         // Current mouse pos in window
-  const glm::vec2 corner    = ImGui::GetCursorScreenPos();  // Corner of the viewport
-  mouse_pos                 = mouse_pos - corner;           // Mouse pos relative to center of viewport
-
-  const float      aspect_ratio = m_viewSize.x / m_viewSize.y;
-  const glm::vec2& clip         = CameraManip.getClipPlanes();
-  const glm::mat4  view         = CameraManip.getMatrix();
-  glm::mat4        proj = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-  proj[1][1] *= -1;
-
-  // Find the distance under the cursor
-  const float d = getDepth(static_cast<int>(mouse_pos.x), static_cast<int>(mouse_pos.y));
-
-  if(d < 1.0F)  // Ignore infinite
-  {
-    glm::vec4       win_norm = {0, 0, m_gBuffers->getSize().width, m_gBuffers->getSize().height};
-    const glm::vec3 hit_pos  = glm::unProjectZO({mouse_pos.x, mouse_pos.y, d}, view, proj, win_norm);
-
-    // Set the interest position
-    glm::vec3 eye, center, up;
-    CameraManip.getLookat(eye, center, up);
-    CameraManip.setLookat(eye, hit_pos, up, false);
-  }
-}
-
-float GaussianSplatting::getDepth(int x, int y)
-{
-  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
-
-  // Transit the depth buffer image in eTransferSrcOptimal
-  const VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-  nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getDepthImage(), VK_IMAGE_LAYOUT_UNDEFINED,
-                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, range);
-
-  // Copy the pixel under the cursor
-  VkBufferImageCopy copy_region{};
-  copy_region.imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
-  copy_region.imageOffset      = {x, y, 0};
-  copy_region.imageExtent      = {1, 1, 1};
-  vkCmdCopyImageToBuffer(cmd, m_gBuffers->getDepthImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_pixelBuffer.buffer, 1, &copy_region);
-
-  // Put back the depth buffer as  it was
-  nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getDepthImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                              VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, range);
-  m_app->submitAndWaitTempCmdBuffer(cmd);
-
-
-  // Grab the value
-  float value{1.0F};
-  void* mapped = m_alloc->map(m_pixelBuffer);
-  switch(m_gBuffers->getDepthFormat())
-  {
-    case VK_FORMAT_X8_D24_UNORM_PACK32:
-    case VK_FORMAT_D24_UNORM_S8_UINT: {
-      uint32_t ivalue{0};
-      memcpy(&ivalue, mapped, sizeof(uint32_t));
-      const uint32_t mask = (1 << 24) - 1;
-      ivalue              = ivalue & mask;
-      value               = float(ivalue) / float(mask);
-    }
-    break;
-    case VK_FORMAT_D32_SFLOAT: {
-      memcpy(&value, mapped, sizeof(float));
-    }
-    break;
-    default:
-      assert(!"Wrong Format");
-  }
-  m_alloc->unmap(m_pixelBuffer);
-
-  return value;
 }
 
 glm::ivec2 GaussianSplatting::computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
@@ -1081,6 +1049,27 @@ void GaussianSplatting::create3dgsTextures(void)
                                   (void*)paddedSHArray.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
   assert(m_sphericalHarmonicsMap->isValid());
   m_sphericalHarmonicsMap->setSampler(m_alloc->acquireSampler(sampler_info));
+
+  // updateTexture
+  std::vector<VkWriteDescriptorSet> writes;
+  writes.emplace_back(m_dset->makeWrite(0, 1, &m_centersMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
+  const VkDescriptorBufferInfo keys_desc{m_keysDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
+  const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 6, &indirect_desc));
+  vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void GaussianSplatting::destroy3dgsTextures()
+{
+  // destructors will invoke destroy on next frame
+  m_centersMap.reset();
+  m_colorsMap.reset();
+  m_covariancesMap.reset();
+  m_sphericalHarmonicsMap.reset();
 }
 
 bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
