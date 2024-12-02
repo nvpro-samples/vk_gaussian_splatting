@@ -304,19 +304,13 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
-  glm::vec2 centersMapSize            = {0, 0};
-  glm::vec2 colorsMapSize             = {0, 0};
-  glm::vec2 covariancesMapSize        = {0, 0};
-  glm::vec2 sphericalHarmonicsMapSize = {0, 0};
-
   //
-  bool gpuSortingEnabled = true;
-  float  m_distTime        = 0.0f; // distance update timer
-  float  m_sortTime        = 0.0f; // distance sorting timer
+  bool  gpuSortingEnabled = true;
+  float m_distTime        = 0.0f;  // distance update timer
+  float m_sortTime        = 0.0f;  // distance sorting timer
 
   // threaded sorting
   std::vector<std::pair<float, int>> distArray;
-  std::vector<std::pair<float, int>> distArray2;
   std::thread                        sortingThread;
   std::mutex                         mutex;
   std::condition_variable            cond_var;
@@ -329,13 +323,9 @@ private:  // Attributes
   std::vector<uint32_t>              sortGsIndex;
   
   // GPU radix sort
-  VmaAllocation        m_storage_allocation = VK_NULL_HANDLE;
-
   SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;
-  //VkFence              m_fence;
-  VkQueryPool          m_queryPool;
   std::vector<float>   m_dist;
 
   nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
@@ -346,6 +336,5 @@ private:  // Attributes
   VkPipeline       m_graphicsPipeline = VK_NULL_HANDLE;  // The graphic pipeline to render
   DH::PushConstant m_pushConst{};                        // Information sent to the shader using constant
   DH::FrameInfo    frameInfo{};                          // frame parameters, sent to device using a uniform buffer
-  //VkPipelineLayout m_computePipelineLayout{};            // The pipeline layout use with compute pipeline
   VkPipeline       m_computePipeline{};                  // The compute pipeline
 };
