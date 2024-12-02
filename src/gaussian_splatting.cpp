@@ -74,13 +74,13 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_device = m_app->getDevice();
 
   // Debug utility
-  m_dutil       = std::make_unique<nvvk::DebugUtil>(m_device);
+  m_dutil = std::make_unique<nvvk::DebugUtil>(m_device);
   // Allocator
-  m_alloc       = std::make_unique<nvvkhl::AllocVma>(VmaAllocatorCreateInfo{
-            .flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-            .physicalDevice = app->getPhysicalDevice(),
-            .device         = app->getDevice(),
-            .instance       = app->getInstance(),
+  m_alloc = std::make_unique<nvvkhl::AllocVma>(VmaAllocatorCreateInfo{
+      .flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+      .physicalDevice = app->getPhysicalDevice(),
+      .device         = app->getDevice(),
+      .instance       = app->getInstance(),
   });
   //
   m_dset        = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
@@ -93,7 +93,6 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  
 };
 
 void GaussianSplatting::onDetach()
@@ -127,7 +126,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   const auto splatCount = m_splatSet.positions.size() / 3;
 
-  // do we need to load a ne scenes ?
+  // do we need to load a new scenes ?
   if(!m_sceneToLoadFilename.empty())
   {
     // reset if a scene already exists
@@ -141,18 +140,22 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     //
     vkDeviceWaitIdle(m_device);
-    createScene(m_sceneToLoadFilename.string());
-    createVkBuffers();
-    createPipeline();
-    create3dgsTextures();
+    std::cout << "Loading file " << m_sceneToLoadFilename.string() << std::endl;
+    auto startTime = std::chrono::high_resolution_clock::now();
+    if(createScene(m_sceneToLoadFilename.string()))
+    {
+      auto deltaTime =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - startTime).count();
+      std::cout << "Loaded " << deltaTime << "ms" << std::endl;
+      createVkBuffers();
+      createPipeline();
+      create3dgsTextures();
+    }
 
     // reset request
     m_sceneToLoadFilename.clear();
   }
-
-  //
-  if(m_splatSet.positions.empty())
-    return;
 
   //
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
@@ -163,14 +166,37 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   glm::vec3   up;
   CameraManip.getLookat(eye, center, up);
 
-  // update CPU sorted indices if needed
-  bool newIndexAvailable = false;
-
   if(splatCount)
   {
+    // Update frame parameters uniform buffer
+    // some attributes of frameInfo were set by the user interface
+    const glm::vec2& clip = CameraManip.getClipPlanes();
+    frameInfo.splatCount  = splatCount;
+    frameInfo.viewMatrix  = CameraManip.getMatrix();
+    frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
+    // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
+    frameInfo.projectionMatrix[1][1] *= -1;
+    frameInfo.cameraPosition         = eye;
+    float       devicePixelRatio     = 1.0;
+    const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+    const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+    const bool  isOrthographicCamera = false;
+    const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
+    const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
+    frameInfo.orthoZoom              = 1.0f;
+    frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
+    frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
+    frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
+    frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
+    frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+
+    vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
 
     if(!gpuSortingEnabled)
     {
+      // upload CPU sorted indices to the GPU if needed
+      bool newIndexAvailable = false;
+
       if(!frameInfo.opacityGaussianDisabled)
       {
         // Splatting/blending is on, we check for a newly sorted index table
@@ -223,80 +249,54 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         }
         m_sortTime = 0;
       }
-    }
 
-  // Update frame parameters uniform buffer
-  // some attributes of frameInfo were set by the user interface
-  const glm::vec2& clip      = CameraManip.getClipPlanes();
-  frameInfo.splatCount       = splatCount;
-  frameInfo.viewMatrix       = CameraManip.getMatrix();
-  frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-  // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
-  frameInfo.projectionMatrix[1][1] *= -1;
-  frameInfo.cameraPosition         = eye;
-  float       devicePixelRatio     = 1.0;
-  const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-  const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
-  const bool  isOrthographicCamera = false;
-  const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
-  const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
-  frameInfo.orthoZoom              = 1.0f;
-  frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
-  frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
-  frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-  frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
-  frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+      {  // upload to GPU is needed
+        auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
 
-  vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
-
-    {
-      std::vector<uint32_t> drawIndexedIndirectParams{6, 0, 0, 0, 0};
-      vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, drawIndexedIndirectParams.size() * sizeof(uint32_t),
-                        drawIndexedIndirectParams.data());
-
-      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-      barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
-      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0,
-                           NULL, 0, NULL);
-    }
-
-    // if CPU sorting we test for asyncronous sorting result to push to GPU
-    if(!gpuSortingEnabled)
-    {
-      auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
-
-      if(newIndexAvailable)
-      {
-
-        // CPU sort
-        // Prepare buffer on host using sorted indices
-        uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-        for(int i = 0; i < splatCount; ++i)
+        if(newIndexAvailable)
         {
-          hostBuffer[i] = gsIndex[i];
+
+          // CPU sort
+          // Prepare buffer on host using sorted indices
+          uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
+          for(int i = 0; i < splatCount; ++i)
+          {
+            hostBuffer[i] = gsIndex[i];
+          }
+          m_alloc->unmap(m_splatIndicesHost);
+          // copy buffer to device
+          VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
+          vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
+          // sync with end of copy to device
+          VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+          bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+          bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+          bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+          bmb.buffer              = m_splatIndicesDevice.buffer;
+          bmb.size                = VK_WHOLE_SIZE;
+          vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                               VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
         }
-        m_alloc->unmap(m_splatIndicesHost);
-        // copy buffer to device
-        VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
-        vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
-        // sync with end of copy to device
-        VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-        bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-        bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.buffer              = m_splatIndicesDevice.buffer;
-        bmb.size                = VK_WHOLE_SIZE;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                             VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
       }
     }
 
     // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
     if(gpuSortingEnabled)
     {
+      { // reset the draw indirect parameters and counters, will be updated by compute shader
+        std::vector<uint32_t> drawIndexedIndirectParams{6, 0, 0, 0, 0};
+        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, drawIndexedIndirectParams.size() * sizeof(uint32_t),
+                          drawIndexedIndirectParams.data());
+
+        VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier,
+                             0, NULL, 0, NULL);
+      }
+
       VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
       barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
       barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
@@ -367,15 +367,16 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // let's throw some pixels !!
     vkCmdBeginRendering(cmd, &r_info);
     m_app->setViewport(cmd);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-    // overrides the pipeline setup for depth test/write
-    vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-    
-    // display the quad as many times as we have visible splats
     if(splatCount)
     {
-      /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+      // overrides the pipeline setup for depth test/write
+      vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
+
+      // display the quad as many times as we have visible splats
+      {
+        /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
       // transfo/color unused for the time beeing, could transform the whole 3DGS model
       // if used, could also be placed in the FrameOnfo or all the frameInfo placed in push_constant
       m_pushConst.transfo = glm::mat4(1.0);                 // identity
@@ -384,23 +385,24 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                          sizeof(DH::PushConstant), &m_pushConst);
       */
-      
-      const VkDeviceSize offsets{0};
-      vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-      vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-      if(!gpuSortingEnabled)
-      {
-        vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-        vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-      }
-      else
-      {
-        const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-        vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
-        vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+
+        const VkDeviceSize offsets{0};
+        vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
+        if(!gpuSortingEnabled)
+        {
+          vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+          vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+        }
+        else
+        {
+          const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+          vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
+          vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+        }
       }
     }
-    // TODOC
+    
     vkCmdEndRendering(cmd);
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
   }
@@ -555,11 +557,11 @@ void GaussianSplatting::sortingThreadFunc(void)
     std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
                   //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
                   [&tmpArray, &splatSet, &plane, &divider](std::pair<float, int> const& val) {
-                    size_t     i   = &val - &tmpArray[0];
+                    size_t i = &val - &tmpArray[0];
                     const auto pos = &(splatSet.positions[i * 3]);
                     // distance to plane
                     const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-                    tmpArray[i].first  = dist;
+                    tmpArray[i].first = dist;
                     tmpArray[i].second = i;
                   });
 #endif
@@ -590,18 +592,20 @@ void GaussianSplatting::sortingThreadFunc(void)
 }
 }
 
-void GaussianSplatting::createScene(const std::string& path)
+bool GaussianSplatting::createScene(const std::string& path)
 {
-
-  loadPly(path, m_splatSet);
+  const bool res = loadPly(path, m_splatSet);
+  if(!res)
+    m_splatSet = {};
 
   // TODO: use BBox of point cloud to set far plane
-  CameraManip.setClipPlanes({0.1F, 2000.0F});  
-  // we know that INRIA models are upside down so we set the up vector to 0,-1,0
+  CameraManip.setClipPlanes({0.1F, 2000.0F});
+  // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-
-  //
+  // reset general parameters
   resetFrameInfo();
+
+  return res;
 }
 
 void GaussianSplatting::destroyScene()
@@ -617,7 +621,7 @@ void GaussianSplatting::createPipeline()
   const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
-  
+
   // Writing to descriptors
   const VkDescriptorBufferInfo      dbi_unif{m_frameInfo.buffer, 0, VK_WHOLE_SIZE};
   std::vector<VkWriteDescriptorSet> writes;
@@ -712,13 +716,13 @@ void GaussianSplatting::createPipeline()
   }
 }
 
-void GaussianSplatting::destroyPipeline() {
+void GaussianSplatting::destroyPipeline()
+{
 
   m_dset->deinitPool();
   m_dset->deinitLayout();
-  
+
   vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-  
 }
 
 void GaussianSplatting::createGbuffers(const glm::vec2& size)
@@ -729,10 +733,10 @@ void GaussianSplatting::createGbuffers(const glm::vec2& size)
                                                  m_colorFormat, m_depthFormat);
 }
 
-void GaussianSplatting::destroyGbuffers() {
-  
-  m_gBuffers.reset();
+void GaussianSplatting::destroyGbuffers()
+{
 
+  m_gBuffers.reset();
 }
 
 // to be cleaned
@@ -769,9 +773,9 @@ void GaussianSplatting::createVkBuffers()
                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
       m_keysDevice = m_alloc->createBuffer((splatCount * 2 + 1) * sizeof(uint32_t),
-                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                                  | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                               | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
       VrdxSorterStorageRequirements requirements;
       vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
@@ -814,7 +818,9 @@ void GaussianSplatting::createVkBuffers()
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // create the buffer for indirect
-  m_indirect = m_alloc->createBuffer(cmd, indirect, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+  m_indirect = m_alloc->createBuffer(cmd, indirect,
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                         | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
   m_dutil->DBG_NAME(m_indirect.buffer);
 
   // create the quad buffers
@@ -851,7 +857,6 @@ void GaussianSplatting::destroyVkBuffers()
 
   m_alloc->destroy(m_frameInfo);
   m_alloc->destroy(m_pixelBuffer);
-
 }
 
 glm::ivec2 GaussianSplatting::computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
@@ -872,7 +877,7 @@ void GaussianSplatting::create3dgsTextures(void)
   sampler_info.magFilter  = VK_FILTER_NEAREST;
   sampler_info.minFilter  = VK_FILTER_NEAREST;
   sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  
+
   // centers - TODO: pack as covariances not to waste alpha chanel - but compare performance (1 lookup vs 2 lookups due to packing)
   glm::vec2          centersMapSize = computeDataTextureSize(3, 3, splatCount);
   std::vector<float> centers(splatCount * 4);  // init with positions
@@ -886,7 +891,7 @@ void GaussianSplatting::create3dgsTextures(void)
 
   centers.resize(centersMapSize.x * centersMapSize.y * 4);  // adds the padding
 
-  // place the result in the dedicated texture map 
+  // place the result in the dedicated texture map
   m_centersMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_centersMap->create(centersMapSize.x, centersMapSize.y, centers.size() * sizeof(float), (void*)centers.data(),
                        VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -895,7 +900,7 @@ void GaussianSplatting::create3dgsTextures(void)
 
   // SH degree 0 is not view dependent, so we directly transform to base color
   // this will make some economy of processing in the shader at eatch frame
-  glm::vec2 colorsMapSize = computeDataTextureSize(4, 4, splatCount);
+  glm::vec2            colorsMapSize = computeDataTextureSize(4, 4, splatCount);
   std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes some padding
   for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
   {
@@ -907,14 +912,14 @@ void GaussianSplatting::create3dgsTextures(void)
     colors[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
     colors[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
   }
-  // place the result in the dedicated texture map 
+  // place the result in the dedicated texture map
   m_colorsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_colorsMap->create(colorsMapSize.x, colorsMapSize.y, colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM);
   assert(m_colorsMap->isValid());
   m_colorsMap->setSampler(m_alloc->acquireSampler(sampler_info));
 
   // covariances
-  glm::vec2 covariancesMapSize = computeDataTextureSize(4, 6, splatCount);
+  glm::vec2          covariancesMapSize = computeDataTextureSize(4, 6, splatCount);
   std::vector<float> covariances(covariancesMapSize.x * covariancesMapSize.y * 4, 0.0f);
   glm::vec3          scale;
   glm::quat          rotation;
@@ -939,16 +944,16 @@ void GaussianSplatting::create3dgsTextures(void)
     const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
     glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
 
-    covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];  
-    covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];  
-    covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];  
+    covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
+    covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
+    covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
 
-    covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];  
-    covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];  
-    covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];  
+    covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
+    covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
+    covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
   }
 
-  // place the result in the dedicated texture map 
+  // place the result in the dedicated texture map
   m_covariancesMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_covariancesMap->create(covariancesMapSize.x, covariancesMapSize.y, covariances.size() * sizeof(float),
                            (void*)covariances.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -1021,7 +1026,7 @@ void GaussianSplatting::create3dgsTextures(void)
     */
   }
 
-  // place the result in the dedicated texture map 
+  // place the result in the dedicated texture map
   m_sphericalHarmonicsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_sphericalHarmonicsMap->create(sphericalHarmonicsMapSize.x, sphericalHarmonicsMapSize.y, paddedSHArray.size() * sizeof(float),
                                   (void*)paddedSHArray.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -1052,10 +1057,14 @@ void GaussianSplatting::destroy3dgsTextures()
 
 bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
 {
-  std::unique_ptr<std::istream> file_stream;
-  file_stream.reset(new std::ifstream(filename.c_str(), std::ios::binary));
+  
+  std::ifstream fileStream(filename.c_str(), std::ios::binary);
+
+  if(!fileStream)
+    return false;
+
   tinyply::PlyFile file;
-  file.parse_header(*file_stream);
+  file.parse_header(fileStream);
 
   std::shared_ptr<tinyply::PlyData> _vertices, _normals, _colors, _colorsRGBA, _texcoords, _faces, _tristrip;
 
@@ -1068,7 +1077,6 @@ bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
   }
   catch(const std::exception& e)
   {
-    std::cerr << "Error: missing vertex positions. " << e.what() << std::endl;
   }
   try
   {
@@ -1166,7 +1174,7 @@ bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
   }
 
   //
-  file.read(*file_stream);
+  file.read(fileStream);
 
   // now feed the data to the frame structure
   if(_vertices)
@@ -1174,6 +1182,11 @@ bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
     const size_t numVerticesBytes = _vertices->buffer.size_bytes();
     output.positions.resize(_vertices->count * 3);
     std::memcpy(output.positions.data(), _vertices->buffer.get(), numVerticesBytes);
+  }
+  else
+  {
+    std::cerr << "Error: missing vertex positions. " << std::endl;
+    return false;
   }
   if(_normals)
   {
@@ -1201,6 +1214,11 @@ bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
     std::memcpy(output.opacity.data(), _opacity->buffer.get(), numOpacityBytes);
     std::memcpy(output.scale.data(), _scale->buffer.get(), numScaleBytes);
     std::memcpy(output.rotation.data(), _rotation->buffer.get(), numRotationBytes);
+  }
+  else
+  {
+    std::cerr << "Error: missing 3DGS attributes. " << std::endl;
+    return false;
   }
 
   return true;

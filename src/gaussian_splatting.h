@@ -194,7 +194,6 @@ public:  // Methods specializing IAppElement
   void onUIMenu() override {}
 
   void onFileDrop(const char* filename) override { 
-    std::cout << "onFileDrop " << filename << std::endl;
     m_sceneToLoadFilename = filename;
   }
 
@@ -219,7 +218,7 @@ private:  // Methods
   // then wait for triggers
   void sortingThreadFunc(void);
 
-  void createScene(const std::string& filename);
+  bool createScene(const std::string& filename);
 
   void destroyScene();
 
