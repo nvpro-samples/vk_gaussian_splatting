@@ -17,7 +17,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// TODOC
+// Vulkan Memory Allocator 
 #define VMA_IMPLEMENTATION
 // ImGUI ImVec maths
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -70,6 +70,10 @@ int main(int argc, char** argv)
 
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
+  // starts the loader
+  m_plyLoader.initialize();
+
+  //
   m_app    = app;
   m_device = m_app->getDevice();
 
@@ -97,6 +101,8 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 
 void GaussianSplatting::onDetach()
 {
+  // stops the loader
+  m_plyLoader.shutdown();
   // stop the sorting thread
   std::unique_lock<std::mutex> lock(mutex);
   sortExit = true;
@@ -124,12 +130,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   if(!m_gBuffers)
     return;
 
-  const auto splatCount = m_splatSet.positions.size() / 3;
-
   // do we need to load a new scenes ?
-  if(!m_sceneToLoadFilename.empty())
+  if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
   {
     // reset if a scene already exists
+    const auto splatCount = m_splatSet.positions.size() / 3;
     if(splatCount)
     {
       vkDeviceWaitIdle(m_device);
@@ -140,21 +145,61 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     //
     vkDeviceWaitIdle(m_device);
-    std::cout << "Loading file " << m_sceneToLoadFilename.string() << std::endl;
-    auto startTime = std::chrono::high_resolution_clock::now();
-    if(createScene(m_sceneToLoadFilename.string()))
+
+    std::cout << "Start loading file " << m_sceneToLoadFilename.string() << std::endl;
+    if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
     {
-      auto deltaTime =
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - startTime).count();
-      std::cout << "Loaded " << deltaTime << "ms" << std::endl;
+      std::cout << "Error: cannot start scene load while loader is not ready" << std::endl;
+    }
+    // reset request
+    m_sceneToLoadFilename.clear();
+  }
+
+  // managment of async load
+  switch (m_plyLoader.getStatus()) {
+    case PlyAsyncLoader::Status::LOADING:
+      // display jauge
+      std::cout << "Loading..." << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      break;
+    case PlyAsyncLoader::Status::FAILURE:
+      std::cout << "Error: there was some error loading ply file" << std::endl;
+      destroyScene();
+      // TODO: use BBox of point cloud to set far plane
+      CameraManip.setClipPlanes({0.1F, 2000.0F});
+      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+      // reset general parameters
+      resetFrameInfo();
+      // 
+      m_plyLoader.reset();
+      break;
+    case PlyAsyncLoader::Status::LOADED:
+      std::cout << "Scene is loaded " << std::endl;
+      //
+      // TODO: use BBox of point cloud to set far plane
+      CameraManip.setClipPlanes({0.1F, 2000.0F});
+      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+      // reset general parameters
+      resetFrameInfo();
+      //
       createVkBuffers();
       createPipeline();
       create3dgsTextures();
-    }
+      m_plyLoader.reset();
+      break;
+    default:
+      // nothing to do for READY or SHUTDOWN, we skip
+      break;
+  }
 
-    // reset request
-    m_sceneToLoadFilename.clear();
+  // for 0 if not ready so the rendering does not 
+  // touch the splat set while loading
+  size_t splatCount = 0;
+  if(m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
+  {
+    splatCount = m_splatSet.positions.size() / 3;
   }
 
   //
@@ -447,17 +492,15 @@ void GaussianSplatting::onUIRender()
     }
     if(ImGui::CollapsingHeader("3DGS parameters", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      PE::begin();
+      PE::begin("##3DGS parameters");
       if(PE::entry("Default parameters", [&]() { return ImGui::Button("Reset"); }))
       {
         resetFrameInfo();
       }
-      PE::entry(
+      PE::SliderFloat(
           "Splat scale",
-          [&]() {
-            return ImGui::SliderFloat("##SPlatScale", (float*)&frameInfo.splatScale, 0.1f,
-                                      frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);  // we set a different size range for point and splat rendering
-          },
+          (float*)&frameInfo.splatScale, 0.1f,
+          frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f,  // we set a different size range for point and splat rendering
           "TODOC");
 
       PE::entry(
@@ -490,7 +533,7 @@ void GaussianSplatting::onUIRender()
     if(ImGui::CollapsingHeader("3DGS statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
       // TODO: do not use disabled input object to display statistics
-      PE::begin();
+      PE::begin("##3DGS statistics");
       ImGui::BeginDisabled();
       PE::entry(
           "Distances  (ms)", [&]() { return ImGui::InputFloat("##DistDuration", (float*)&m_distTime, 0, 100000); }, "TODOC");
@@ -592,6 +635,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 }
 }
 
+/*
 bool GaussianSplatting::createScene(const std::string& path)
 {
   const bool res = loadPly(path, m_splatSet);
@@ -607,6 +651,7 @@ bool GaussianSplatting::createScene(const std::string& path)
 
   return res;
 }
+*/
 
 void GaussianSplatting::destroyScene()
 {
@@ -1055,9 +1100,106 @@ void GaussianSplatting::destroy3dgsTextures()
   m_sphericalHarmonicsMap.reset();
 }
 
-bool GaussianSplatting::loadPly(std::string filename, SplatSet& output)
+////////////////////////
+// TODO move to separate file
+// class PlyAsyncLoader
+
+bool PlyAsyncLoader::loadScene(std::string filename, SplatSet& output)
 {
-  
+  // original state shall be READY (thread wait on CV)
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if(m_status != READY)
+    return false; 
+
+  // setup load info and wakeup the thread
+  m_filename = filename;
+  m_output   = &output;
+  m_loadCV.notify_all();
+}
+
+bool PlyAsyncLoader::initialize()
+{
+  // original state shall be shutdown
+  std::unique_lock<std::mutex> lock(m_mutex);
+  if(m_status != SHUTDOWN) 
+    return false; // will unlock through lock destructor
+  else
+    lock.unlock();
+
+  // starts the thread
+  m_loader = std::thread([this]() {
+    //
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_status = READY;
+    lock.unlock();
+    //
+    while(true) //!isShutdown())
+    {
+      // wait to load new scene
+      std::unique_lock<std::mutex> lock(m_mutex);
+      m_loadCV.wait(lock, [this] { return m_shutdownRequested || m_output != nullptr; });
+      bool shutdown = m_shutdownRequested;
+      lock.unlock();
+      // if request is not a shuitdown do the job
+      if ( !shutdown ){
+        // let's load
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_status = LOADING;
+        lock.unlock();
+        if(innerLoadPly(m_filename, *m_output))
+        {
+          std::lock_guard<std::mutex> lock(m_mutex);
+          m_status = LOADED;
+          m_output   = nullptr;
+          m_filename = "";
+        }
+        else
+        {
+          std::lock_guard<std::mutex> lock(m_mutex);
+          m_status = FAILURE;
+          m_output   = nullptr;
+          m_filename = "";
+        }
+      }
+      else
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status = SHUTDOWN;
+        m_shutdownRequested = false;
+        m_output            = nullptr;
+        m_filename          = "";
+        return;
+      }
+    }
+  });
+}
+
+void PlyAsyncLoader::cancel() {
+  // does nothing for the time beeing
+}
+
+PlyAsyncLoader::Status PlyAsyncLoader::getStatus() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_status;
+}
+
+bool PlyAsyncLoader::reset()
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if(m_status == LOADED || m_status == FAILURE)
+  {
+    m_status = READY;
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
+{
+
   std::ifstream fileStream(filename.c_str(), std::ios::binary);
 
   if(!fileStream)

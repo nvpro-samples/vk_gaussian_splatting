@@ -153,17 +153,97 @@ public:
 };
 
 
-// TODO: for parallel sort, can be defined as a lambda
+// TODO: for parallel sort, can be defined as a lambda in place
 inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>& b)
 {
   return a.first > b.first;
 }
 
-
+//
 struct SortData
 {
   std::vector<uint32_t> keys;
   std::vector<uint32_t> values;
+};
+
+// Storage for a 3D gaussian splatting (3DGS) model loaded from PLY file
+struct SplatSet
+{
+  // standard poiont cloud attributes
+  std::vector<float> positions;  // point positions (x,y,z)
+  std::vector<float> normals;    // point normals (x,y,z) - not used but stored in file
+  // specific data fields introduced by INRIA for 3DGS
+  std::vector<float> f_dc;      // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
+  std::vector<float> f_rest;    // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients
+  std::vector<float> opacity;   // 1 value per point in ply file
+  std::vector<float> scale;     // 3 components per point in ply file
+  std::vector<float> rotation;  // 4 components per point in ply file - a quaternion
+};
+
+//
+class PlyAsyncLoader
+{
+public:
+  enum Status
+  {
+    SHUTDOWN,
+    READY,
+    LOADING,
+    LOADED,
+    FAILURE
+  };
+
+public:
+
+  // starts the loader thread
+  bool initialize();
+  // stops the loader thread, cannot be re-used afterward
+  [[nodiscard]] inline void shutdown()
+  {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_shutdownRequested = true;
+    m_loadCV.notify_all();
+    lock.unlock();
+    // wait for thread termination
+    m_loader.join();
+  }
+  // triggers the load of a new scene
+  // return false if loader not in idled state
+  // thread safe, output must not be accessed if while is not LOADED or READY (after reset)
+  bool loadScene(std::string filename, SplatSet& output);
+  // cancel scene loading if possible
+  // non blocking, may have no effect
+  // thread safe
+  void cancel();
+  // return lodaer status
+  // thread safe
+  Status getStatus();
+  // Resets the loader to READY after LOADED or FAILURE
+  // used to ack that the consumer has consumed the loaded model
+  // loader must be reset to be able to launch a new load
+  bool reset();
+
+private:
+  // loading thread
+  std::thread m_loader;
+  // loader status
+  Status m_status=SHUTDOWN;
+  // ask to cancel a load
+  bool m_cancelRequested = false;
+  // ask for loader shutdown before destruction
+  bool m_shutdownRequested = false;
+  // protects the condition variables and other attributes
+  mutable std::mutex m_mutex;
+  // loader wakeup condition
+  mutable std::condition_variable m_loadCV;
+
+  // the ply pathname
+  std::string m_filename = "";
+  // the output data storage
+  SplatSet* m_output=nullptr;
+
+  // actually loads the scene
+  bool innerLoadPly(std::string filename, SplatSet& output);
 };
 
 // TODO: class documentation
@@ -173,7 +253,7 @@ public:  // Methods specializing IAppElement
   GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
       : sortingThread([this] { this->sortingThreadFunc(); }),  // starts the splat sorting thread
       m_profiler(profiler)
-      {};
+  {};
 
   ~GaussianSplatting() override{
       // all threads must be stoped,
@@ -197,28 +277,13 @@ public:  // Methods specializing IAppElement
     m_sceneToLoadFilename = filename;
   }
 
-private:  // structures and types
-  // Storage for a 3D gaussian splatting (3DGS) model loaded from PLY file
-  struct SplatSet
-  {
-    // standard poiont cloud attributes
-    std::vector<float> positions;  // point positions (x,y,z)
-    std::vector<float> normals;    // point normals (x,y,z) - not used but stored in file
-    // specific data fields introduced by INRIA for 3DGS
-    std::vector<float> f_dc;      // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
-    std::vector<float> f_rest;    // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients
-    std::vector<float> opacity;   // 1 value per point in ply file
-    std::vector<float> scale;     // 3 components per point in ply file
-    std::vector<float> rotation;  // 4 components per point in ply file - a quaternion
-  };
-
 private:  // Methods
   // main loop of the sorting thread for gaussians
   // the thread is started by the class constructor
   // then wait for triggers
   void sortingThreadFunc(void);
 
-  bool createScene(const std::string& filename);
+  // bool createScene(const std::string& filename);
 
   void destroyScene();
 
@@ -257,12 +322,10 @@ private:  // Methods
 
   void destroy3dgsTextures(void);
 
-  // to be placed at a better location
-  bool loadPly(std::string filename, SplatSet& output);
-
 private:  // Attributes
 
   std::filesystem::path m_sceneToLoadFilename;
+  PlyAsyncLoader        m_plyLoader;
 
   nvvkhl::Application*              m_app{nullptr};
   std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
