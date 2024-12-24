@@ -130,70 +130,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   if(!m_gBuffers)
     return;
 
-  // do we need to load a new scenes ?
-  if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
-  {
-    // reset if a scene already exists
-    const auto splatCount = m_splatSet.positions.size() / 3;
-    if(splatCount)
-    {
-      vkDeviceWaitIdle(m_device);
-      destroyScene();
-      destroy3dgsTextures();
-      destroyVkBuffers();
-      destroyPipeline();
-    }
-    //
-    vkDeviceWaitIdle(m_device);
-
-    std::cout << "Start loading file " << m_sceneToLoadFilename.string() << std::endl;
-    if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
-    {
-      std::cout << "Error: cannot start scene load while loader is not ready" << std::endl;
-    }
-    // reset request
-    m_sceneToLoadFilename.clear();
-  }
-
-  // managment of async load
-  switch (m_plyLoader.getStatus()) {
-    case PlyAsyncLoader::Status::LOADING:
-      // display jauge
-      std::cout << "Loading..." << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-      break;
-    case PlyAsyncLoader::Status::FAILURE:
-      std::cout << "Error: there was some error loading ply file" << std::endl;
-      destroyScene();
-      // TODO: use BBox of point cloud to set far plane
-      CameraManip.setClipPlanes({0.1F, 2000.0F});
-      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-      // reset general parameters
-      resetFrameInfo();
-      // 
-      m_plyLoader.reset();
-      break;
-    case PlyAsyncLoader::Status::LOADED:
-      std::cout << "Scene is loaded " << std::endl;
-      //
-      // TODO: use BBox of point cloud to set far plane
-      CameraManip.setClipPlanes({0.1F, 2000.0F});
-      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-      // reset general parameters
-      resetFrameInfo();
-      //
-      createVkBuffers();
-      createPipeline();
-      create3dgsTextures();
-      m_plyLoader.reset();
-      break;
-    default:
-      // nothing to do for READY or SHUTDOWN, we skip
-      break;
-  }
-
   // for 0 if not ready so the rendering does not 
   // touch the splat set while loading
   size_t splatCount = 0;
@@ -483,6 +419,73 @@ void GaussianSplatting::onUIRender()
     ImGui::End();
     ImGui::PopStyleVar();
   }
+
+  // do we need to load a new scenes ?
+  if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
+  {
+    // reset if a scene already exists
+    const auto splatCount = m_splatSet.positions.size() / 3;
+    if(splatCount)
+    {
+      vkDeviceWaitIdle(m_device);
+      destroyScene();
+      destroy3dgsTextures();
+      destroyVkBuffers();
+      destroyPipeline();
+    }
+    //
+    vkDeviceWaitIdle(m_device);
+
+    std::cout << "Start loading file " << m_sceneToLoadFilename.string() << std::endl;
+    if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
+    {
+      std::cout << "Error: cannot start scene load while loader is not ready" << std::endl;
+    }
+    // reset request
+    m_sceneToLoadFilename.clear();
+  }
+
+  // managment of async load
+  switch(m_plyLoader.getStatus())
+  {
+    case PlyAsyncLoader::Status::LOADING:
+      // display jauge
+      std::cout << "Loading..." << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      break;
+    case PlyAsyncLoader::Status::FAILURE:
+      std::cout << "Error: there was some error loading ply file" << std::endl;
+      destroyScene();
+      // TODO: use BBox of point cloud to set far plane
+      CameraManip.setClipPlanes({0.1F, 2000.0F});
+      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+      // reset general parameters
+      resetFrameInfo();
+      //
+      m_plyLoader.reset();
+      break;
+    case PlyAsyncLoader::Status::LOADED:
+      std::cout << "Scene is loaded " << std::endl;
+      //
+      // TODO: use BBox of point cloud to set far plane
+      CameraManip.setClipPlanes({0.1F, 2000.0F});
+      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+      // reset general parameters
+      resetFrameInfo();
+      //
+      createVkBuffers();
+      createPipeline();
+      create3dgsTextures();
+      m_plyLoader.reset();
+      break;
+    default:
+      // nothing to do for READY or SHUTDOWN, we skip
+      break;
+  }
+
+  //
   namespace PE = ImGuiH::PropertyEditor;
   {  // Setting menu
     ImGui::Begin("Settings");
