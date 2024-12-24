@@ -439,50 +439,81 @@ void GaussianSplatting::onUIRender()
     std::cout << "Start loading file " << m_sceneToLoadFilename.string() << std::endl;
     if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
     {
+      // this should never occur since status is READY.
       std::cout << "Error: cannot start scene load while loader is not ready" << std::endl;
+    }
+    else
+    {
+      // open the modal window that will collect results
+      ImGui::OpenPopup("Loading");
     }
     // reset request
     m_sceneToLoadFilename.clear();
   }
 
-  // managment of async load
-  switch(m_plyLoader.getStatus())
+  // display loading jauge modal window
+  // Always center this window when appearing
+  ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if(ImGui::BeginPopupModal("Loading", NULL, ImGuiWindowFlags_AlwaysAutoResize))
   {
-    case PlyAsyncLoader::Status::LOADING:
-      // display jauge
-      std::cout << "Loading..." << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // managment of async load
+    switch(m_plyLoader.getStatus())
+    {
+      case PlyAsyncLoader::Status::LOADING: {
+        ImGui::Text(m_plyLoader.getFilename().c_str());
+        ImGui::ProgressBar(m_plyLoader.getProgress(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
+        /*
+        if(ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+          // send cancelation order to loader
+          // should then disable the button, until cancel occurs or finished
+          m_plyLoader.cancel();
+        }
+        */
+      }
       break;
-    case PlyAsyncLoader::Status::FAILURE:
-      std::cout << "Error: there was some error loading ply file" << std::endl;
-      destroyScene();
-      // TODO: use BBox of point cloud to set far plane
-      CameraManip.setClipPlanes({0.1F, 2000.0F});
-      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-      // reset general parameters
-      resetFrameInfo();
-      //
-      m_plyLoader.reset();
+      case PlyAsyncLoader::Status::FAILURE: {
+        ImGui::Text("Error: invalid ply file");
+        if(ImGui::Button("Ok", ImVec2(120, 0)))
+        {
+          destroyScene();
+          // TODO: use BBox of point cloud to set far plane
+          CameraManip.setClipPlanes({0.1F, 2000.0F});
+          // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+          CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+          // reset general parameters
+          resetFrameInfo();
+          //
+          m_plyLoader.reset();
+          //
+          ImGui::CloseCurrentPopup();
+        }
+      }
       break;
-    case PlyAsyncLoader::Status::LOADED:
-      std::cout << "Scene is loaded " << std::endl;
-      //
-      // TODO: use BBox of point cloud to set far plane
-      CameraManip.setClipPlanes({0.1F, 2000.0F});
-      // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-      CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-      // reset general parameters
-      resetFrameInfo();
-      //
-      createVkBuffers();
-      createPipeline();
-      create3dgsTextures();
-      m_plyLoader.reset();
+      case PlyAsyncLoader::Status::LOADED: {
+        std::cout << "Scene is loaded " << std::endl;
+        // TODO: use BBox of point cloud to set far plane
+        CameraManip.setClipPlanes({0.1F, 2000.0F});
+        // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+        CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+        // reset general parameters
+        resetFrameInfo();
+        //
+        createVkBuffers();
+        createPipeline();
+        create3dgsTextures();
+        m_plyLoader.reset();
+        //
+        ImGui::CloseCurrentPopup();
+      }
       break;
-    default:
-      // nothing to do for READY or SHUTDOWN, we skip
-      break;
+      default: {
+        // nothing to do for READY or SHUTDOWN
+      }
+    }
+    ImGui::EndPopup();
   }
 
   //
@@ -1191,6 +1222,7 @@ bool PlyAsyncLoader::reset()
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status == LOADED || m_status == FAILURE)
   {
+    m_progress = 0.0;
     m_status = READY;
     return true;
   }
@@ -1202,14 +1234,18 @@ bool PlyAsyncLoader::reset()
 
 bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
 {
-
-  std::ifstream fileStream(filename.c_str(), std::ios::binary);
-
-  if(!fileStream)
+  // Open the file
+  std::ifstream file(filename, std::ios::binary);
+  if(!file.is_open())
+  {
+    std::cout << "Error: Failed to open file: " << filename << std::endl;
     return false;
+  }
 
-  tinyply::PlyFile file;
-  file.parse_header(fileStream);
+  // Create a tinyply::PlyFile object
+  tinyply::PlyFile plyFile;
+
+  plyFile.parse_header(file);
 
   std::shared_ptr<tinyply::PlyData> _vertices, _normals, _colors, _colorsRGBA, _texcoords, _faces, _tristrip;
 
@@ -1218,21 +1254,21 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   // like vertex position are hard-coded:
   try
   {
-    _vertices = file.request_properties_from_element("vertex", {"x", "y", "z"});
+    _vertices = plyFile.request_properties_from_element("vertex", {"x", "y", "z"});
   }
   catch(const std::exception& e)
   {
   }
   try
   {
-    _normals = file.request_properties_from_element("vertex", {"nx", "ny", "nz"});
+    _normals = plyFile.request_properties_from_element("vertex", {"nx", "ny", "nz"});
   }
   catch(const std::exception)
   {
   }
   try
   {
-    _colorsRGBA = file.request_properties_from_element("vertex", {"red", "green", "blue", "alpha"});
+    _colorsRGBA = plyFile.request_properties_from_element("vertex", {"red", "green", "blue", "alpha"});
   }
   catch(const std::exception)
   {
@@ -1242,7 +1278,7 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   {
     try
     {
-      _colorsRGBA = file.request_properties_from_element("vertex", {"r", "g", "b", "a"});
+      _colorsRGBA = plyFile.request_properties_from_element("vertex", {"r", "g", "b", "a"});
     }
     catch(const std::exception)
     {
@@ -1250,7 +1286,7 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   }
   try
   {
-    _colors = file.request_properties_from_element("vertex", {"red", "green", "blue"});
+    _colors = plyFile.request_properties_from_element("vertex", {"red", "green", "blue"});
   }
   catch(const std::exception)
   {
@@ -1259,7 +1295,7 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   {
     try
     {
-      _colors = file.request_properties_from_element("vertex", {"r", "g", "b"});
+      _colors = plyFile.request_properties_from_element("vertex", {"r", "g", "b"});
     }
     catch(const std::exception)
     {
@@ -1267,7 +1303,7 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   }
   try
   {
-    _texcoords = file.request_properties_from_element("vertex", {"u", "v"});
+    _texcoords = plyFile.request_properties_from_element("vertex", {"u", "v"});
   }
   catch(const std::exception)
   {
@@ -1277,14 +1313,14 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   std::shared_ptr<tinyply::PlyData> _f_dc, _f_rest, _opacity, _scale, _rotation;
   try
   {
-    _f_dc = file.request_properties_from_element("vertex", {"f_dc_0", "f_dc_1", "f_dc_2"});
+    _f_dc = plyFile.request_properties_from_element("vertex", {"f_dc_0", "f_dc_1", "f_dc_2"});
   }
   catch(const std::exception)
   {
   }
   try
   {
-    _f_rest = file.request_properties_from_element(
+    _f_rest = plyFile.request_properties_from_element(
         "vertex",
         {"f_rest_0",  "f_rest_1",  "f_rest_2",  "f_rest_3",  "f_rest_4",  "f_rest_5",  "f_rest_6",  "f_rest_7",
          "f_rest_8",  "f_rest_9",  "f_rest_10", "f_rest_11", "f_rest_12", "f_rest_13", "f_rest_14", "f_rest_15",
@@ -1298,28 +1334,28 @@ bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
   }
   try
   {
-    _opacity = file.request_properties_from_element("vertex", {"opacity"});
+    _opacity = plyFile.request_properties_from_element("vertex", {"opacity"});
   }
   catch(const std::exception)
   {
   }
   try
   {
-    _scale = file.request_properties_from_element("vertex", {"scale_0", "scale_1", "scale_2"});
+    _scale = plyFile.request_properties_from_element("vertex", {"scale_0", "scale_1", "scale_2"});
   }
   catch(const std::exception)
   {
   }
   try
   {
-    _rotation = file.request_properties_from_element("vertex", {"rot_0", "rot_1", "rot_2", "rot_3"});
+    _rotation = plyFile.request_properties_from_element("vertex", {"rot_0", "rot_1", "rot_2", "rot_3"});
   }
   catch(const std::exception)
   {
   }
 
   //
-  file.read(fileStream);
+  plyFile.read(file);
 
   // now feed the data to the frame structure
   if(_vertices)

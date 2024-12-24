@@ -222,6 +222,18 @@ public:
   // used to ack that the consumer has consumed the loaded model
   // loader must be reset to be able to launch a new load
   bool reset();
+  // return the filename currently beeing loaded, "" otherwise
+  [[nodiscard]] inline std::string getFilename() { 
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_filename;
+  }
+  // return percentage in {0,1} of progress
+  // fake infinite for the time beeing 
+  [[nodiscard]] inline float getProgress()
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_progress;
+  }
 
 private:
   // loading thread
@@ -241,9 +253,18 @@ private:
   std::string m_filename = "";
   // the output data storage
   SplatSet* m_output=nullptr;
+  // the loading percentage
+  float m_progress = 0.0f;
 
   // actually loads the scene
   bool innerLoadPly(std::string filename, SplatSet& output);
+
+  // in {0.0,1.0}
+  void setProgress(float progress)
+  { 
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_progress = progress;
+  }
 };
 
 // TODO: class documentation
