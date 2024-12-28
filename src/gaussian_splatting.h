@@ -37,6 +37,7 @@
 // ply loader
 #define TINYPLY_IMPLEMENTATION
 #include "tinyply.h"
+#include "miniply.h"
 // mathematics
 #include <glm/vec3.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -255,9 +256,10 @@ private:
   SplatSet* m_output=nullptr;
   // the loading percentage
   float m_progress = 0.0f;
-
+  
   // actually loads the scene
-  bool innerLoadPly(std::string filename, SplatSet& output);
+  bool innerLoadTinyPly(std::string filename, SplatSet& output);
+  bool innerLoadMiniPly(std::string filename, SplatSet& output);
 
   // in {0.0,1.0}
   void setProgress(float progress)

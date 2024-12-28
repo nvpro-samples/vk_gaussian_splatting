@@ -258,6 +258,8 @@ create_sample(gaussian_splatting
   SOURCES 
     src/gaussian_splatting.h
     src/gaussian_splatting.cpp 
+    src/miniply.h
+    src/miniply.cpp
   SHADER_SOURCES 
     ${SHD_DIR}/rank.comp.glsl
     ${SHD_DIR}/raster.vert.glsl

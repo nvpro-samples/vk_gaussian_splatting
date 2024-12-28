@@ -72,7 +72,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
   // starts the loader
   m_plyLoader.initialize();
-
+  
   //
   m_app    = app;
   m_device = m_app->getDevice();
@@ -440,7 +440,7 @@ void GaussianSplatting::onUIRender()
     if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
     {
       // this should never occur since status is READY.
-      std::cout << "Error: cannot start scene load while loader is not ready" << std::endl;
+      std::cout << "Error: cannot start scene load while loader is not ready status=" << m_plyLoader.getStatus() << std::endl;
     }
     else
     {
@@ -493,7 +493,6 @@ void GaussianSplatting::onUIRender()
       }
       break;
       case PlyAsyncLoader::Status::LOADED: {
-        std::cout << "Scene is loaded " << std::endl;
         // TODO: use BBox of point cloud to set far plane
         CameraManip.setClipPlanes({0.1F, 2000.0F});
         // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
@@ -1140,15 +1139,18 @@ void GaussianSplatting::destroy3dgsTextures()
 
 bool PlyAsyncLoader::loadScene(std::string filename, SplatSet& output)
 {
-  // original state shall be READY (thread wait on CV)
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status != READY)
+  {
     return false; 
+  }
 
   // setup load info and wakeup the thread
   m_filename = filename;
   m_output   = &output;
   m_loadCV.notify_all();
+  
+  return true;
 }
 
 bool PlyAsyncLoader::initialize()
@@ -1174,13 +1176,13 @@ bool PlyAsyncLoader::initialize()
       m_loadCV.wait(lock, [this] { return m_shutdownRequested || m_output != nullptr; });
       bool shutdown = m_shutdownRequested;
       lock.unlock();
-      // if request is not a shuitdown do the job
+      // if request is not a shutdown do the job
       if ( !shutdown ){
         // let's load
         std::unique_lock<std::mutex> lock(m_mutex);
         m_status = LOADING;
         lock.unlock();
-        if(innerLoadPly(m_filename, *m_output))
+        if(innerLoadMiniPly(m_filename, *m_output))
         {
           std::lock_guard<std::mutex> lock(m_mutex);
           m_status = LOADED;
@@ -1232,7 +1234,102 @@ bool PlyAsyncLoader::reset()
   }
 }
 
-bool PlyAsyncLoader::innerLoadPly(std::string filename, SplatSet& output)
+bool PlyAsyncLoader::innerLoadMiniPly(std::string filename, SplatSet& output)
+{
+  auto startTime = std::chrono::high_resolution_clock::now();
+
+  // Open the file
+  miniply::PLYReader reader(filename.c_str());
+  if(!reader.valid())
+  {
+    std::cout << "Error: Failed to open file: " << filename << std::endl;
+    return false;
+  }
+
+  uint32_t indices[45];
+  bool     gsFound = false;
+
+  while(reader.has_element() && !gsFound)
+  {
+    if(reader.element_is(miniply::kPLYVertexElement) && reader.load_element())
+    {
+      const uint32_t numVerts = reader.num_rows();
+      output.positions.resize(numVerts * 3);
+      output.scale.resize(numVerts * 3);
+      output.rotation.resize(numVerts * 4);
+      output.opacity.resize(numVerts );
+      output.f_dc.resize(numVerts * 3);
+      output.f_rest.resize(numVerts * 45);
+      // load progress
+      const uint32_t total = numVerts*(3+3+4+1+3+45);
+      uint32_t loaded = 0;
+      
+      // put that first so the loading progress looks better
+      if(reader.find_properties(indices, 45, "f_rest_0", "f_rest_1", "f_rest_2", "f_rest_3", "f_rest_4", "f_rest_5",
+                                "f_rest_6", "f_rest_7", "f_rest_8", "f_rest_9", "f_rest_10", "f_rest_11", "f_rest_12",
+                                "f_rest_13", "f_rest_14", "f_rest_15", "f_rest_16", "f_rest_17", "f_rest_18",
+                                "f_rest_19", "f_rest_20", "f_rest_21", "f_rest_22", "f_rest_23", "f_rest_24",
+                                "f_rest_25", "f_rest_26", "f_rest_27", "f_rest_28", "f_rest_29", "f_rest_30", "f_rest_31",
+                                "f_rest_32", "f_rest_33", "f_rest_34", "f_rest_35", "f_rest_36", "f_rest_37", "f_rest_38",
+                                "f_rest_39", "f_rest_40", "f_rest_41", "f_rest_42", "f_rest_43", "f_rest_44"))
+      {
+        reader.extract_properties(indices, 45, miniply::PLYPropertyType::Float, output.f_rest.data());
+        loaded += numVerts * 45;
+        setProgress(float(loaded) / float(total));
+      }
+      if(reader.find_properties(indices, 3, "x", "y", "z"))
+      {
+        reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.positions.data());
+        loaded += numVerts * 3;
+        setProgress(float(loaded)/float(total));
+      }
+      if(reader.find_properties(indices, 1, "opacity"))
+      {
+        reader.extract_properties(indices, 1, miniply::PLYPropertyType::Float, output.opacity.data());
+        loaded += numVerts;
+        setProgress(float(loaded) / float(total));
+      }
+      if(reader.find_properties(indices, 3, "scale_0", "scale_1", "scale_2"))
+      {
+        reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.scale.data());
+        loaded += numVerts * 3;
+        setProgress(float(loaded) / float(total));
+      }
+      if(reader.find_properties(indices, 4, "rot_0", "rot_1", "rot_2", "rot_3"))
+      {
+        reader.extract_properties(indices, 4, miniply::PLYPropertyType::Float, output.rotation.data());
+        loaded += numVerts * 4;
+        setProgress(float(loaded) / float(total));
+      }
+      if(reader.find_properties(indices, 3, "f_dc_0", "f_dc_1", "f_dc_2"))
+      {
+        reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.f_dc.data());
+        loaded += numVerts * 3;
+        setProgress(float(loaded) / float(total));
+      }
+
+
+      gsFound = true;
+    }
+    
+    reader.next_element();
+  }
+
+  if(gsFound)
+  {
+    auto endTime = std::chrono::high_resolution_clock::now();
+    long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    std::cout << "File loaded in " << loadTime << "ms" << std::endl;
+  }
+  else
+  {
+    std::cout << "Error: invalid 3DGS PLY file" << std::endl;
+  }
+
+  return gsFound;
+}
+
+bool PlyAsyncLoader::innerLoadTinyPly(std::string filename, SplatSet& output)
 {
   // Open the file
   std::ifstream file(filename, std::ios::binary);
