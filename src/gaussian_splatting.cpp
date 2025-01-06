@@ -322,28 +322,26 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     m_app->setViewport(cmd);
     if(splatCount)
     {
-      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-      // overrides the pipeline setup for depth test/write
-      vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
+      if(!useMeshShaders)
+      { // Pipeline using vertex shader
 
-      // display the quad as many times as we have visible splats
-      {
-        /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
-      // transfo/color unused for the time beeing, could transform the whole 3DGS model
-      // if used, could also be placed in the FrameOnfo or all the frameInfo placed in push_constant
-      m_pushConst.transfo = glm::mat4(1.0);                 // identity
-      m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+        // overrides the pipeline setup for depth test/write
+        vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
 
-      vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(DH::PushConstant), &m_pushConst);
-      */
-        if(useMeshShaders)
+        // display the quad as many times as we have visible splats
         {
-          vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-        }
-        else
-        {
+          /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
+          // transfo/color unused for the time beeing, could transform the whole 3DGS model
+          // if used, could also be placed in the FrameOnfo or all the frameInfo placed in push_constant
+          m_pushConst.transfo = glm::mat4(1.0);                 // identity
+          m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
+
+          vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                             sizeof(DH::PushConstant), &m_pushConst);
+          */
+
           const VkDeviceSize offsets{0};
           vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
           vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
@@ -359,6 +357,16 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
             vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
           }
         }
+      }
+      else
+      { // Pipeline using vertex shader
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+        // overrides the pipeline setup for depth test/write
+        vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
+
+        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
       }
     }
     
