@@ -256,8 +256,12 @@ set(SHD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 
 create_sample(gaussian_splatting
   SOURCES 
+    src/main.cpp
     src/gaussian_splatting.h
     src/gaussian_splatting.cpp 
+    src/ply_async_loader.h
+    src/ply_async_loader.cpp
+    src/splat_set.h
     src/miniply.h
     src/miniply.cpp
   SHADER_SOURCES 

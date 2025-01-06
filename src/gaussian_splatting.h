@@ -24,6 +24,9 @@
 */
 //////////////////////////////////////////////////////////////////////////
 
+#ifndef _GAUSSIAN_SPLATTING_H_
+#define _GAUSSIAN_SPLATTING_H_
+
 // clang-format off
 #define IM_VEC2_CLASS_EXTRA ImVec2(const glm::vec2& f) {x = f.x; y = f.y;} operator glm::vec2() const { return glm::vec2(x, y); }
 // clang-format on
@@ -34,10 +37,6 @@
 #include <filesystem>
 //
 #include <vulkan/vulkan_core.h>
-// ply loader
-#define TINYPLY_IMPLEMENTATION
-#include "tinyply.h"
-#include "miniply.h"
 // mathematics
 #include <glm/vec3.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -89,21 +88,8 @@ using namespace glm;
 #include "shaders/device_host.h"  // Shared between host and device
 }  // namespace DH
 
-#if USE_HLSL
-#include "_autogen/raster_vertexMain.spirv.h"
-#include "_autogen/raster_fragmentMain.spirv.h"
-const auto& vert_shd = std::vector<uint8_t>{std::begin(raster_vertexMain), std::end(raster_vertexMain)};
-const auto& frag_shd = std::vector<uint8_t>{std::begin(raster_fragmentMain), std::end(raster_fragmentMain)};
-#elif USE_SLANG
-#include "_autogen/raster_slang.h"
-#else
-#include "_autogen/rank.comp.glsl.h"
-#include "_autogen/raster.frag.glsl.h"
-#include "_autogen/raster.vert.glsl.h"
-const auto& comp_shd = std::vector<uint32_t>{std::begin(rank_comp_glsl), std::end(rank_comp_glsl)};
-const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::end(raster_vert_glsl)};
-const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
-#endif  // USE_HLSL
+#include "splat_set.h"
+#include "ply_async_loader.h"
 
 //
 struct SampleTexture
@@ -160,113 +146,11 @@ inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>&
   return a.first > b.first;
 }
 
-//
+// TODOC
 struct SortData
 {
   std::vector<uint32_t> keys;
   std::vector<uint32_t> values;
-};
-
-// Storage for a 3D gaussian splatting (3DGS) model loaded from PLY file
-struct SplatSet
-{
-  // standard poiont cloud attributes
-  std::vector<float> positions;  // point positions (x,y,z)
-  std::vector<float> normals;    // point normals (x,y,z) - not used but stored in file
-  // specific data fields introduced by INRIA for 3DGS
-  std::vector<float> f_dc;      // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
-  std::vector<float> f_rest;    // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients
-  std::vector<float> opacity;   // 1 value per point in ply file
-  std::vector<float> scale;     // 3 components per point in ply file
-  std::vector<float> rotation;  // 4 components per point in ply file - a quaternion
-};
-
-//
-class PlyAsyncLoader
-{
-public:
-  enum Status
-  {
-    SHUTDOWN,
-    READY,
-    LOADING,
-    LOADED,
-    FAILURE
-  };
-
-public:
-
-  // starts the loader thread
-  bool initialize();
-  // stops the loader thread, cannot be re-used afterward
-  [[nodiscard]] inline void shutdown()
-  {
-    std::unique_lock<std::mutex> lock(m_mutex);
-    m_shutdownRequested = true;
-    m_loadCV.notify_all();
-    lock.unlock();
-    // wait for thread termination
-    m_loader.join();
-  }
-  // triggers the load of a new scene
-  // return false if loader not in idled state
-  // thread safe, output must not be accessed if while is not LOADED or READY (after reset)
-  bool loadScene(std::string filename, SplatSet& output);
-  // cancel scene loading if possible
-  // non blocking, may have no effect
-  // thread safe
-  void cancel();
-  // return lodaer status
-  // thread safe
-  Status getStatus();
-  // Resets the loader to READY after LOADED or FAILURE
-  // used to ack that the consumer has consumed the loaded model
-  // loader must be reset to be able to launch a new load
-  bool reset();
-  // return the filename currently beeing loaded, "" otherwise
-  [[nodiscard]] inline std::string getFilename() { 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_filename;
-  }
-  // return percentage in {0,1} of progress
-  // fake infinite for the time beeing 
-  [[nodiscard]] inline float getProgress()
-  {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_progress;
-  }
-
-private:
-  // loading thread
-  std::thread m_loader;
-  // loader status
-  Status m_status=SHUTDOWN;
-  // ask to cancel a load
-  bool m_cancelRequested = false;
-  // ask for loader shutdown before destruction
-  bool m_shutdownRequested = false;
-  // protects the condition variables and other attributes
-  mutable std::mutex m_mutex;
-  // loader wakeup condition
-  mutable std::condition_variable m_loadCV;
-
-  // the ply pathname
-  std::string m_filename = "";
-  // the output data storage
-  SplatSet* m_output=nullptr;
-  // the loading percentage
-  float m_progress = 0.0f;
-  
-  // actually loads the scene
-  bool innerLoadTinyPly(std::string filename, SplatSet& output);
-  bool innerLoadMiniPly(std::string filename, SplatSet& output);
-
-  // in {0.0,1.0}
-  void setProgress(float progress)
-  { 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_progress = progress;
-  }
 };
 
 // TODO: class documentation
@@ -423,3 +307,5 @@ private:  // Attributes
   DH::FrameInfo    frameInfo{};                          // frame parameters, sent to device using a uniform buffer
   VkPipeline       m_computePipeline{};                  // The compute pipeline
 };
+
+#endif
