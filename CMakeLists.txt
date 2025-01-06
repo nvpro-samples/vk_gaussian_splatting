@@ -268,6 +268,7 @@ create_sample(gaussian_splatting
     ${SHD_DIR}/rank.comp.glsl
     ${SHD_DIR}/raster.vert.glsl
     ${SHD_DIR}/raster.frag.glsl
+    ${SHD_DIR}/raster.mesh.glsl
   SHADER_HEADERS
     ${SHD_DIR}/device_host.h
   SHADER_HLSL

@@ -273,6 +273,15 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
+  // mesh shaders
+  bool useMeshShaders = true;      // switch between vertex and mesh shaders
+
+  bool m_supportsEXT = false;
+  bool m_disableEXT  = false;
+  VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
+  bool m_supportsSubgroupControl = false;
+  VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
+
   //
   bool  gpuSortingEnabled = true;
   float m_distTime        = 0.0f;  // distance update timer
@@ -302,10 +311,11 @@ private:  // Attributes
   nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
-  VkPipeline       m_graphicsPipeline = VK_NULL_HANDLE;  // The graphic pipeline to render
-  DH::PushConstant m_pushConst{};                        // Information sent to the shader using constant
-  DH::FrameInfo    frameInfo{};                          // frame parameters, sent to device using a uniform buffer
-  VkPipeline       m_computePipeline{};                  // The compute pipeline
+  VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
+  VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
+  DH::PushConstant m_pushConst{};                            // Information sent to the shader using constant
+  DH::FrameInfo    frameInfo{};                              // frame parameters, sent to device using a uniform buffer
+  VkPipeline       m_computePipeline{};                      // The compute pipeline
 };
 
 #endif

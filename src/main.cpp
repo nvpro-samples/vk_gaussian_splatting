@@ -24,11 +24,28 @@
 int main(int argc, char** argv)
 {
   // Vulkan creation context information (see nvvk::Context)
+  static VkPhysicalDeviceMeshShaderFeaturesNV meshFeaturesNV = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV};
+  static VkPhysicalDeviceMeshShaderFeaturesEXT meshFeaturesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
   nvvk::ContextCreateInfo vkSetup;
   vkSetup.setVersion(1, 3);
   vkSetup.addDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+  vkSetup.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesNV);
+  vkSetup.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesEXT);
   vkSetup.addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   nvvkhl::addSurfaceExtensions(vkSetup.instanceExtensions);
+  
+  // from meshlettest.cpp sample
+  vkSetup.fnDisableFeatures = [](VkStructureType sType, void* pFeatureStruct) {
+    if(sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT)
+    {
+      auto* feature = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(pFeatureStruct);
+      // enabling and not using it may cost a tiny bit of performance on NV hardware
+      feature->meshShaderQueries = VK_FALSE;
+      // disbale for the time beeing TODO need to understand
+      feature->primitiveFragmentShadingRateMeshShader = VK_FALSE;
+    }
+
+  };
 
   // Create Vulkan context
   nvvk::Context vkContext;

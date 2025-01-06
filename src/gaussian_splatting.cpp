@@ -26,21 +26,18 @@
 
 // shaders code
 
-#if USE_HLSL
-#include "_autogen/raster_vertexMain.spirv.h"
-#include "_autogen/raster_fragmentMain.spirv.h"
-const auto& vert_shd = std::vector<uint8_t>{std::begin(raster_vertexMain), std::end(raster_vertexMain)};
-const auto& frag_shd = std::vector<uint8_t>{std::begin(raster_fragmentMain), std::end(raster_fragmentMain)};
-#elif USE_SLANG
+#if USE_SLANG
 #include "_autogen/raster_slang.h"
 #else
 #include "_autogen/rank.comp.glsl.h"
 #include "_autogen/raster.frag.glsl.h"
 #include "_autogen/raster.vert.glsl.h"
+#include "_autogen/raster.mesh.glsl.h"
 const auto& comp_shd = std::vector<uint32_t>{std::begin(rank_comp_glsl), std::end(rank_comp_glsl)};
 const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::end(raster_vert_glsl)};
+const auto& mesh_shd = std::vector<uint32_t>{std::begin(raster_mesh_glsl), std::end(raster_mesh_glsl)};
 const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
-#endif  // USE_HLSL
+#endif
 
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
@@ -341,20 +338,26 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                          sizeof(DH::PushConstant), &m_pushConst);
       */
-
-        const VkDeviceSize offsets{0};
-        vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-        if(!gpuSortingEnabled)
+        if(useMeshShaders)
         {
-          vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-          vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+          vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
         }
         else
         {
-          const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-          vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
-          vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+          const VkDeviceSize offsets{0};
+          vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+          vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
+          if(!gpuSortingEnabled)
+          {
+            vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+            vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
+          }
+          else
+          {
+            const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+            vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
+            vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+          }
         }
       }
     }
@@ -671,7 +674,8 @@ void GaussianSplatting::createPipeline()
 
   m_dset->initLayout();
   m_dset->initPool(1);
-  const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+  const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
+                                                    0,
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
@@ -681,7 +685,7 @@ void GaussianSplatting::createPipeline()
   writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_unif));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-  {  //  create the rendering pipeline
+  {  //  create the rasterization pipelines
 
     VkPipelineRenderingCreateInfo prend_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
     prend_info.colorAttachmentCount    = 1;
@@ -721,24 +725,47 @@ void GaussianSplatting::createPipeline()
     // The dynamic state is used to change the depth test state dynamically
     pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
 
-    // create the pipeline
-    nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
+    // create the pipeline that uses vertex shaders
+    {
+      nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
 
 #if USE_SLANG
-    VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
-    pgen.addShader(shaderModule, VK_SHADER_STAGE_VERTEX_BIT, "vertexMain");
-    pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
+      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
+      pgen.addShader(shaderModule, VK_SHADER_STAGE_VERTEX_BIT, "vertexMain");
+      pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
 #else
-    pgen.addShader(vert_shd, VK_SHADER_STAGE_VERTEX_BIT, USE_GLSL ? "main" : "vertexMain");
-    pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
+      pgen.addShader(vert_shd, VK_SHADER_STAGE_VERTEX_BIT, USE_GLSL ? "main" : "vertexMain");
+      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
 #endif
-
-    m_graphicsPipeline = pgen.createPipeline();
-    m_dutil->setObjectName(m_graphicsPipeline, "Graphics");
-    pgen.clearShaders();
+      m_graphicsPipeline = pgen.createPipeline();
+      m_dutil->setObjectName(m_graphicsPipeline, "PipelineVertexShader");
+      pgen.clearShaders();
 #if USE_SLANG
-    vkDestroyShaderModule(m_device, shaderModule, nullptr);
+      vkDestroyShaderModule(m_device, shaderModule, nullptr);
 #endif
+    }
+
+    // create the pipeline that uses mesh shaders
+    {
+      nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
+
+#if USE_SLANG
+      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
+      // TODO: what is the name foe mesh shader main if not GLSL ?
+      pgenMeshShaders.addShader(shaderModule, VK_SHADER_STAGE_MESH_BIT_EXT, "meshMain");
+      pgenMeshShaders.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
+#else
+      // TODO: what is the name foe mesh shader main if not GLSL ?
+      pgen.addShader(mesh_shd, VK_SHADER_STAGE_MESH_BIT_EXT, USE_GLSL ? "main" : "meshMain");   
+      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
+#endif
+      m_graphicsPipelineMesh = pgen.createPipeline();
+      m_dutil->setObjectName(m_graphicsPipelineMesh, "PipelineMeshShader");
+      pgen.clearShaders();
+#if USE_SLANG
+      vkDestroyShaderModule(m_device, shaderModule, nullptr);
+#endif
+    }
   }
   {  // create the compute pipeline
 
