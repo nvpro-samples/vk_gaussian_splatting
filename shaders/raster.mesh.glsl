@@ -43,10 +43,18 @@ layout(set = 0, binding = 0, scalar) uniform FrameInfo_
   FrameInfo frameInfo;
 };
 
+// GPU sorting
 // Key contains nbSplat keys + nbSplat indices + nbSplats
 layout(set = 0, binding = 5) buffer InstanceKey
 {
   uint32_t key[];
+};
+
+// CPU sorting
+// Key contains nbSplat keys + nbSplat indices + nbSplats
+layout(set = 0, binding = 7) buffer CpuKey
+{
+  uint32_t cpuKey[];
 };
 
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
@@ -101,7 +109,16 @@ void main()
 
   if(baseIndex < splatCount)
   {
-    uint splatIndex = key[splatCount + baseIndex]; 
+    uint splatIndex;
+    if(frameInfo.gpuSorting==1)
+    {
+      splatIndex = key[splatCount + baseIndex];
+    }
+    else
+    {
+      splatIndex = cpuKey[baseIndex];
+    }
+    
 
     //
     uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
@@ -115,19 +132,28 @@ void main()
     mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
 
+    // culling
     vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
-
     float clip = 1.2 * clipCenter.w;
     if(clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip)
     {
-      // TODO: handle this early return
+      // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+
+      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(0, 1, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(0, 1, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(0, 1, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(0, 1, 0, 1);
+
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
     }
     
+    // work on color
     vec4 splatColor = texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
     if(frameInfo.showShOnly == 1)
     {
@@ -262,11 +288,17 @@ void main()
     // from original code
     if(splatColor.a < minAlpha)
     {
-      // JEM added gl_position set for proper discard
+      // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(1, 0, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(1, 0, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(1, 0, 0, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(1, 0, 0, 1);
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
     }
 
@@ -309,11 +341,19 @@ void main()
     // from original code
     if(eigenValue2 <= 0.0)
     {
-      // TODO: handle this early return
+      // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      
+      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(0, 0, 1, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(0, 0, 1, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(0, 0, 1, 1);
+      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(0, 0, 1, 1);
+
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
+      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
     }
 

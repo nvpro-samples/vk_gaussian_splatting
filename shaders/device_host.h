@@ -43,6 +43,7 @@ struct FrameInfo
   int   showShOnly;
   int   opacityGaussianDisabled;
   int   splatCount;
+  int   gpuSorting;
 };
 
 struct PushConstant

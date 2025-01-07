@@ -69,6 +69,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 };
 
 void GaussianSplatting::onDetach()
@@ -125,6 +126,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // some attributes of frameInfo were set by the user interface
     const glm::vec2& clip = CameraManip.getClipPlanes();
     frameInfo.splatCount  = splatCount;
+    frameInfo.gpuSorting  = gpuSortingEnabled;
     frameInfo.viewMatrix  = CameraManip.getMatrix();
     frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
     // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
@@ -144,7 +146,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
 
     vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
-
+    
     if(!gpuSortingEnabled)
     {
       // upload CPU sorted indices to the GPU if needed
@@ -228,7 +230,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
           bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
           bmb.buffer              = m_splatIndicesDevice.buffer;
           bmb.size                = VK_WHOLE_SIZE;
-          vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+          vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT 
+                                | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
                                VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
         }
       }
@@ -275,7 +279,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, m_indirect.buffer, sizeof(uint32_t), m_keysDevice.buffer, 0,
                                     m_keysDevice.buffer, splatCount * sizeof(uint32_t), m_storageDevice.buffer, 0, 0, 0);
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 1,
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1,
                              &barrier, 0, NULL, 0, NULL);
       }
 
@@ -330,9 +335,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         // overrides the pipeline setup for depth test/write
         vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
 
-        // display the quad as many times as we have visible splats
-        {
-          /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
+        /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
           // transfo/color unused for the time beeing, could transform the whole 3DGS model
           // if used, could also be placed in the FrameInfo or all the frameInfo placed in push_constant
           m_pushConst.transfo = glm::mat4(1.0);                 // identity
@@ -341,21 +344,23 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                              sizeof(DH::PushConstant), &m_pushConst);
           */
 
-          const VkDeviceSize offsets{0};
-          vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-          vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-          if(!gpuSortingEnabled)
-          {
-            vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-            vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-          }
-          else
-          {
-            const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
-            vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
-            vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
-          }
+        // display the quad as many times as we have visible splats
+
+        const VkDeviceSize offsets{0};
+        vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
+        if(!gpuSortingEnabled)
+        {
+          vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+          vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
         }
+        else
+        {
+          const VkDeviceSize valueOffsets{splatCount * sizeof(uint32_t)};
+          vkCmdBindVertexBuffers(cmd, 1, 1, &m_keysDevice.buffer, &valueOffsets);
+          vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+        }
+       
       }
       else
       { // Pipeline using vertex shader
@@ -886,7 +891,8 @@ void GaussianSplatting::createVkBuffers()
                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
-                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                                                     | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // debug utility
@@ -1144,6 +1150,8 @@ void GaussianSplatting::create3dgsTextures(void)
   writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 6, &indirect_desc));
+  const VkDescriptorBufferInfo cpuKeys_desc{m_splatIndicesDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 7, &cpuKeys_desc));
   
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

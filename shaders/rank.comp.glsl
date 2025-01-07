@@ -18,7 +18,7 @@ layout(local_size_x = 256) in;
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
 // Key contains nbSplat keys + nbSplatSamples + nbSplats
-layout(std430, set = 0, binding = 5) buffer InstanceKey
+layout(set = 0, binding = 5) buffer InstanceKey
 {
   uint32_t key[];
 };
@@ -62,12 +62,12 @@ void main() {
   // the center of each splat instead of its extent.
   // for the time being we just add 0.1 to the NDC as a margin which 
   // make the job with most models
-  if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f) {
+  //if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f) {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     uint instance_index = atomicAdd(indirect[1], 1);
     // stores the key
     key[instance_index] = encodeMinMaxFp32(- depth);
     // stores the value
     key[frameInfo.splatCount + instance_index ] = id;
-  }
+  //}
 }
