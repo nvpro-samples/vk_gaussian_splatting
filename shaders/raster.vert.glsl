@@ -30,7 +30,7 @@ layout(location = 1) in uint32_t inSplatIndex;
 layout(location = 0) out vec2 outFragPos;
 layout(location = 1) out vec4 outFragCol;
 
-// we could write to manage alignment automatically
+// in order to manage alignment automatically we could write:
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
 // but it may be less performant than aligning 
 // attribute in the struct (see device_host.h comment)

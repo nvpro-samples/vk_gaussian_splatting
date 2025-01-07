@@ -274,7 +274,7 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
   // mesh shaders
-  bool useMeshShaders = true;      // switch between vertex and mesh shaders
+  bool m_useMeshShaders = false;      // switch between vertex and mesh shaders
 
   bool m_supportsEXT = false;
   bool m_disableEXT  = false;

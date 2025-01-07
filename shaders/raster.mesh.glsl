@@ -20,13 +20,21 @@
 #version 450
 
 #extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+#include "device_host.h"
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-
 layout(triangles, max_vertices = 3, max_primitives = 1) out;
 
 layout(location = 0) out vec2 outFragPos[3];
 layout(location = 1) out vec4 outFragCol[3];
+
+// Key contains nbSplat keys + nbSplatSamples + nbSplats
+layout(set = 0, binding = 5) buffer InstanceKey
+{
+  uint32_t key[];
+};
 
 void main()
 {

@@ -322,7 +322,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     m_app->setViewport(cmd);
     if(splatCount)
     {
-      if(!useMeshShaders)
+      if(!m_useMeshShaders)
       { // Pipeline using vertex shader
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
@@ -332,12 +332,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
         // display the quad as many times as we have visible splats
         {
-          /* we do not use push_constant, everything passes though teh frameInfor unifrom buffer
+          /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
           // transfo/color unused for the time beeing, could transform the whole 3DGS model
-          // if used, could also be placed in the FrameOnfo or all the frameInfo placed in push_constant
+          // if used, could also be placed in the FrameInfo or all the frameInfo placed in push_constant
           m_pushConst.transfo = glm::mat4(1.0);                 // identity
           m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
-
           vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                              sizeof(DH::PushConstant), &m_pushConst);
           */
@@ -516,6 +515,9 @@ void GaussianSplatting::onUIRender()
       {
         resetFrameInfo();
       }
+      PE::entry(
+          "Mesh shaders", [&]() { return ImGui::Checkbox("##HiddenID", &m_useMeshShaders); },
+          "Switch betten use of vertex shader pipeline and mesh shader pipeline");
       PE::SliderFloat(
           "Splat scale",
           (float*)&frameInfo.splatScale, 0.1f,
@@ -688,9 +690,9 @@ void GaussianSplatting::createPipeline()
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
   // Writing to descriptors
-  const VkDescriptorBufferInfo      dbi_unif{m_frameInfo.buffer, 0, VK_WHOLE_SIZE};
   std::vector<VkWriteDescriptorSet> writes;
-  writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_unif));
+  const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfo.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_frameInfo));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
   {  //  create the rasterization pipelines
@@ -840,7 +842,7 @@ void GaussianSplatting::createVkBuffers()
 
   const auto splatCount = m_splatSet.positions.size() / 3;
 
-  // this has nothing to do here
+  // TODO: this has nothing to do here
   distArray.resize(splatCount);
   gsIndex.resize(splatCount);
   sortGsIndex.resize(splatCount);
@@ -861,14 +863,20 @@ void GaussianSplatting::createVkBuffers()
                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
       m_keysDevice = m_alloc->createBuffer((splatCount * 2 + 1) * sizeof(uint32_t),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                               | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                               | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                                               | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
+      
       VrdxSorterStorageRequirements requirements;
       vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
 
       m_storageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+      // debug utility 
+      m_dutil->DBG_NAME(m_stagingHost.buffer);
+      m_dutil->DBG_NAME(m_keysDevice.buffer);
+      m_dutil->DBG_NAME(m_storageDevice.buffer);
     }
   }
 
@@ -880,6 +888,10 @@ void GaussianSplatting::createVkBuffers()
     m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
                                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    // debug utility
+    m_dutil->DBG_NAME(m_splatIndicesHost.buffer);
+    m_dutil->DBG_NAME(m_splatIndicesDevice.buffer);
   }
 
   // Quad with UV coordinates
@@ -1127,10 +1139,12 @@ void GaussianSplatting::create3dgsTextures(void)
   writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
+
   const VkDescriptorBufferInfo keys_desc{m_keysDevice.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 6, &indirect_desc));
+  
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
