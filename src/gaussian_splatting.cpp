@@ -364,8 +364,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
         // overrides the pipeline setup for depth test/write
         vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-
-        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        // run the workgroups 
+        vkCmdDrawMeshTasksEXT(cmd, (frameInfo.splatCount + 31) / 32, 1, 1);
       }
     }
     

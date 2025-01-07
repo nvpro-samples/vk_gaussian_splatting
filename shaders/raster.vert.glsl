@@ -39,11 +39,13 @@ layout(set = 0, binding = 0) uniform FrameInfo_
   FrameInfo frameInfo;
 };
 
+// unused for the time beeing
 layout(push_constant) uniform PushConstant_
 {
   PushConstant pushC;
 };
 
+// textures map describing the 3DGS model
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 layout(set = 0, binding = 2) uniform sampler2D colorsTexture;
 layout(set = 0, binding = 3) uniform sampler2D covariancesTexture;
