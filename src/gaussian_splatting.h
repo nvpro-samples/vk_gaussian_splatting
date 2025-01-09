@@ -231,6 +231,21 @@ private:  // Methods
 
 private:  // Attributes
 
+  // indirect parameters 
+  struct IndirectParams
+  {
+    // for vkCmdDrawIndexedIndirect
+    uint32_t indexCount=0;
+    uint32_t instanceCount=0;
+    uint32_t firstIndex=0;
+    int32_t  vertexOffset=0;
+    uint32_t firstInstance=0;
+    // for vkCmdDrawMeshTasksIndirectEXT
+    uint32_t groupCountX=0;
+    uint32_t groupCountY=0;
+    uint32_t groupCountZ=0;
+  };
+
   std::filesystem::path m_sceneToLoadFilename;
   PlyAsyncLoader        m_plyLoader;
 
@@ -259,8 +274,10 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
   nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
 
-  nvvk::Buffer m_indirect;     // parametter buffer for vkCmdDrawIndexedIndirect
-  nvvk::Buffer m_indirectHost; // for debug readback
+  nvvk::Buffer m_indirect;      // indirect parametter buffer 
+  nvvk::Buffer m_indirectHost;  // for debug readback
+  IndirectParams m_indirectReadback;  // for debug readback
+
   //
   nvvk::Buffer m_vertices;  // Buffer of the vertices for the splat quad
   nvvk::Buffer m_indices;   // Buffer of the indices for the splat quad
@@ -284,7 +301,7 @@ private:  // Attributes
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 
   //
-  bool  gpuSortingEnabled = true;
+  bool  m_gpuSortingEnabled = true;
   float m_distTime        = 0.0f;  // distance update timer
   float m_sortTime        = 0.0f;  // distance sorting timer
 

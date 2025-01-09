@@ -126,7 +126,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // some attributes of frameInfo were set by the user interface
     const glm::vec2& clip = CameraManip.getClipPlanes();
     frameInfo.splatCount  = splatCount;
-    frameInfo.gpuSorting  = gpuSortingEnabled;
+    frameInfo.gpuSorting  = m_gpuSortingEnabled;
     frameInfo.viewMatrix  = CameraManip.getMatrix();
     frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
     // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
@@ -147,7 +147,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
     
-    if(!gpuSortingEnabled)
+    if(!m_gpuSortingEnabled)
     {
       // upload CPU sorted indices to the GPU if needed
       bool newIndexAvailable = false;
@@ -239,14 +239,12 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
 
     // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
-    if(gpuSortingEnabled)
+    if(m_gpuSortingEnabled)
     {
       { // reset the draw indirect parameters and counters, will be updated by compute shader
-        // 5 first values for sorting and vertex shading pipeline
-        // 3 last values are workgroup count for mesh pipeline
-        std::vector<uint32_t> drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
-        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, drawIndexedIndirectParams.size() * sizeof(uint32_t),
-                          drawIndexedIndirectParams.data());
+        const IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
+                vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(drawIndexedIndirectParams),
+                          (void*)&drawIndexedIndirectParams);
 
         VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -299,7 +297,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         // copy from device to host
         VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * splatCount + 1) * sizeof(uint32_t)};
         vkCmdCopyBuffer(cmd, m_keysDevice.buffer, m_stagingHost.buffer, 1, &bc);
-        // sync with end of copy to device
+        // sync with end of copy to host
         VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
         bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
         bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
@@ -351,7 +349,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         const VkDeviceSize offsets{0};
         vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-        if(!gpuSortingEnabled)
+        if(!m_gpuSortingEnabled)
         {
           vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
           vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
@@ -371,7 +369,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
         // overrides the pipeline setup for depth test/write
         vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-        if(!gpuSortingEnabled)
+        if(!m_gpuSortingEnabled)
         {
           // run the workgroups
           vkCmdDrawMeshTasksEXT(cmd, (frameInfo.splatCount + 31) / 32, 1, 1);
@@ -392,14 +390,14 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // read back m_indirect for debug
     if(true && (m_indirectHost.buffer != VK_NULL_HANDLE))
     {
-      // reset staging for debug
+      
       uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
-      std::memset(hostBuffer, 0, 8 * sizeof(uint32_t));
-
+      // reset staging for debug
+      //std::memset(hostBuffer, 0, sizeof(IndirectParams));
       // copy from device to host
-      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = 8 * sizeof(uint32_t)};
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(IndirectParams)};
       vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
-      // sync with end of copy to device
+      // sync with end of copy to host
       VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
       bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
       bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
@@ -410,6 +408,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, 
         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
         VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+
+      std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(IndirectParams));
 
       m_alloc->unmap(m_indirectHost);
     }
@@ -586,10 +586,10 @@ void GaussianSplatting::onUIRender()
           [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
       frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
 
-      bool disableGpuSorting = !gpuSortingEnabled;
+      bool disableGpuSorting = !m_gpuSortingEnabled;
       PE::entry(
           "Disable GPU sorting ", [&]() { return ImGui::Checkbox("##DisableGPUSorting", &disableGpuSorting); }, "TODOC");
-      gpuSortingEnabled = !disableGpuSorting;
+      m_gpuSortingEnabled = !disableGpuSorting;
 
       PE::end();
     }
@@ -598,13 +598,21 @@ void GaussianSplatting::onUIRender()
       // TODO: do not use disabled input object to display statistics
       PE::begin("##3DGS statistics");
       ImGui::BeginDisabled();
+
       PE::entry(
-          "Distances  (ms)", [&]() { return ImGui::InputFloat("##DistDuration", (float*)&m_distTime, 0, 100000); }, "TODOC");
+          "Distances  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_distTime, 0, 100000); }, "TODOC");
       PE::entry(
-          "Sorting  (ms)", [&]() { return ImGui::InputFloat("##SortDuration", (float*)&m_sortTime, 0, 100000); }, "TODOC");
-      const auto splatCount = gsIndex.size();
+          "Sorting  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_sortTime, 0, 100000); }, "TODOC");
+      const auto totalSplatCount = gsIndex.size();
       PE::entry(
-          "Number of splats", [&]() { return ImGui::InputInt("##NbSplats", (int*)&splatCount, 0, 100000); }, "TODOC");
+          "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
+      uint32_t renderedSplatCount = !m_gpuSortingEnabled ? totalSplatCount : m_indirectReadback.instanceCount;
+      PE::entry(
+          "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
+      uint32_t wg =
+          m_useMeshShaders ? (m_gpuSortingEnabled ? m_indirectReadback.groupCountX : (frameInfo.splatCount + 31) / 32) : 0;
+      PE::entry(
+          "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
       ImGui::EndDisabled();
 
       PE::end();
@@ -626,7 +634,7 @@ void GaussianSplatting::sortingThreadFunc(void)
       return;
 
     // There is no reason this arrives but we test just in case
-    assert(!gpuSortingEnabled);
+    assert(!m_gpuSortingEnabled);
 
     // since it was not an exit it is a request for a sort
     // we suppose model does not change
@@ -952,20 +960,18 @@ void GaussianSplatting::createVkBuffers()
   vertices[2] = {{1.0F, 1.0F, 0.0F}};    //{1.0F, 1.0F} };
   vertices[3] = {{-1.0F, 1.0F, 0.0F}};   //{0.0F, 1.0F} };
 
-  // parameters for DrawIndexIndirect
-  // uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance
-  // vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-  const std::vector<uint32_t> indirect = {6, 0, 0, 0, 0, 0, 0, 0};  // the second value will be set to visible_splat_count after culling
+  //
+  const IndirectParams indirect = {6, 0, 0, 0, 0, 0, 0, 0};
 
   //
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // create the buffer for indirect
-  m_indirect = m_alloc->createBuffer(cmd, indirect,
+  m_indirect = m_alloc->createBuffer(cmd, sizeof(IndirectParams), (void*)&indirect,
                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
                                          | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
-  // for debug
+  // for statistics readback
   m_indirectHost = m_alloc->createBuffer(8 * sizeof(uint32_t),
                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
