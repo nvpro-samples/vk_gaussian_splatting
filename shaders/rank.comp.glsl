@@ -44,30 +44,37 @@ uint encodeMinMaxFp32(float val)
   return bits;
 }
 
-void main() {
+void main()
+{
   uint id = gl_GlobalInvocationID.x;
   if(id >= frameInfo.splatCount)
     return;
-  
+
   vec4 pos = texture(centersTexture, getDataUV(id, 1, 0, textureSize(centersTexture, 0)));
   pos.w    = 1.0;
   //pos = projection * view * model * pos;
   pos         = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
-  pos = pos / pos.w;
+  pos         = pos / pos.w;
   float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
-  // the culling is not good since we only take into account 
+  // the culling is not good since we only take into account
   // the center of each splat instead of its extent.
-  // for the time being we just add 0.1 to the NDC as a margin which 
+  // for the time being we just add 0.1 to the NDC as a margin which
   // make the job with most models
-  //if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f) {
+  if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f)
+  {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     uint instance_index = atomicAdd(indirect[1], 1);
     // stores the key
-    key[instance_index] = encodeMinMaxFp32(- depth);
+    key[instance_index] = encodeMinMaxFp32(-depth);
     // stores the value
-    key[frameInfo.splatCount + instance_index ] = id;
-  //}
+    key[frameInfo.splatCount + instance_index] = id;
+    // set the workgroup count for the mesh shading pipeline
+    if(instance_index % 32 == 0)
+    {
+      atomicAdd(indirect[5], 1);
+    }
+  }
 }
