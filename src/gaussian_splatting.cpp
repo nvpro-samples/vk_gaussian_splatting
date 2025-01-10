@@ -209,15 +209,10 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
 
         if(newIndexAvailable)
-        {
-
-          // CPU sort
+        { 
           // Prepare buffer on host using sorted indices
           uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-          for(int i = 0; i < splatCount; ++i)
-          {
-            hostBuffer[i] = gsIndex[i];
-          }
+          memcpy(hostBuffer, gsIndex.data(), gsIndex.size() * sizeof(uint32_t));
           m_alloc->unmap(m_splatIndicesHost);
           // copy buffer to device
           VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
@@ -274,7 +269,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                              &barrier, 0, NULL, 0, NULL);
       }
 
-      // sort
+      // invoke the radix sort from vrdx lib
       {
         auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
@@ -286,13 +281,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                              &barrier, 0, NULL, 0, NULL);
       }
 
+      // TODO: to remove once stable
       // read back m_keysDevice for debug
       if(false)
       {
         // reset staging for debug
         uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_stagingHost));
         //std::memset(stagingBuffer, 0, (2 * splatCount + 1) * sizeof(uint32_t));
-
 
         // copy from device to host
         VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = (2 * splatCount + 1) * sizeof(uint32_t)};
@@ -363,7 +358,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
        
       }
       else
-      { // Pipeline using vertex shader
+      { // Pipeline using mesh shader
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
@@ -377,7 +372,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         else
         {
           // run the workgroups
-          // vkCmdDrawMeshTasksEXT(cmd, (frameInfo.splatCount + 31) / 32, 1, 1);
           vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, 5 * sizeof(uint32_t), 1, sizeof(VkDrawIndexedIndirectCommand));
         }
         
@@ -387,16 +381,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     vkCmdEndRendering(cmd);
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
 
-    // read back m_indirect for debug
+    // read back m_indirect for statistics display in the UI
     if(true && (m_indirectHost.buffer != VK_NULL_HANDLE))
     {
-      
-      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
-      // reset staging for debug
-      //std::memset(hostBuffer, 0, sizeof(IndirectParams));
-      // copy from device to host
+      // copy from device to host buffer
       VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(IndirectParams)};
       vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
+  
       // sync with end of copy to host
       VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
       bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -409,8 +400,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
         VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
 
+      // copy to main memory
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
       std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(IndirectParams));
-
       m_alloc->unmap(m_indirectHost);
     }
   }
@@ -552,19 +544,37 @@ void GaussianSplatting::onUIRender()
     }
     if(ImGui::CollapsingHeader("3DGS parameters", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      PE::begin("##3DGS parameters");
-      if(PE::entry("Default parameters", [&]() { return ImGui::Button("Reset"); }))
+      if(ImGui::Button("Reset"))
       {
         resetFrameInfo();
       }
+      
+      PE::begin("##3DGS sorting");
+
+      bool disableGpuSorting = !m_gpuSortingEnabled;
+      PE::entry(
+          "Disable GPU sorting ", [&]() { return ImGui::Checkbox("##DisableGPUSorting", &disableGpuSorting); }, "TODOC");
+      m_gpuSortingEnabled = !disableGpuSorting;
+      
+      ImGui::BeginDisabled(disableGpuSorting);
+      bool culling = m_gpuSortingEnabled && frameInfo.culling != 0;
+      PE::entry(
+          "Frustum culling", [&]() { return ImGui::Checkbox("##hidenID", &culling); }, "TODOC");
+      frameInfo.culling = culling ? 1 : 0;
+      ImGui::EndDisabled();
+      PE::end();
+
+      PE::begin("##3DGS splatting");
+
       PE::entry(
           "Mesh shaders", [&]() { return ImGui::Checkbox("##HiddenID", &m_useMeshShaders); },
           "Switch betten use of vertex shader pipeline and mesh shader pipeline");
+
       PE::SliderFloat(
           "Splat scale",
           (float*)&frameInfo.splatScale, 0.1f,
-          frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f,  // we set a different size range for point and splat rendering
-          "TODOC");
+          frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
+          );
 
       PE::entry(
           "Spherical Harmonic degree",
@@ -585,11 +595,6 @@ void GaussianSplatting::onUIRender()
           "Disable opacity gaussian",
           [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
       frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
-
-      bool disableGpuSorting = !m_gpuSortingEnabled;
-      PE::entry(
-          "Disable GPU sorting ", [&]() { return ImGui::Checkbox("##DisableGPUSorting", &disableGpuSorting); }, "TODOC");
-      m_gpuSortingEnabled = !disableGpuSorting;
 
       PE::end();
     }

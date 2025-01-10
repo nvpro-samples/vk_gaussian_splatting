@@ -63,7 +63,7 @@ void main()
   // the center of each splat instead of its extent.
   // for the time being we just add 0.1 to the NDC as a margin which
   // make the job with most models
-  if (abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f)
+  if(frameInfo.culling == 0 || (frameInfo.culling == 1 && abs(pos.x) <= 1.1f && abs(pos.y) <= 1.1f && pos.z >= 0.f && pos.z <= 1.f))
   {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     uint instance_index = atomicAdd(indirect[1], 1);

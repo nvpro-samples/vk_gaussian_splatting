@@ -37,13 +37,15 @@ struct FrameInfo
   
   float inverseFocalAdjustment;
   int   sphericalHarmonicsDegree;
-  int   sphericalHarmonics8BitMode;
+  int   sphericalHarmonics8BitMode; // unused
   float splatScale;
 
   int   showShOnly;
   int   opacityGaussianDisabled;
   int   splatCount;
   int   gpuSorting;
+
+  int   culling;
 };
 
 struct PushConstant

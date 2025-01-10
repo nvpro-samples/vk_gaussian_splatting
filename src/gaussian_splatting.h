@@ -218,6 +218,7 @@ private:  // Methods
     frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
     frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
+    frameInfo.culling                    = 1;     // enabled, in {0,1}
   }
 
   // Utility function to compute the texture size according to the size of the data to be stored
