@@ -177,7 +177,7 @@ void GaussianSplatting::onUIRender()
       ImGui::BeginDisabled(disableGpuSorting);
       bool culling = m_gpuSortingEnabled && frameInfo.culling != 0;
       PE::entry(
-          "Frustum culling", [&]() { return ImGui::Checkbox("##hidenID", &culling); }, "TODOC");
+          "Frustum culling", [&]() { return ImGui::Checkbox("##hiddenID", &culling); }, "TODOC");
       frameInfo.culling = culling ? 1 : 0;
       ImGui::EndDisabled();
       PE::end();
@@ -226,7 +226,7 @@ void GaussianSplatting::onUIRender()
           "Distances  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_distTime, 0, 100000); }, "TODOC");
       PE::entry(
           "Sorting  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_sortTime, 0, 100000); }, "TODOC");
-      const auto totalSplatCount = gsIndex.size();
+      uint32_t totalSplatCount = (uint32_t)gsIndex.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
       uint32_t renderedSplatCount = !m_gpuSortingEnabled ? totalSplatCount : m_indirectReadback.instanceCount;

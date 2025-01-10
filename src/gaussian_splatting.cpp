@@ -598,7 +598,7 @@ void GaussianSplatting::createPipeline()
   }
   {  // create the compute pipeline
 
-    // Creating the pipeline to run the compute shader 
+    // Creating the pipeline to run the compute shader for distance & culling 
     const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                               .codeSize = sizeof(rank_comp_glsl),
                                               .pCode    = &rank_comp_glsl[0]};
@@ -661,7 +661,7 @@ void GaussianSplatting::createVkBuffers()
 
   const auto splatCount = m_splatSet.positions.size() / 3;
 
-  // TODO: this has nothing to do here
+  // TODO: this has nothing to do here ?
   distArray.resize(splatCount);
   gsIndex.resize(splatCount);
   sortGsIndex.resize(splatCount);
@@ -716,19 +716,13 @@ void GaussianSplatting::createVkBuffers()
 
   // Quad with UV coordinates
   const std::vector<uint16_t> indices = {0, 2, 1, 2, 0, 3};
-	std::vector<float> vertices = {
+	const std::vector<float> vertices = {
 		-1.0, -1.0, 0.0,
 		1.0,  -1.0, 0.0,
 		1.0,  1.0, 0.0,
 		-1.0, 1.0, 0.0
 	};
-  /*
-  std::vector<Vertex> vertices(4);
-  vertices[0] = {{-1.0F, -1.0F, 0.0F}};  //{0.0F, 0.0F} };
-  vertices[1] = {{1.0F, -1.0F, 0.0F}};   //{1.0F, 0.0F} };
-  vertices[2] = {{1.0F, 1.0F, 0.0F}};    //{1.0F, 1.0F} };
-  vertices[3] = {{-1.0F, 1.0F, 0.0F}};   //{0.0F, 1.0F} };
-  */
+
   //
   const IndirectParams indirect = {6, 0, 0, 0, 0, 0, 0, 0};
 
@@ -959,13 +953,13 @@ void GaussianSplatting::create3dgsTextures(void)
   assert(m_sphericalHarmonicsMap->isValid());
   m_sphericalHarmonicsMap->setSampler(m_alloc->acquireSampler(sampler_info));
 
-  // updateTexture
+  // TODO: shall we move that semewere else, since buffers has noting to do with data textures ?
   std::vector<VkWriteDescriptorSet> writes;
   writes.emplace_back(m_dset->makeWrite(0, 1, &m_centersMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
   writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
-
+    
   const VkDescriptorBufferInfo keys_desc{m_keysDevice.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};

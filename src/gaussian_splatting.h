@@ -86,14 +86,14 @@ inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>&
   return a.first > b.first;
 }
 
-// 
+//
 class GaussianSplatting : public nvvkhl::IAppElement
 {
 public:  // Methods specializing IAppElement
   GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
+      // starts the splat sorting thread
       : sortingThread([this] { this->sortingThreadFunc(); })
-      ,  // starts the splat sorting thread
-      m_profiler(profiler){};
+      , m_profiler(profiler){};
 
   ~GaussianSplatting() override{
       // all threads must be stoped,
@@ -161,24 +161,14 @@ private:  // Methods
   void destroy3dgsTextures(void);
 
 private:  // Attributes
-  // indirect parameters
-  struct IndirectParams
-  {
-    // for vkCmdDrawIndexedIndirect
-    uint32_t indexCount    = 0;
-    uint32_t instanceCount = 0;
-    uint32_t firstIndex    = 0;
-    int32_t  vertexOffset  = 0;
-    uint32_t firstInstance = 0;
-    // for vkCmdDrawMeshTasksIndirectEXT
-    uint32_t groupCountX = 0;
-    uint32_t groupCountY = 0;
-    uint32_t groupCountZ = 0;
-  };
-
+  //
   std::filesystem::path m_sceneToLoadFilename;
   PlyAsyncLoader        m_plyLoader;
 
+  // loaded model
+  SplatSet m_splatSet;
+
+  //
   nvvkhl::Application*                     m_app{nullptr};
   std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
   std::unique_ptr<nvvk::DebugUtil>         m_dutil;
@@ -199,6 +189,21 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
   nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
 
+  // indirect parameters
+  struct IndirectParams
+  {
+    // for vkCmdDrawIndexedIndirect
+    uint32_t indexCount    = 0;
+    uint32_t instanceCount = 0;
+    uint32_t firstIndex    = 0;
+    int32_t  vertexOffset  = 0;
+    uint32_t firstInstance = 0;
+    // for vkCmdDrawMeshTasksIndirectEXT
+    uint32_t groupCountX = 0;
+    uint32_t groupCountY = 0;
+    uint32_t groupCountZ = 0;
+  };
+
   nvvk::Buffer   m_indirect;          // indirect parametter buffer
   nvvk::Buffer   m_indirectHost;      // buffer for readback
   IndirectParams m_indirectReadback;  // readback values
@@ -207,9 +212,6 @@ private:  // Attributes
   nvvk::Buffer m_vertices;  // Buffer of vertices for the splat quad
   nvvk::Buffer m_indices;   // Buffer of indices for the splat quad
 
-  // Data and setting
-  SplatSet m_splatSet;
-
   // Data textures
   VkSampler                      m_sampler;  // texture sampler
   std::shared_ptr<SampleTexture> m_centersMap;
@@ -217,20 +219,14 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
-  // mesh shaders
-  bool m_useMeshShaders = true;  // switch between vertex and mesh shaders
+  // switch between vertex and mesh shaders
+  bool m_useMeshShaders = true;
 
-  bool m_supportsEXT = false;
-  bool m_disableEXT  = false;
-  VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
-  bool m_supportsSubgroupControl = false;
-  VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
-
-  // gpu/cpu sort switch
+  // GPU/CPU sort switch
   bool m_gpuSortingEnabled = true;
 
   // CPU async sorting
-  std::vector<std::pair<float, int>> distArray;  // dist, id
+  std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>
 
   std::thread             sortingThread;
   std::mutex              mutex;
@@ -250,9 +246,9 @@ private:  // Attributes
   VrdxSorterCreateInfo m_sorterInfo;
   std::vector<float>   m_dist;
 
-  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;   // will contain values and splat count
-  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
+  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;    // will contain values and splat count
+  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
