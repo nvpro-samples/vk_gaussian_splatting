@@ -89,7 +89,6 @@ void GaussianSplatting::onDetach()
   destroyVkBuffers();
   destroyPipeline();
   destroyGbuffers();
-  //
   m_dset->deinit();
 }
 
@@ -711,24 +710,6 @@ void GaussianSplatting::sortingThreadFunc(void)
 }
 }
 
-/*
-bool GaussianSplatting::createScene(const std::string& path)
-{
-  const bool res = loadPly(path, m_splatSet);
-  if(!res)
-    m_splatSet = {};
-
-  // TODO: use BBox of point cloud to set far plane
-  CameraManip.setClipPlanes({0.1F, 2000.0F});
-  // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-  CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-  // reset general parameters
-  resetFrameInfo();
-
-  return res;
-}
-*/
-
 void GaussianSplatting::destroyScene()
 {
   m_splatSet = {};
@@ -744,7 +725,7 @@ void GaussianSplatting::createPipeline()
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
-  // Writing to descriptors
+  // Writing to descriptors for frameInfo uniform buffer
   std::vector<VkWriteDescriptorSet> writes;
   const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfo.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_frameInfo));
@@ -773,22 +754,23 @@ void GaussianSplatting::createPipeline()
       blend_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
       pstate.setBlendAttachmentState(0, blend_state);
     }
-
-    pstate.addBindingDescriptions({{0, sizeof(Vertex)}});
-    pstate.addAttributeDescriptions({
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, pos))},  // Position
-        //{1, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, uv))},     // UVCoord
-    });
-
-    pstate.addBindingDescriptions({{1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
-    pstate.addAttributeDescriptions({
-        {1, 1, VK_FORMAT_R32_UINT, 0},  //
-    });
-
+    
     // By default disable depth test for the pipeline
     pstate.depthStencilState.depthTestEnable = VK_FALSE;
     // The dynamic state is used to change the depth test state dynamically
     pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+
+    // TODOC: 
+
+    pstate.addBindingDescriptions({{0, 3 * sizeof(float)}}); // 3 component per vertex position
+    pstate.addAttributeDescriptions({
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}
+    });
+
+    pstate.addBindingDescriptions({{1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
+    pstate.addAttributeDescriptions({
+        {1, 1, VK_FORMAT_R32_UINT, 0},  
+    });
 
     // create the pipeline that uses vertex shaders
     {
@@ -834,7 +816,7 @@ void GaussianSplatting::createPipeline()
   }
   {  // create the compute pipeline
 
-    /*-- Creating the pipeline to run the compute shader -*/
+    // Creating the pipeline to run the compute shader 
     const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                               .codeSize = sizeof(rank_comp_glsl),
                                               .pCode    = &rank_comp_glsl[0]};
@@ -856,7 +838,7 @@ void GaussianSplatting::createPipeline()
     };
     vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
 
-    /*-- Clean up the shader module -*/
+    // Shader module is not needed anymore
     vkDestroyShaderModule(m_device, compute, nullptr);
   }
 }
@@ -952,19 +934,19 @@ void GaussianSplatting::createVkBuffers()
 
   // Quad with UV coordinates
   const std::vector<uint16_t> indices = {0, 2, 1, 2, 0, 3};
-  /*
 	std::vector<float> vertices = {
 		-1.0, -1.0, 0.0,
-			-1.0, 1.0, 0.0,
-			1.0, 1.0, 0.0,
-			1.0, -1.0, 0.0
-	};*/
+		1.0,  -1.0, 0.0,
+		1.0,  1.0, 0.0,
+		-1.0, 1.0, 0.0
+	};
+  /*
   std::vector<Vertex> vertices(4);
   vertices[0] = {{-1.0F, -1.0F, 0.0F}};  //{0.0F, 0.0F} };
   vertices[1] = {{1.0F, -1.0F, 0.0F}};   //{1.0F, 0.0F} };
   vertices[2] = {{1.0F, 1.0F, 0.0F}};    //{1.0F, 1.0F} };
   vertices[3] = {{-1.0F, 1.0F, 0.0F}};   //{0.0F, 1.0F} };
-
+  */
   //
   const IndirectParams indirect = {6, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1061,7 +1043,7 @@ void GaussianSplatting::create3dgsTextures(void)
   m_centersMap->setSampler(m_alloc->acquireSampler(sampler_info));  // sampler will be released by texture
 
   // SH degree 0 is not view dependent, so we directly transform to base color
-  // this will make some economy of processing in the shader at eatch frame
+  // this will make some economy of processing in the shader at each frame
   glm::vec2            colorsMapSize = computeDataTextureSize(4, 4, splatCount);
   std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes some padding
   for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)

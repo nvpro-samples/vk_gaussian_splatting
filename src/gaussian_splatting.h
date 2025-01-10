@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,6 @@
  * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
-//////////////////////////////////////////////////////////////////////////
-/*
-
- This sample creates a 3D cube and render using the builtin camera
-
-*/
-//////////////////////////////////////////////////////////////////////////
 
 #ifndef _GAUSSIAN_SPLATTING_H_
 #define _GAUSSIAN_SPLATTING_H_
@@ -70,7 +63,7 @@
 #include "nvvk/descriptorsets_vk.hpp"
 #include "nvvk/dynamicrendering_vk.hpp"
 #include "nvvk/extensions_vk.hpp"
-#include "nvvk/images_vk.hpp"
+//#include "nvvk/images_vk.hpp"
 #include "nvvk/pipeline_vk.hpp"
 #include "nvvk/shaders_vk.hpp"
 //
@@ -90,55 +83,7 @@ using namespace glm;
 
 #include "splat_set.h"
 #include "ply_async_loader.h"
-
-//
-struct SampleTexture
-{
-private:
-  VkDevice          m_device{};
-  uint32_t          m_queueIndex{0};
-  VkExtent2D        m_size{0, 0};
-  nvvk::Texture     m_texture;
-  nvvkhl::AllocVma* m_alloc{nullptr};
-
-public:
-  SampleTexture(VkDevice device, uint32_t queueIndex, nvvkhl::AllocVma* a)
-      : m_device(device)
-      , m_queueIndex(queueIndex)
-      , m_alloc(a)
-  {
-  }
-
-  ~SampleTexture() { destroy(); }
-
-  // Create the image, the sampler and the image view 
-  void create(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format)
-  {
-    const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    m_size                              = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-    const VkImageCreateInfo create_info = nvvk::makeImage2DCreateInfo(m_size, format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
-
-    nvvk::CommandPool cpool(m_device, m_queueIndex);
-    VkCommandBuffer   cmd = cpool.createCommandBuffer();
-    m_texture             = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
-
-    cpool.submitAndWait(cmd);
-  }
-
-  void destroy()
-  {
-    // Destroying in next frame, avoid deleting while using
-    nvvkhl::Application::submitResourceFree(
-        [tex = m_texture, a = m_alloc]() { a->destroy(const_cast<nvvk::Texture&>(tex)); });
-  }
-
-  void               setSampler(const VkSampler& sampler) { m_texture.descriptor.sampler = sampler; }
-  [[nodiscard]] bool isValid() const { return m_texture.image != nullptr; }
-  [[nodiscard]] const VkDescriptorImageInfo& descriptor() const { return m_texture.descriptor; }
-  [[nodiscard]] const VkExtent2D&            getSize() const { return m_size; }
-  [[nodiscard]] float getAspect() const { return static_cast<float>(m_size.width) / static_cast<float>(m_size.height); }
-};
-
+#include "sampler_texture.h"
 
 // TODO: for parallel sort, can be defined as a lambda in place
 inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>& b)
@@ -158,9 +103,9 @@ class GaussianSplatting : public nvvkhl::IAppElement
 {
 public:  // Methods specializing IAppElement
   GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
-      : sortingThread([this] { this->sortingThreadFunc(); }),  // starts the splat sorting thread
-      m_profiler(profiler)
-  {};
+      : sortingThread([this] { this->sortingThreadFunc(); })
+      ,  // starts the splat sorting thread
+      m_profiler(profiler){};
 
   ~GaussianSplatting() override{
       // all threads must be stoped,
@@ -180,17 +125,13 @@ public:  // Methods specializing IAppElement
 
   void onUIMenu() override {}
 
-  void onFileDrop(const char* filename) override { 
-    m_sceneToLoadFilename = filename;
-  }
+  void onFileDrop(const char* filename) override { m_sceneToLoadFilename = filename; }
 
 private:  // Methods
   // main loop of the sorting thread for gaussians
   // the thread is started by the class constructor
   // then wait for triggers
   void sortingThreadFunc(void);
-
-  // bool createScene(const std::string& filename);
 
   void destroyScene();
 
@@ -205,7 +146,7 @@ private:  // Methods
   void createVkBuffers();
 
   void destroyVkBuffers();
-    
+
   // reset the attributes of the frameInformation that are
   // modified by the user interface
   inline void resetFrameInfo()
@@ -218,6 +159,7 @@ private:  // Methods
     frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
     frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
+    frameInfo.gpuSorting                 = 1;     // enabled, in {0,1}
     frameInfo.culling                    = 1;     // enabled, in {0,1}
   }
 
@@ -231,29 +173,28 @@ private:  // Methods
   void destroy3dgsTextures(void);
 
 private:  // Attributes
-
-  // indirect parameters 
+  // indirect parameters
   struct IndirectParams
   {
     // for vkCmdDrawIndexedIndirect
-    uint32_t indexCount=0;
-    uint32_t instanceCount=0;
-    uint32_t firstIndex=0;
-    int32_t  vertexOffset=0;
-    uint32_t firstInstance=0;
+    uint32_t indexCount    = 0;
+    uint32_t instanceCount = 0;
+    uint32_t firstIndex    = 0;
+    int32_t  vertexOffset  = 0;
+    uint32_t firstInstance = 0;
     // for vkCmdDrawMeshTasksIndirectEXT
-    uint32_t groupCountX=0;
-    uint32_t groupCountY=0;
-    uint32_t groupCountZ=0;
+    uint32_t groupCountX = 0;
+    uint32_t groupCountY = 0;
+    uint32_t groupCountZ = 0;
   };
 
   std::filesystem::path m_sceneToLoadFilename;
   PlyAsyncLoader        m_plyLoader;
 
-  nvvkhl::Application*              m_app{nullptr};
+  nvvkhl::Application*                     m_app{nullptr};
   std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
-  std::unique_ptr<nvvk::DebugUtil>  m_dutil;
-  std::shared_ptr<nvvkhl::AllocVma> m_alloc;
+  std::unique_ptr<nvvk::DebugUtil>         m_dutil;
+  std::shared_ptr<nvvkhl::AllocVma>        m_alloc;
 
   glm::vec2                        m_viewSize    = {0, 0};
   VkFormat                         m_colorFormat = VK_FORMAT_R8G8B8A8_UNORM;       // Color format of the image
@@ -263,11 +204,6 @@ private:  // Attributes
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
-  struct Vertex
-  {
-    glm::vec3 pos;
-  };
-
   // Resources
   nvvk::Buffer m_frameInfo;
   nvvk::Buffer m_pixelBuffer;
@@ -275,25 +211,26 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
   nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
 
-  nvvk::Buffer m_indirect;      // indirect parametter buffer 
-  nvvk::Buffer m_indirectHost;  // for debug readback
-  IndirectParams m_indirectReadback;  // for debug readback
+  nvvk::Buffer   m_indirect;          // indirect parametter buffer
+  nvvk::Buffer   m_indirectHost;      // buffer for readback
+  IndirectParams m_indirectReadback;  // readback values
 
   //
-  nvvk::Buffer m_vertices;  // Buffer of the vertices for the splat quad
-  nvvk::Buffer m_indices;   // Buffer of the indices for the splat quad
-  VkSampler    m_sampler;   // texture sampler
+  nvvk::Buffer m_vertices;  // Buffer of vertices for the splat quad
+  nvvk::Buffer m_indices;   // Buffer of indices for the splat quad
 
   // Data and setting
   SplatSet m_splatSet;
 
+  // Data textures
+  VkSampler                      m_sampler;  // texture sampler
   std::shared_ptr<SampleTexture> m_centersMap;
   std::shared_ptr<SampleTexture> m_colorsMap;
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
   // mesh shaders
-  bool m_useMeshShaders = false;      // switch between vertex and mesh shaders
+  bool m_useMeshShaders = true;  // switch between vertex and mesh shaders
 
   bool m_supportsEXT = false;
   bool m_disableEXT  = false;
@@ -301,33 +238,34 @@ private:  // Attributes
   bool m_supportsSubgroupControl = false;
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 
-  //
-  bool  m_gpuSortingEnabled = true;
-  float m_distTime        = 0.0f;  // distance update timer
-  float m_sortTime        = 0.0f;  // distance sorting timer
+  // gpu/cpu sort switch
+  bool m_gpuSortingEnabled = true;
 
-  // threaded sorting
-  std::vector<std::pair<float, int>> distArray;
-  std::thread                        sortingThread;
-  std::mutex                         mutex;
-  std::condition_variable            cond_var;
-  bool                               sortStart = false;
-  bool                               sortDone  = false;
-  bool                               sortExit  = false;
-  glm::vec3                          sortDir;
-  glm::vec3                          sortCop;
-  std::vector<uint32_t>              gsIndex;
-  std::vector<uint32_t>              sortGsIndex;
-  
+  // CPU async sorting
+  std::vector<std::pair<float, int>> distArray;  // dist, id
+
+  std::thread             sortingThread;
+  std::mutex              mutex;
+  std::condition_variable cond_var;
+  bool                    sortStart = false;
+  bool                    sortDone  = false;
+  bool                    sortExit  = false;
+  glm::vec3               sortDir;
+  glm::vec3               sortCop;
+  std::vector<uint32_t>   gsIndex;
+  std::vector<uint32_t>   sortGsIndex;
+  float                   m_distTime = 0.0f;  // distance update timer
+  float                   m_sortTime = 0.0f;  // distance sorting timer
+
   // GPU radix sort
   SortData             m_data;
   VrdxSorter           m_sorter;
   VrdxSorterCreateInfo m_sorterInfo;
   std::vector<float>   m_dist;
 
-  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;   // will contain values and splat count
-  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
+  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;    // will contain values and splat count
+  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders

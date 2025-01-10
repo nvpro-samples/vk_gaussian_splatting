@@ -262,6 +262,7 @@ create_sample(gaussian_splatting
     src/ply_async_loader.h
     src/ply_async_loader.cpp
     src/splat_set.h
+    src/sampler_texture.h
     src/miniply.h
     src/miniply.cpp
   SHADER_SOURCES 
