@@ -86,14 +86,7 @@ inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>&
   return a.first > b.first;
 }
 
-// TODOC
-struct SortData
-{
-  std::vector<uint32_t> keys;
-  std::vector<uint32_t> values;
-};
-
-// TODO: class documentation
+// 
 class GaussianSplatting : public nvvkhl::IAppElement
 {
 public:  // Methods specializing IAppElement
@@ -245,22 +238,21 @@ private:  // Attributes
   bool                    sortStart = false;
   bool                    sortDone  = false;
   bool                    sortExit  = false;
-  glm::vec3               sortDir;
-  glm::vec3               sortCop;
+  glm::vec3               sortDir   = {1.0f, 0.0f, 0.0f};
+  glm::vec3               sortCop   = {0.0f, 0.0f, 0.0f};
   std::vector<uint32_t>   gsIndex;
   std::vector<uint32_t>   sortGsIndex;
   float                   m_distTime = 0.0f;  // distance update timer
   float                   m_sortTime = 0.0f;  // distance sorting timer
 
   // GPU radix sort
-  SortData             m_data;
-  VrdxSorter           m_sorter;
+  VrdxSorter           m_sorter = VK_NULL_HANDLE;
   VrdxSorterCreateInfo m_sorterInfo;
   std::vector<float>   m_dist;
 
-  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;    // will contain values and splat count
-  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
+  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;   // will contain values and splat count
+  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
