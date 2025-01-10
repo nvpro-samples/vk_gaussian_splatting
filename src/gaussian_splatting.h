@@ -20,10 +20,6 @@
 #ifndef _GAUSSIAN_SPLATTING_H_
 #define _GAUSSIAN_SPLATTING_H_
 
-// clang-format off
-#define IM_VEC2_CLASS_EXTRA ImVec2(const glm::vec2& f) {x = f.x; y = f.y;} operator glm::vec2() const { return glm::vec2(x, y); }
-// clang-format on
-
 #include <string>
 #include <array>
 #include <chrono>
@@ -63,7 +59,6 @@
 #include "nvvk/descriptorsets_vk.hpp"
 #include "nvvk/dynamicrendering_vk.hpp"
 #include "nvvk/extensions_vk.hpp"
-//#include "nvvk/images_vk.hpp"
 #include "nvvk/pipeline_vk.hpp"
 #include "nvvk/shaders_vk.hpp"
 //

@@ -16,13 +16,6 @@
  * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
-//////////////////////////////////////////////////////////////////////////
-/*
-
- This sample creates a 3D cube and render using the builtin camera
-
-*/
-//////////////////////////////////////////////////////////////////////////
 
 #ifndef _PLY_ASYNC_LOADER_H_
 #define _PLY_ASYNC_LOADER_H_

@@ -152,6 +152,8 @@ function(create_sample  PROJECT_NAME)
       ${ARGS_SHADER_HLSL}
       ${ARGS_SHADER_SLANG}
     )
+    
+    source_group("Source Files" FILES ${ARGS_SOURCES} ${ARGS_HEADERS})
 
     # Readme 
     target_sources(${EXECUTABLE_NAME} PRIVATE ${SAMPLE_FOLDER}/README.md)
@@ -255,17 +257,17 @@ endfunction()
 set(SHD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 
 create_sample(gaussian_splatting
-  SOURCES 
+  SOURCES     
     src/main.cpp
     src/gaussian_splatting.h
-    src/gaussian_splatting.cpp 
+    src/gaussian_splatting.cpp
+    src/gaussian_splatting_ui.cpp
     src/ply_async_loader.h
     src/ply_async_loader.cpp
     src/splat_set.h
-    src/sampler_texture.h
     src/miniply.h
     src/miniply.cpp
-  SHADER_SOURCES 
+  SHADER_SOURCES
     ${SHD_DIR}/rank.comp.glsl
     ${SHD_DIR}/raster.vert.glsl
     ${SHD_DIR}/raster.frag.glsl
