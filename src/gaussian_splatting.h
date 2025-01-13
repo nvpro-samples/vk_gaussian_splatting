@@ -80,12 +80,6 @@ using namespace glm;
 #include "ply_async_loader.h"
 #include "sampler_texture.h"
 
-// TODO: for parallel sort, can be defined as a lambda in place
-inline bool compare(const std::pair<float, int>& a, const std::pair<float, int>& b)
-{
-  return a.first > b.first;
-}
-
 //
 class GaussianSplatting : public nvvkhl::IAppElement
 {
@@ -135,8 +129,24 @@ private:  // Methods
 
   void destroyVkBuffers();
 
-  // reset the attributes of the frameInformation that are
-  // modified by the user interface
+    // create the texture maps on the device and upload the splat set data from host to device
+  void createDataTextures(void);
+
+  void destroyDataTextures(void);
+    
+  // Utility function to compute the texture size according to the size of the data to be stored
+  // TODO: doc of parameters
+  inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
+  {
+    // we allways use map of 4K Width then adjust the height according to the data size
+    glm::ivec2 texSize(4096, 1024);
+    while(texSize.x * texSize.y * elementsPerTexel < maxSplatCount * elementsPerSplat)
+      texSize.y *= 2;
+    return texSize;
+  };
+
+  // reset the attributes of the frameInformation that can
+  // be modified by the user interface
   inline void resetFrameInfo()
   {
     frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
@@ -150,15 +160,6 @@ private:  // Methods
     frameInfo.gpuSorting                 = 1;     // enabled, in {0,1}
     frameInfo.culling                    = 1;     // enabled, in {0,1}
   }
-
-  // Utility function to compute the texture size according to the size of the data to be stored
-  // TODO: doc of parameters
-  glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount);
-
-  // create the texture maps on the device and upload the splat set data from host to device
-  void create3dgsTextures(void);
-
-  void destroy3dgsTextures(void);
 
 private:  // Attributes
   //
@@ -178,7 +179,7 @@ private:  // Attributes
   VkFormat                         m_colorFormat = VK_FORMAT_R8G8B8A8_UNORM;       // Color format of the image
   VkFormat                         m_depthFormat = VK_FORMAT_X8_D24_UNORM_PACK32;  // Depth format of the depth buffer
   VkClearColorValue                m_clearColor  = {{0.0F, 0.0F, 0.0F, 1.0F}};     // Clear color
-  VkDevice                         m_device      = VK_NULL_HANDLE;                 // Convenient
+  VkDevice                         m_device      = VK_NULL_HANDLE;                 // Convenient sortcut to device
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
@@ -244,11 +245,10 @@ private:  // Attributes
   // GPU radix sort
   VrdxSorter           m_sorter = VK_NULL_HANDLE;
   VrdxSorterCreateInfo m_sorterInfo;
-  std::vector<float>   m_dist;
 
-  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;    // will contain values and splat count
-  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
+  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;   // will contain values and splat count
+  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders

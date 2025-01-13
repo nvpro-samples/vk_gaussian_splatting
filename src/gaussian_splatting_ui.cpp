@@ -66,7 +66,7 @@ void GaussianSplatting::onUIRender()
     {
       vkDeviceWaitIdle(m_device);
       destroyScene();
-      destroy3dgsTextures();
+      destroyDataTextures();
       destroyVkBuffers();
       destroyPipeline();
     }
@@ -139,7 +139,7 @@ void GaussianSplatting::onUIRender()
         //
         createVkBuffers();
         createPipeline();
-        create3dgsTextures();
+        createDataTextures();
         m_plyLoader.reset();
         //
         ImGui::CloseCurrentPopup();

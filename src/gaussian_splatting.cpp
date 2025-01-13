@@ -85,7 +85,7 @@ void GaussianSplatting::onDetach()
   // release resources
   vkDeviceWaitIdle(m_device);
   destroyScene();
-  destroy3dgsTextures();
+  destroyDataTextures();
   destroyVkBuffers();
   destroyPipeline();
   destroyGbuffers();
@@ -469,6 +469,9 @@ void GaussianSplatting::sortingThreadFunc(void)
   auto time1 = std::chrono::high_resolution_clock::now();
   m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
 
+  // comparison function working of the data <dist,idex>
+  auto compare = [](const std::pair<float, int>& a, const std::pair<float, int>& b) { return a.first > b.first; };
+
   // Sorting the array with respect to distance keys
 #if defined(SEQUENTIAL) || !defined(_WIN32)
   std::sort(distArray.begin(), distArray.end(), compare);
@@ -779,15 +782,7 @@ void GaussianSplatting::destroyVkBuffers()
   m_alloc->destroy(m_pixelBuffer);
 }
 
-glm::ivec2 GaussianSplatting::computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
-{
-  glm::ivec2 texSize(4096, 1024);
-  while(texSize.x * texSize.y * elementsPerTexel < maxSplatCount * elementsPerSplat)
-    texSize.y *= 2;
-  return texSize;
-};
-
-void GaussianSplatting::create3dgsTextures(void)
+void GaussianSplatting::createDataTextures(void)
 {
 
   const int splatCount = m_splatSet.positions.size() / 3;
@@ -798,11 +793,13 @@ void GaussianSplatting::create3dgsTextures(void)
   sampler_info.minFilter  = VK_FILTER_NEAREST;
   sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-  // centers - TODO: pack as covariances not to waste alpha chanel - but compare performance (1 lookup vs 2 lookups due to packing)
+  // centers 
+  // TODO: pack as covariances not to waste alpha chanel ? but compare performance (1 lookup vs 2 lookups due to packing)
   glm::vec2          centersMapSize = computeDataTextureSize(3, 3, splatCount);
   std::vector<float> centers(splatCount * 4);  // init with positions
   for(int i = 0; i < splatCount; ++i)
   {
+    // we skip the alpha channel that is left undefined and not used in the shader
     for(int cmp = 0; cmp < 3; ++cmp)
     {
       centers[i * 4 + cmp] = m_splatSet.positions[i * 3 + cmp];
@@ -970,7 +967,7 @@ void GaussianSplatting::create3dgsTextures(void)
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-void GaussianSplatting::destroy3dgsTextures()
+void GaussianSplatting::destroyDataTextures()
 {
   // destructors will invoke destroy on next frame
   m_centersMap.reset();
