@@ -185,6 +185,11 @@ void GaussianSplatting::onUIRender()
       
       PE::begin("##3DGS rendering");
 
+      bool vsync = m_app->isVsync();
+      PE::entry(
+          "V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); });
+      m_app->setVsync(vsync);
+
       if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
       {
         if(m_selectedPipeline == PIPELINE_MESH && frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
