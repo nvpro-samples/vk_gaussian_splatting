@@ -30,9 +30,10 @@
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 128, max_primitives = 64) out;
 
+// Per vertex output
 layout(location = 0) out vec2 outFragPos[];
-layout(location = 1) out vec4 outFragCol[];
-
+// Per primitive output
+layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
 
 // in order to manage alignment automatically we could write:
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
@@ -142,11 +143,6 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-
-      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(0, 1, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(0, 1, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(0, 1, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(0, 1, 0, 1);
 
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
@@ -293,10 +289,7 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(1, 0, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(1, 0, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(1, 0, 0, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(1, 0, 0, 1);
+      
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
@@ -346,11 +339,6 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      
-      outFragCol[gl_LocalInvocationIndex * 4 + 0] = vec4(0, 0, 1, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 1] = vec4(0, 0, 1, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 2] = vec4(0, 0, 1, 1);
-      outFragCol[gl_LocalInvocationIndex * 4 + 3] = vec4(0, 0, 1, 1);
 
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
@@ -386,15 +374,16 @@ void main()
       fragPos *= sqrt8;
 
       outFragPos[gl_LocalInvocationIndex * 4 + i] = fragPos;
-
-      outFragCol[gl_LocalInvocationIndex * 4 + i] = splatColor;
-      
     }
-
+    
     /////////////
-    // emit triangles
+    // emit primitives (triangles) and per primitive attributes
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
+
+    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
+    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+
   }
 
 }
