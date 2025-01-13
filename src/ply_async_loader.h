@@ -34,11 +34,11 @@ class PlyAsyncLoader
 public:
   enum Status
   {
-    SHUTDOWN,
-    READY,
-    LOADING,
-    LOADED,
-    FAILURE
+    SHUTDOWN, // loader must be initialized (loading thread is not started)
+    READY,    // loader ready to load a new model
+    LOADING,  // loader is currently loading
+    LOADED,   // loader has finished loading, model is available. call reset before another load.
+    FAILURE   // an error eccured. call reset before another load.
   };
 
 public:
@@ -46,7 +46,7 @@ public:
   // starts the loader thread
   bool initialize();
   // stops the loader thread, cannot be re-used afterward
-  [[nodiscard]] inline void shutdown()
+  inline void shutdown()
   {
     std::unique_lock<std::mutex> lock(m_mutex);
     m_shutdownRequested = true;
@@ -57,18 +57,17 @@ public:
   }
   // triggers the load of a new scene
   // return false if loader not in idled state
-  // thread safe, output must not be accessed if while is not LOADED or READY (after reset)
+  // output must not be accessed if status is not LOADED or READY (after reset)
   bool loadScene(std::string filename, SplatSet& output);
   // cancel scene loading if possible
   // non blocking, may have no effect
-  // thread safe
   void cancel();
-  // return lodaer status
-  // thread safe
+  // return loader status
   Status getStatus();
   // Resets the loader to READY after LOADED or FAILURE
   // used to ack that the consumer has consumed the loaded model
   // loader must be reset to be able to launch a new load
+  // thread safe
   bool reset();
   // return the filename currently beeing loaded, "" otherwise
   [[nodiscard]] inline std::string getFilename() { 
@@ -76,7 +75,9 @@ public:
     return m_filename;
   }
   // return percentage in {0,1} of progress
-  // fake infinite for the time beeing 
+  // do not rely on progress to find loader status
+  // use getStatus(). progress is just an indication 
+  // for UI display.
   [[nodiscard]] inline float getProgress()
   {
     std::lock_guard<std::mutex> lock(m_mutex);

@@ -35,11 +35,6 @@ void GaussianSplatting::initGui() {
   m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
   //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono");
   m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
-  // Frustum culling method selector
-  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_NONE, "Disabled");
-  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_DIST, "Distance shader");  // enabled at startup since GPU sort is enabled at startup
-  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_VERT, "Vertex shader", true);  // disabled on startup
-  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_MESH, "Mesh shader");
 }
 
 void GaussianSplatting::onUIRender()
