@@ -26,6 +26,22 @@
 
 #include <gaussian_splatting.h>
 
+void GaussianSplatting::initGui() {
+  // Pipeline selector
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Vertex shader");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Mesh shader");
+  // m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX,  "Ray tracing", true);  // disabled for the time being, not implemented
+  // Sorting method selector
+  m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
+  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono");
+  m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
+  // Frustum culling method selector
+  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_NONE, "Disabled");
+  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_DIST, "Distance shader");  // enabled at startup since GPU sort is enabled at startup
+  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_VERT, "Vertex shader", true);  // disabled on startup
+  m_ui.enumAdd(GUI_FRUSTUM_CULLING, FRUSTUM_CULLING_MESH, "Mesh shader");
+}
+
 void GaussianSplatting::onUIRender()
 {
   if(!m_gBuffers)
@@ -160,34 +176,64 @@ void GaussianSplatting::onUIRender()
     {
       ImGuiH::CameraWidget();
     }
-    if(ImGui::CollapsingHeader("3DGS parameters", ImGuiTreeNodeFlags_DefaultOpen))
+    if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
       if(ImGui::Button("Reset"))
       {
         resetFrameInfo();
       }
       
-      PE::begin("##3DGS sorting");
+      PE::begin("##3DGS rendering");
 
-      bool disableGpuSorting = !m_gpuSortingEnabled;
-      PE::entry(
-          "Disable GPU sorting ", [&]() { return ImGui::Checkbox("##DisableGPUSorting", &disableGpuSorting); }, "TODOC");
-      m_gpuSortingEnabled = !disableGpuSorting;
-      
-      ImGui::BeginDisabled(disableGpuSorting);
-      bool culling = m_gpuSortingEnabled && frameInfo.culling != 0;
-      PE::entry(
-          "Frustum culling", [&]() { return ImGui::Checkbox("##hiddenID", &culling); }, "TODOC");
-      frameInfo.culling = culling ? 1 : 0;
-      ImGui::EndDisabled();
-      PE::end();
+      if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
+      {
+        if(m_selectedPipeline == PIPELINE_MESH && frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
+        {
+          frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+        }
+        else if(m_selectedPipeline == PIPELINE_VERT && frameInfo.frustumCulling == FRUSTUM_CULLING_MESH)
+        {
+          frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+        }
+      }
 
-      PE::begin("##3DGS splatting");
+      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &frameInfo.sortingMethod); }))
+      {
+        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && frameInfo.frustumCulling == FRUSTUM_CULLING_DIST)
+        {
+          if(m_selectedPipeline == PIPELINE_MESH)
+          {
+            frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+          }
+          else if(m_selectedPipeline == PIPELINE_VERT)
+          {
+            frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+          }
+        }
+      }
 
-      PE::entry(
-          "Mesh shaders", [&]() { return ImGui::Checkbox("##HiddenID", &m_useMeshShaders); },
-          "Switch betten use of vertex shader pipeline and mesh shader pipeline");
+      // Radio buttons for exclusive selection
+      PE::entry("Frustum culling", [&]() {
+        if(ImGui::RadioButton("Disabled", frameInfo.frustumCulling == FRUSTUM_CULLING_NONE))
+          frameInfo.frustumCulling = FRUSTUM_CULLING_NONE;
 
+        ImGui::BeginDisabled(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
+        if(ImGui::RadioButton("In distance shader", frameInfo.frustumCulling == FRUSTUM_CULLING_DIST))
+          frameInfo.frustumCulling = FRUSTUM_CULLING_DIST;
+        ImGui::EndDisabled();
+
+        ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_VERT);
+        if(ImGui::RadioButton("In vertex shader", frameInfo.frustumCulling == FRUSTUM_CULLING_VERT))
+          frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+        ImGui::EndDisabled();
+        
+        ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
+        if(ImGui::RadioButton("In mesh shader", frameInfo.frustumCulling == FRUSTUM_CULLING_MESH))
+          frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+        ImGui::EndDisabled();
+        return true;
+          });
+            
       PE::SliderFloat(
           "Splat scale",
           (float*)&frameInfo.splatScale, 0.1f,
@@ -216,7 +262,7 @@ void GaussianSplatting::onUIRender()
 
       PE::end();
     }
-    if(ImGui::CollapsingHeader("3DGS statistics", ImGuiTreeNodeFlags_DefaultOpen))
+    if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
       // TODO: do not use disabled input object to display statistics
       PE::begin("##3DGS statistics");
@@ -229,11 +275,13 @@ void GaussianSplatting::onUIRender()
       uint32_t totalSplatCount = (uint32_t)gsIndex.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
-      uint32_t renderedSplatCount = !m_gpuSortingEnabled ? totalSplatCount : m_indirectReadback.instanceCount;
+      uint32_t renderedSplatCount =
+          (frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       PE::entry(
           "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
-      uint32_t wg =
-          m_useMeshShaders ? (m_gpuSortingEnabled ? m_indirectReadback.groupCountX : (frameInfo.splatCount + 31) / 32) : 0;
+      uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
+                        ((frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                                                                               (frameInfo.splatCount + 31) / 32) : 0;
       PE::entry(
           "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
       ImGui::EndDisabled();

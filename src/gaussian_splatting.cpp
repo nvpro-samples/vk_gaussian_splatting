@@ -42,6 +42,8 @@ const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
+  initGui();
+
   // starts the loader
   m_plyLoader.initialize();
   
@@ -125,7 +127,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // some attributes of frameInfo were set by the user interface
     const glm::vec2& clip = CameraManip.getClipPlanes();
     frameInfo.splatCount  = splatCount;
-    frameInfo.gpuSorting  = m_gpuSortingEnabled;
     frameInfo.viewMatrix  = CameraManip.getMatrix();
     frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
     // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
@@ -146,7 +147,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
     
-    if(!m_gpuSortingEnabled)
+    if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
     {
       // upload CPU sorted indices to the GPU if needed
       bool newIndexAvailable = false;
@@ -233,11 +234,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
 
     // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
-    if(m_gpuSortingEnabled)
+    if(frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       { // reset the draw indirect parameters and counters, will be updated by compute shader
         const IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
-                vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(drawIndexedIndirectParams),
+        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(drawIndexedIndirectParams),
                           (void*)&drawIndexedIndirectParams);
 
         VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
@@ -321,7 +322,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     m_app->setViewport(cmd);
     if(splatCount)
     {
-      if(!m_useMeshShaders)
+      if(m_selectedPipeline == PIPELINE_VERT)
       { // Pipeline using vertex shader
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
@@ -343,7 +344,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         const VkDeviceSize offsets{0};
         vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-        if(!m_gpuSortingEnabled)
+        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
         {
           vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
           vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
@@ -363,7 +364,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
         // overrides the pipeline setup for depth test/write
         vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-        if(!m_gpuSortingEnabled)
+        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
         {
           // run the workgroups
           vkCmdDrawMeshTasksEXT(cmd, (frameInfo.splatCount + 31) / 32, 1, 1);
@@ -420,7 +421,7 @@ void GaussianSplatting::sortingThreadFunc(void)
       return;
 
     // There is no reason this arrives but we test just in case
-    assert(!m_gpuSortingEnabled);
+    assert(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
 
     // since it was not an exit it is a request for a sort
     // we suppose model does not change
@@ -708,8 +709,9 @@ void GaussianSplatting::createVkBuffers()
                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
-                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-                                                     | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT 
+                                                  | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                                                  | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // debug utility

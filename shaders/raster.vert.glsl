@@ -96,7 +96,9 @@ void main() {
     vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
 
     float clip = 1.2 * clipCenter.w;
-    if (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip) {
+    if(frameInfo.frustumCulling == FRUSTUM_CULLING_VERT && (clipCenter.z < -clip || clipCenter.x < -clip
+       || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
+    {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         return;
     }

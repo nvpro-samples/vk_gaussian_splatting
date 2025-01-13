@@ -104,14 +104,10 @@ void main()
     SetMeshOutputsEXT(outputQuadCount * 4, outputQuadCount * 2);
   }
 
-  // would be more performant here than inside next conditional
-  // however,  would need key to be a multiple of 32
-  // uint splatIndex = key[splatCount + baseIndex]; 
-
   if(baseIndex < splatCount)
   {
     uint splatIndex;
-    if(frameInfo.gpuSorting==1)
+    if(frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       splatIndex = key[splatCount + baseIndex];
     }
@@ -119,7 +115,6 @@ void main()
     {
       splatIndex = cpuKey[baseIndex];
     }
-    
 
     //
     uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
@@ -136,7 +131,8 @@ void main()
     // culling
     vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
     float clip = 1.2 * clipCenter.w;
-    if(clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip)
+    if(frameInfo.frustumCulling == FRUSTUM_CULLING_MESH && (clipCenter.z < -clip || clipCenter.x < -clip
+       || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
     {
       // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -147,8 +143,7 @@ void main()
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
       gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
-    }
-    
+    }        
     // work on color
     vec4 splatColor = texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
     if(frameInfo.showShOnly == 1)

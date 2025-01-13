@@ -157,11 +157,25 @@ private:  // Methods
     frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
     frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
-    frameInfo.gpuSorting                 = 1;     // enabled, in {0,1}
-    frameInfo.culling                    = 1;     // enabled, in {0,1}
+    frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
+    frameInfo.frustumCulling             = FRUSTUM_CULLING_DIST;
   }
 
+  // for multiple choice selectors
+  enum GuiEnums
+  {
+    GUI_SORTING,         // the sorting method to use 
+    GUI_PIPELINE,        // the rendering pipeline to use 
+    GUI_FRUSTUM_CULLING  // where to perform frustum culling (or disabled)
+  };
+
+  void initGui(void);
+
 private:  // Attributes
+
+  // UI 
+  ImGuiH::Registry m_ui;
+
   //
   std::filesystem::path m_sceneToLoadFilename;
   PlyAsyncLoader        m_plyLoader;
@@ -220,11 +234,8 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
-  // switch between vertex and mesh shaders
-  bool m_useMeshShaders = true;
-
-  // GPU/CPU sort switch
-  bool m_gpuSortingEnabled = true;
+  // rendering pipeline selector
+  uint32_t m_selectedPipeline = PIPELINE_MESH;
 
   // CPU async sorting
   std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>

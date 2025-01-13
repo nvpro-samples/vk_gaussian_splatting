@@ -17,37 +17,54 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Warning, struct members must 
+// type of method used for sorting
+#define SORTING_GPU_SYNC_RADIX 0
+#define SORTING_CPU_ASYNC_MONO 1
+#define SORTING_CPU_ASYNC_MULTI 2
+
+// type of pipeline used
+#define PIPELINE_MESH 0
+#define PIPELINE_VERT 1
+#define PIPELINE_RTX 2
+
+// type of frustum culling
+#define FRUSTUM_CULLING_NONE 0
+#define FRUSTUM_CULLING_DIST 1
+#define FRUSTUM_CULLING_VERT 2
+#define FRUSTUM_CULLING_MESH 3
+
+// Warning, struct members must
 // be aligned to 128 bits
-// 
+//
 struct FrameInfo
 {
   mat4 projectionMatrix;
   mat4 viewMatrix;
 
-  vec3 cameraPosition;
+  vec3  cameraPosition;
   float orthoZoom;
 
-  vec2  focal;
-  vec2  viewport;
+  vec2 focal;
+  vec2 viewport;
 
-  vec2  basisViewport;
-  int   orthographicMode;
-  int   pointCloudModeEnabled;
-  
+  vec2 basisViewport;
+  int  orthographicMode;
+  int  pointCloudModeEnabled;
+
   float inverseFocalAdjustment;
   int   sphericalHarmonicsDegree;
-  int   sphericalHarmonics8BitMode; // unused
+  int   sphericalHarmonics8BitMode;  // unused
   float splatScale;
 
-  int   showShOnly;
-  int   opacityGaussianDisabled;
-  int   splatCount;
-  int   gpuSorting;
+  int showShOnly;
+  int opacityGaussianDisabled;
+  int splatCount;
+  int sortingMethod;
 
-  int   culling;
+  int frustumCulling;
 };
 
+// not used
 struct PushConstant
 {
   mat4 transfo;
