@@ -123,30 +123,33 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   if(splatCount)
   {
-    // Update frame parameters uniform buffer
-    // some attributes of frameInfo were set by the user interface
-    const glm::vec2& clip = CameraManip.getClipPlanes();
-    frameInfo.splatCount  = splatCount;
-    frameInfo.viewMatrix  = CameraManip.getMatrix();
-    frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-    // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
-    frameInfo.projectionMatrix[1][1] *= -1;
-    frameInfo.cameraPosition         = eye;
-    float       devicePixelRatio     = 1.0;
-    const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-    const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
-    const bool  isOrthographicCamera = false;
-    const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
-    const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
-    frameInfo.orthoZoom              = 1.0f;
-    frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
-    frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
-    frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-    frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
-    frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+    {
+      auto timerSection = m_profiler->timeRecurring("UBO update", cmd);
 
-    vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
-    
+      // Update frame parameters uniform buffer
+      // some attributes of frameInfo were set by the user interface
+      const glm::vec2& clip = CameraManip.getClipPlanes();
+      frameInfo.splatCount  = splatCount;
+      frameInfo.viewMatrix  = CameraManip.getMatrix();
+      frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
+      // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
+      frameInfo.projectionMatrix[1][1] *= -1;
+      frameInfo.cameraPosition         = eye;
+      float       devicePixelRatio     = 1.0;
+      const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+      const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+      const bool  isOrthographicCamera = false;
+      const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
+      const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
+      frameInfo.orthoZoom              = 1.0f;
+      frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
+      frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
+      frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
+      frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
+      frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+
+      vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
+    }
     if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
     {
       // upload CPU sorted indices to the GPU if needed
@@ -965,6 +968,15 @@ void GaussianSplatting::createDataTextures(void)
   m_memoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
   m_memoryStats.devShOther =  
       sphericalHarmonicsMapSize.x * sphericalHarmonicsMapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
+
+  // update statistics totals
+  m_memoryStats.srcShAll = m_memoryStats.srcSh0 + m_memoryStats.srcShOther;
+  m_memoryStats.odevShAll = m_memoryStats.odevSh0 + m_memoryStats.odevShOther;
+  m_memoryStats.devShAll  = m_memoryStats.devSh0 + m_memoryStats.devShOther;
+
+  m_memoryStats.srcAll = m_memoryStats.srcCenters + m_memoryStats.srcCov + m_memoryStats.srcSh0 + m_memoryStats.srcShOther;
+  m_memoryStats.odevAll = m_memoryStats.odevCenters + m_memoryStats.odevCov + m_memoryStats.odevSh0 + m_memoryStats.odevShOther;
+  m_memoryStats.devAll = m_memoryStats.devCenters + m_memoryStats.devCov + m_memoryStats.devSh0 + m_memoryStats.devShOther;
 
   // TODO: shall we move that semewere else, since buffers has noting to do with data textures ?
   std::vector<VkWriteDescriptorSet> writes;

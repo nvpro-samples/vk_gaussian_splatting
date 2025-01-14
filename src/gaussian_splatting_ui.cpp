@@ -322,15 +322,6 @@ void GaussianSplatting::onUIRender()
         ImGui::TableHeadersRow();
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImGui::Text("Total");
-        ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcAll).c_str());
-        ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevAll).c_str());
-        ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devAll).c_str());
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
         ImGui::Text("Centers");
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(m_memoryStats.srcCenters).c_str());
@@ -366,6 +357,23 @@ void GaussianSplatting::onUIRender()
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(m_memoryStats.devShOther).c_str());
         ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("SH Total");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcShAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevShAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devShAll).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Total");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devAll).c_str());
         ImGui::EndTable();
       }
     }
