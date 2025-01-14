@@ -54,7 +54,7 @@ public:
   {
     const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     m_size                              = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-    const VkImageCreateInfo create_info = nvvk::makeImage2DCreateInfo(m_size, format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
+    const VkImageCreateInfo create_info = nvvk::makeImage2DCreateInfo(m_size, format, VK_IMAGE_USAGE_SAMPLED_BIT, false);
 
     nvvk::CommandPool cpool(m_device, m_queueIndex);
     VkCommandBuffer   cmd = cpool.createCommandBuffer();

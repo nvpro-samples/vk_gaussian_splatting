@@ -26,6 +26,26 @@
 
 #include <gaussian_splatting.h>
 
+std::string formatMemorySize(size_t sizeInBytes)
+{
+  static const std::string units[]     = {"B", "KB", "MB", "GB"};
+  static const size_t      unitSizes[] = {1, 1000, 1000 * 1000, 1000 * 1000 * 1000};
+
+  uint32_t currentUnit = 0;
+  for(uint32_t i = 1; i < 4; i++)
+  {
+    if(sizeInBytes < unitSizes[i])
+    {
+      break;
+    }
+    currentUnit++;
+  }
+
+  float size = float(sizeInBytes) / float(unitSizes[currentUnit]);
+
+  return fmt::format("{:.3} {}", size, units[currentUnit]);
+}
+
 void GaussianSplatting::initGui() {
   // Pipeline selector
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Vertex shader");
@@ -287,6 +307,67 @@ void GaussianSplatting::onUIRender()
       ImGui::EndDisabled();
 
       PE::end();
+    }
+    ImGui::End();
+    ImGui::Begin("Statistics");
+
+    if(ImGui::CollapsingHeader("Memory Statistics", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
+      {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Model", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Allocated", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Total");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devAll).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Centers");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcCenters).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevCenters).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devCenters).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Covariances");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcCov).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevCov).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devCov).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("SH degree 0");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcSh0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevSh0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devSh0).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("SH degree 1,2,3");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcShOther).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevShOther).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devShOther).c_str());
+        ImGui::TableNextRow();
+        ImGui::EndTable();
+      }
     }
     ImGui::End();
   }

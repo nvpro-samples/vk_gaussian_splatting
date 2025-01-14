@@ -68,6 +68,7 @@
 #include "nvvkhl/element_camera.hpp"
 #include "nvvkhl/element_gui.hpp"
 #include "nvvkhl/element_profiler.hpp"
+#include "nvvkhl/element_nvml.hpp"
 #include "nvvkhl/gbuffer.hpp"
 #include "nvvkhl/pipeline_container.hpp"
 
@@ -129,11 +130,11 @@ private:  // Methods
 
   void destroyVkBuffers();
 
-    // create the texture maps on the device and upload the splat set data from host to device
+  // create the texture maps on the device and upload the splat set data from host to device
   void createDataTextures(void);
 
   void destroyDataTextures(void);
-    
+
   // Utility function to compute the texture size according to the size of the data to be stored
   // TODO: doc of parameters
   inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
@@ -161,19 +162,23 @@ private:  // Methods
     frameInfo.frustumCulling             = FRUSTUM_CULLING_DIST;
   }
 
+  // reset the memory usage stats
+  inline void resetMemoryStats() { 
+    memset((void*) & m_memoryStats, 0, sizeof(MemoryStats));
+  }
+
   // for multiple choice selectors
   enum GuiEnums
   {
-    GUI_SORTING,         // the sorting method to use 
-    GUI_PIPELINE,        // the rendering pipeline to use 
+    GUI_SORTING,         // the sorting method to use
+    GUI_PIPELINE,        // the rendering pipeline to use
     GUI_FRUSTUM_CULLING  // where to perform frustum culling (or disabled)
   };
 
   void initGui(void);
 
 private:  // Attributes
-
-  // UI 
+  // UI
   ImGuiH::Registry m_ui;
 
   //
@@ -219,7 +224,7 @@ private:  // Attributes
     uint32_t groupCountZ = 0;
   };
 
-  nvvk::Buffer   m_indirect;          // indirect parametter buffer
+  nvvk::Buffer   m_indirect;          // indirect parameter buffer
   nvvk::Buffer   m_indirectHost;      // buffer for readback
   IndirectParams m_indirectReadback;  // readback values
 
@@ -257,9 +262,9 @@ private:  // Attributes
   VrdxSorter           m_sorter = VK_NULL_HANDLE;
   VrdxSorterCreateInfo m_sorterInfo;
 
-  nvvk::Buffer m_keysDevice;    // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;   // will contain values and splat count
-  nvvk::Buffer m_storageDevice; // used internally by VrdxSorter (never read or write from to/from host)
+  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;    // will contain values and splat count
+  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
@@ -267,6 +272,48 @@ private:  // Attributes
   DH::PushConstant m_pushConst{};                            // Information sent to the shader using constant
   DH::FrameInfo    frameInfo{};                              // frame parameters, sent to device using a uniform buffer
   VkPipeline       m_computePipeline{};                      // The compute pipeline
+
+    // Memory usage statistics
+  struct MemoryStats
+  {
+    // Memory footprint on host memory
+
+    uint32_t srcAll     = 0;  // RAM bytes used for all the data of source model
+    uint32_t srcCenters = 0;  // RAM bytes used for splat centers of source model
+    // covariance
+    uint32_t srcCov = 0;
+    // spherical harmonics coeficients
+    uint32_t srcShAll = 0;  // RAM bytes used for all the SH coefs of source model
+    uint32_t srcSh0   = 0;  // RAM bytes used for SH degree 0 of source model
+    uint32_t srcShOther   = 0;  // RAM bytes used for SH degree 1 of source model
+    
+    // Memory footprint on device memory (allocated)
+
+    uint32_t devAll     = 0;  // GRAM bytes used for all the data of source model
+    uint32_t devCenters = 0;  // GRAM bytes used for splat centers of source model
+    // covariance
+    uint32_t devCov = 0;
+    // spherical harmonics coeficients
+    uint32_t devShAll = 0;  // GRAM bytes used for all the SH coefs of source model
+    uint32_t devSh0   = 0;  // GRAM bytes used for SH degree 0 of source model
+    uint32_t devShOther   = 0;  // GRAM bytes used for SH degree 1 of source model
+    
+
+    // Actual data size within textures (a.k.a. mem footprint minus padding and
+    // eventual unused components)
+
+    uint32_t odevAll     = 0;  // GRAM bytes used for all the data of source model
+    uint32_t odevCenters = 0;  // GRAM bytes used for splat centers of source model
+    // covariance
+    uint32_t odevCov = 0;
+    // spherical harmonics coeficients
+    uint32_t odevShAll = 0;  // GRAM bytes used for all the SH coefs of source model
+    uint32_t odevSh0   = 0;  // GRAM bytes used for SH degree 0 of source model
+    uint32_t odevShOther   = 0;  // GRAM bytes used for SH degree 1 of source model
+  };
+
+  // Memory usage statistics
+  MemoryStats m_memoryStats;
 };
 
 #endif

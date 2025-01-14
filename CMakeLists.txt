@@ -71,7 +71,7 @@ _add_package_ImGUI()            # All
 #_add_package_NsightAftermath()  # crash_aftermath
 #_add_package_ZLIB()             # image_ktx
 #_add_package_KTX()              # image_ktx
-#_add_package_NVML()             # gpu_monitor
+_add_package_NVML()             # gpu_monitor
 #_add_package_NVAPI()            # compute_mutil_threaded
 _add_package_ShaderC()          # tiny_shader_toy
 

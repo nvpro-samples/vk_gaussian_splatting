@@ -74,6 +74,7 @@ int main(int argc, char** argv)
   auto elementProfiler = std::make_shared<nvvkhl::ElementProfiler>(true);
   app->addElement(elementProfiler);
   app->addElement(std::make_shared<GaussianSplatting>(elementProfiler));
+  app->addElement(std::make_shared<nvvkhl::ElementNvml>());
 
   app->run();
   app.reset();

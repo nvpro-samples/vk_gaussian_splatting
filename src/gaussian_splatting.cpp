@@ -786,7 +786,6 @@ void GaussianSplatting::destroyVkBuffers()
 
 void GaussianSplatting::createDataTextures(void)
 {
-
   const int splatCount = m_splatSet.positions.size() / 3;
 
   // create a texture sampler using nearest filtering mode.
@@ -795,10 +794,11 @@ void GaussianSplatting::createDataTextures(void)
   sampler_info.minFilter  = VK_FILTER_NEAREST;
   sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-  // centers 
-  // TODO: pack as covariances not to waste alpha chanel ? but compare performance (1 lookup vs 2 lookups due to packing)
+  // centers (3 components but texture map is only allowed with 4 components)
+  // TODO: May pack as done for covariances not to waste alpha chanel ? but must 
+  // compare performance (1 lookup vs 2 lookups due to packing)
   glm::vec2          centersMapSize = computeDataTextureSize(3, 3, splatCount);
-  std::vector<float> centers(splatCount * 4);  // init with positions
+  std::vector<float> centers(centersMapSize.x * centersMapSize.y * 4);  // includes some padding and unused w channel
   for(int i = 0; i < splatCount; ++i)
   {
     // we skip the alpha channel that is left undefined and not used in the shader
@@ -807,35 +807,16 @@ void GaussianSplatting::createDataTextures(void)
       centers[i * 4 + cmp] = m_splatSet.positions[i * 3 + cmp];
     }
   }
-
-  centers.resize(centersMapSize.x * centersMapSize.y * 4);  // adds the padding
-
   // place the result in the dedicated texture map
   m_centersMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
   m_centersMap->create(centersMapSize.x, centersMapSize.y, centers.size() * sizeof(float), (void*)centers.data(),
                        VK_FORMAT_R32G32B32A32_SFLOAT);
   assert(m_centersMap->isValid());
   m_centersMap->setSampler(m_alloc->acquireSampler(sampler_info));  // sampler will be released by texture
-
-  // SH degree 0 is not view dependent, so we directly transform to base color
-  // this will make some economy of processing in the shader at each frame
-  glm::vec2            colorsMapSize = computeDataTextureSize(4, 4, splatCount);
-  std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes some padding
-  for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
-  {
-    const auto  stride3 = splatIdx * 3;
-    const auto  stride4 = splatIdx * 4;
-    const float SH_C0   = 0.28209479177387814;
-    colors[stride4 + 0] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
-    colors[stride4 + 1] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
-    colors[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
-    colors[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
-  }
-  // place the result in the dedicated texture map
-  m_colorsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
-  m_colorsMap->create(colorsMapSize.x, colorsMapSize.y, colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM);
-  assert(m_colorsMap->isValid());
-  m_colorsMap->setSampler(m_alloc->acquireSampler(sampler_info));
+  // memory statistics
+  m_memoryStats.srcCenters  = splatCount * 3 * sizeof(float);
+  m_memoryStats.odevCenters = splatCount * 3 * sizeof(float); // no compression or quantization yet
+  m_memoryStats.devCenters  = centersMapSize.x * centersMapSize.y * 4 * sizeof(float);
 
   // covariances
   glm::vec2          covariancesMapSize = computeDataTextureSize(4, 6, splatCount);
@@ -878,8 +859,36 @@ void GaussianSplatting::createDataTextures(void)
                            (void*)covariances.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
   assert(m_covariancesMap->isValid());
   m_covariancesMap->setSampler(m_alloc->acquireSampler(sampler_info));
+  // memory statistics
+  m_memoryStats.srcCov  = ( splatCount * ( 4 + 3 ) ) * sizeof(float);
+  m_memoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
+  m_memoryStats.devCov  = covariancesMapSize.x * covariancesMapSize.y * 4 * sizeof(float);
 
-  // Prepare the spherical harmonics
+  // SH degree 0 is not view dependent, so we directly transform to base color
+  // this will make some economy of processing in the shader at each frame
+  glm::vec2            colorsMapSize = computeDataTextureSize(4, 4, splatCount);
+  std::vector<uint8_t> colors(colorsMapSize.x * colorsMapSize.y * 4);  // includes some padding
+  for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+  {
+    const auto  stride3 = splatIdx * 3;
+    const auto  stride4 = splatIdx * 4;
+    const float SH_C0   = 0.28209479177387814;
+    colors[stride4 + 0] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
+    colors[stride4 + 1] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
+    colors[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
+    colors[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
+  }
+  // place the result in the dedicated texture map
+  m_colorsMap = std::make_shared<SampleTexture>(m_app->getDevice(), m_app->getQueue(0).familyIndex, m_alloc.get());
+  m_colorsMap->create(colorsMapSize.x, colorsMapSize.y, colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM);
+  assert(m_colorsMap->isValid());
+  m_colorsMap->setSampler(m_alloc->acquireSampler(sampler_info));
+  // memory statistics
+  m_memoryStats.srcSh0  = splatCount * 4 * sizeof(float);
+  m_memoryStats.odevSh0 = splatCount * 4 * sizeof(float);  // no compression or quantization yet
+  m_memoryStats.devSh0  = colorsMapSize.x * colorsMapSize.y * 4 * sizeof(float);
+
+  // Prepare the spherical harmonics of degree 1 to 3
   const int sphericalHarmonicsElementsPerTexel       = 4;
   const int totalSphericalHarmonicsComponentCount    = m_splatSet.f_rest.size() / splatCount;
   const int sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
@@ -951,6 +960,11 @@ void GaussianSplatting::createDataTextures(void)
                                   (void*)paddedSHArray.data(), VK_FORMAT_R32G32B32A32_SFLOAT);
   assert(m_sphericalHarmonicsMap->isValid());
   m_sphericalHarmonicsMap->setSampler(m_alloc->acquireSampler(sampler_info));
+  // memory statistics
+  m_memoryStats.srcShOther  = m_splatSet.f_rest.size() * sizeof(float);
+  m_memoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
+  m_memoryStats.devShOther =  
+      sphericalHarmonicsMapSize.x * sphericalHarmonicsMapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
 
   // TODO: shall we move that semewere else, since buffers has noting to do with data textures ?
   std::vector<VkWriteDescriptorSet> writes;
