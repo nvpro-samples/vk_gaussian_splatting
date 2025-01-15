@@ -21,10 +21,12 @@
 
 #extension GL_EXT_mesh_shader : require
 #extension GL_EXT_scalar_block_layout : require
-#extension GL_KHR_shader_subgroup : enable
-#extension GL_KHR_shader_subgroup_ballot : enable
-#extension GL_EXT_shader_explicit_arithmetic_types : enable
-#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_control_flow_attributes : require
+#define UNROLL_LOOP [[UNROLL]]
+//#extension GL_KHR_shader_subgroup : enable
+//#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+#extension GL_GOOGLE_include_directive : require
 #include "device_host.h"
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
@@ -73,7 +75,6 @@ ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 
   return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
-
 const float SH_C1    = 0.4886025119029199f;
 const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
 
@@ -81,14 +82,11 @@ const float SphericalHarmonics8BitCompressionRange     = 3.0;
 const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
 const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
 
-
 void main()
 {
   const uint32_t baseIndex = gl_GlobalInvocationID.x;
-  
-  const int      splatCount = frameInfo.splatCount;
-
-  const uint outputQuadCount  = min(32, splatCount - gl_WorkGroupID.x * 32);
+  const int splatCount = frameInfo.splatCount;
+  const uint outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
 
   if(gl_LocalInvocationIndex == 0)
   {
@@ -98,37 +96,50 @@ void main()
 
   if(baseIndex < splatCount)
   {
-    uint splatIndex;
-    splatIndex = indices[baseIndex];
+    const uint splatIndex = indices[baseIndex];
+        
+    // emit primitives (triangles) as soon as possible
+    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
+    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
 
+    ///////
     //
-    uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
-    uint  doubleOddOffset  = oddOffset * uint(2);
-    bool  isEven           = oddOffset == uint(0);
-    uint  nearestEvenIndex = uint(splatIndex) - oddOffset;
-    float fOddOffset       = float(oddOffset);
+    const uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
+    const uint  doubleOddOffset  = oddOffset * uint(2);
+    const bool  isEven           = oddOffset == uint(0);
+    const uint  nearestEvenIndex = uint(splatIndex) - oddOffset;
+    const float fOddOffset       = float(oddOffset);
 
-    vec3 splatCenter = vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
+    const vec3 splatCenter = vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
 
-    mat4 transformModelViewMatrix = frameInfo.viewMatrix;
-    vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
+    const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
+    const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
 
     // culling
-    vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
-    float clip = 1.2 * clipCenter.w;
-    if(frameInfo.frustumCulling == FRUSTUM_CULLING_MESH && (clipCenter.z < -clip || clipCenter.x < -clip
-       || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
+    const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
+    const float clip       = 1.2 * clipCenter.w;
+    if(frameInfo.frustumCulling == FRUSTUM_CULLING_MESH
+       && (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
     {
       // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
-    }        
+    }
+
+    // the vertices of the quad
+    const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
+
+    // emit per vertex attributes as early as possible
+    UNROLL_LOOP
+    for(uint i = 0; i < 4; ++i)
+    {
+      // Scale the fragment position data we send to the fragment shader
+      outFragPos[gl_LocalInvocationIndex * 4 + i] = positions[i].xy * sqrt8;
+    }
+
     // work on color
     vec4 splatColor = texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
     if(frameInfo.showShOnly == 1)
@@ -141,17 +152,17 @@ void main()
     if(frameInfo.sphericalHarmonicsDegree >= 1)
     {
 
-      vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+      const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
 
-      vec4 sampledSH0123 =
+      const vec4 sampledSH0123 =
           texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      vec4 sampledSH4567 =
+      const vec4 sampledSH4567 =
           texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      vec4 sampledSH891011 =
+      const vec4 sampledSH891011 =
           texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 2, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      vec3 sh1 = sampledSH0123.rgb;
-      vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
-      vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
+      const vec3 sh1 = sampledSH0123.rgb;
+      const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
+      const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
 
 
       //if (sphericalHarmonics8BitMode == 1) {
@@ -175,18 +186,18 @@ void main()
         const float yz = y * z;
         const float xz = x * z;
 
-        vec4 sampledSH12131415 =
+        const vec4 sampledSH12131415 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        vec4 sampledSH16171819 =
+        const vec4 sampledSH16171819 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        vec4 sampledSH20212223 =
+        const vec4 sampledSH20212223 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
 
-        vec3 sh4 = sampledSH891011.gba;
-        vec3 sh5 = sampledSH12131415.rgb;
-        vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
-        vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
-        vec3 sh8 = sampledSH20212223.gba;
+        const vec3 sh4 = sampledSH891011.gba;
+        const vec3 sh5 = sampledSH12131415.rgb;
+        const vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
+        const vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
+        const vec3 sh8 = sampledSH20212223.gba;
 
         //if (sphericalHarmonics8BitMode == 1) {
         //    sh4 = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
@@ -201,20 +212,24 @@ void main()
       }
     }
 
+    // emit per primitive color as early as possible for perf reasons
+    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
+    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+
     // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
-    vec4 sampledCovarianceA =
+    const vec4 sampledCovarianceA =
         texelFetch(covariancesTexture, getDataPosF(nearestEvenIndex, 1.5, oddOffset, textureSize(covariancesTexture, 0)), 0);
-    vec4 sampledCovarianceB =
+    const vec4 sampledCovarianceB =
         texelFetch(covariancesTexture,
                    getDataPosF(nearestEvenIndex, 1.5, oddOffset + uint(1), textureSize(covariancesTexture, 0)), 0);
 
-    vec3 cov3D_M11_M12_M13 =
+    const vec3 cov3D_M11_M12_M13 =
         vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
-    vec3 cov3D_M22_M23_M33 =
+    const vec3 cov3D_M22_M23_M33 =
         vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
 
     // Construct the 3D covariance matrix
-    mat3 Vrk =
+    const mat3 Vrk =
         mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
              cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 
@@ -229,39 +244,40 @@ void main()
       // Construct the Jacobian of the affine approximation of the projection matrix. It will be used to transform the
       // 3D covariance matrix instead of using the actual projection matrix because that transformation would
       // require a non-linear component (perspective division) which would yield a non-gaussian result.
-      float s = 1.0 / (viewCenter.z * viewCenter.z);
+      const float s = 1.0 / (viewCenter.z * viewCenter.z);
       J       = mat3(frameInfo.focal.x / viewCenter.z, 0., -(frameInfo.focal.x * viewCenter.x) * s, 0.,
                      frameInfo.focal.y / viewCenter.z, -(frameInfo.focal.y * viewCenter.y) * s, 0., 0., 0.);
     }
 
     // Concatenate the projection approximation with the model-view transformation
-    mat3 W = transpose(mat3(transformModelViewMatrix));
-    mat3 T = W * J;
+    const mat3 W = transpose(mat3(transformModelViewMatrix));
+    const mat3 T = W * J;
 
     // Transform the 3D covariance matrix (Vrk) to compute the 2D covariance matrix
     mat3 cov2Dm = transpose(T) * Vrk * T;
 
-    float compensation = 1.0;
-
-    bool antialiased = false;
+    const bool antialiased = false;
     if(antialiased)
     {
-      float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+      const float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
       cov2Dm[0][0] += 0.3;
       cov2Dm[1][1] += 0.3;
-      float detBlur = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
-      compensation  = sqrt(max(detOrig / detBlur, 0.0));
+      const float detBlur      = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+      const float compensation = sqrt(max(detOrig / detBlur, 0.0));
+
+      splatColor.a *= compensation;
+
+      // overwrite
+      outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
+      outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
     }
     else
     {
       cov2Dm[0][0] += 0.3;
       cov2Dm[1][1] += 0.3;
-      compensation = 1.0;
     }
 
-    splatColor.a *= compensation;
-
-    // from original code
+    // alpha based culling
     if(splatColor.a < minAlpha)
     {
       // Early return to discard splat
@@ -269,9 +285,6 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
     }
 
@@ -279,9 +292,9 @@ void main()
     // we only care about the X and Y values. We want the X-diagonal, cov2Dm[0][0],
     // the Y-diagonal, cov2Dm[1][1], and the correlation between the two cov2Dm[0][1]. We don't
     // need cov2Dm[1][0] because it is a symetric matrix.
-    vec3 cov2Dv = vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
+    const vec3 cov2Dv = vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
 
-    vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
+    const vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
 
     // We now need to solve for the eigen-values and eigen vectors of the 2D covariance matrix
     // so that we can determine the 2D basis for the splat. This is done using the method described
@@ -296,13 +309,13 @@ void main()
     // times the maximum eigen-value, or 3 standard deviations. They then use the inverse 2D covariance
     // matrix (called 'conic') in the CUDA rendering thread to determine fragment opacity by calculating the
     // full gaussian: exp(-0.5 * (X - mean) * conic * (X - mean)) * splat opacity
-    float a           = cov2Dv.x;
-    float d           = cov2Dv.z;
-    float b           = cov2Dv.y;
-    float D           = a * d - b * b;
-    float trace       = a + d;
-    float traceOver2  = 0.5 * trace;
-    float term2       = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
+    const float a           = cov2Dv.x;
+    const float d           = cov2Dv.z;
+    const float b           = cov2Dv.y;
+    const float D           = a * d - b * b;
+    const float trace       = a + d;
+    const float traceOver2  = 0.5 * trace;
+    const float term2       = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
     float eigenValue1 = traceOver2 + term2;
     float eigenValue2 = traceOver2 - term2;
 
@@ -319,51 +332,31 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-      gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
       return;
     }
 
-    vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
+    const vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
     // since the eigen vectors are orthogonal, we derive the second one from the first
-    vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
+    const vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
 
     // We use sqrt(8) standard deviations instead of 3 to eliminate more of the splat with a very low opacity.
-    vec2 basisVector1 = eigenVector1 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue1), 2048.0);
-    vec2 basisVector2 = eigenVector2 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue2), 2048.0);
+    const vec2 basisVector1 = eigenVector1 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue1), 2048.0);
+    const vec2 basisVector2 = eigenVector2 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue2), 2048.0);
 
     /////////////////////////////
-    // emiting vertices and vertex attributes
-    
-    // the vertices of the quad
-    const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
+    // emiting quad vertices
 
+    UNROLL_LOOP
     for(uint i = 0; i < 4; ++i)
     {
-      vec2 fragPos = positions[i].xy;
+      const vec2 fragPos = positions[i].xy;
 
-      vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
+      const vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
                        * frameInfo.inverseFocalAdjustment;
 
-      vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
+      const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + i].gl_Position = quadPos;
-
-      // Scale the fragment position data we send to the fragment shader
-      fragPos *= sqrt8;
-
-      outFragPos[gl_LocalInvocationIndex * 4 + i] = fragPos;
     }
-    
-    /////////////
-    // emit primitives (triangles) and per primitive attributes
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
-
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
-
   }
-
 }

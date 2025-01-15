@@ -82,49 +82,52 @@ const vec3 vec8BitSHShift = vec3(SphericalHarmonics8BitCompressionHalfRange);
 
 void main() {
 
-    uint oddOffset = uint(splatIndex) & uint(0x00000001);
-    uint doubleOddOffset = oddOffset * uint(2);
-    bool isEven = oddOffset == uint(0);
-    uint nearestEvenIndex = uint(splatIndex) - oddOffset;
-    float fOddOffset = float(oddOffset);
+    const uint oddOffset        = uint(splatIndex) & uint(0x00000001);
+    const uint doubleOddOffset  = oddOffset * uint(2);
+    const bool isEven           = oddOffset == uint(0);
+    const uint nearestEvenIndex = uint(splatIndex) - oddOffset;
+    const float fOddOffset       = float(oddOffset);
     
-    vec3 splatCenter = vec3(texelFetch(centersTexture, getDataPos(1, 0, textureSize(centersTexture, 0)),0));
+    const vec3 splatCenter = vec3(texelFetch(centersTexture, getDataPos(1, 0, textureSize(centersTexture, 0)), 0));
 
-    mat4 transformModelViewMatrix = frameInfo.viewMatrix;
-    vec4 viewCenter = transformModelViewMatrix * vec4(splatCenter, 1.0);
+    const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
+    const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
 
-    vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
+    const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
 
-    float clip = 1.2 * clipCenter.w;
+    const float clip = 1.2 * clipCenter.w;
     if(frameInfo.frustumCulling == FRUSTUM_CULLING_VERT && (clipCenter.z < -clip || clipCenter.x < -clip
        || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
     {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         return;
     }
+    
+    const vec2 fragPos = inPosition.xy;
+    // emit as early as possible
+    // Scale the position data we send to the fragment shader
+    outFragPos = fragPos * sqrt8;
 
-    outFragPos = inPosition.xy;
-
-    outFragCol = texelFetch(colorsTexture, getDataPos(1, 0, textureSize(colorsTexture,0)),0);
+    vec4 splatColor = texelFetch(colorsTexture, getDataPos(1, 0, textureSize(colorsTexture, 0)), 0);
     if (frameInfo.showShOnly == 1) {
-       outFragCol.r = 0.5;
-       outFragCol.g = 0.5;
-       outFragCol.b = 0.5;
+      splatColor.r = 0.5;
+      splatColor.g = 0.5;
+      splatColor.b = 0.5;
     }
     
     if (frameInfo.sphericalHarmonicsDegree >= 1) {
 
-        vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+        const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
         
-        vec4 sampledSH0123 =
+        const vec4 sampledSH0123 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(6, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        vec4 sampledSH4567 =
+        const vec4 sampledSH4567 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(6, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        vec4 sampledSH891011 =
+        const vec4 sampledSH891011 =
             texelFetch(sphericalHarmonicsTexture, getDataPos(6, 2, textureSize(sphericalHarmonicsTexture, 0)),0);
-        vec3 sh1 = sampledSH0123.rgb;
-        vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
-        vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
+        const vec3 sh1 = sampledSH0123.rgb;
+        const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
+        const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
 
         
         //if (sphericalHarmonics8BitMode == 1) {
@@ -136,7 +139,7 @@ void main() {
         const float x = worldViewDir.x;
         const float y = worldViewDir.y;
         const float z = worldViewDir.z;
-        outFragCol.rgb += SH_C1 * (-sh1 * y + sh2 * z - sh3 * x);
+        splatColor.rgb += SH_C1 * (-sh1 * y + sh2 * z - sh3 * x);
 
         if (frameInfo.sphericalHarmonicsDegree >= 2) {
 
@@ -147,18 +150,18 @@ void main() {
             const float yz = y * z;
             const float xz = x * z;
 
-            vec4 sampledSH12131415 =
+            const vec4 sampledSH12131415 =
                 texelFetch(sphericalHarmonicsTexture, getDataPos(6, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
-            vec4 sampledSH16171819 =
+            const vec4 sampledSH16171819 =
                 texelFetch(sphericalHarmonicsTexture, getDataPos(6, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
-            vec4 sampledSH20212223 =
+            const vec4 sampledSH20212223 =
                 texelFetch(sphericalHarmonicsTexture, getDataPos(6, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
 
-            vec3 sh4 = sampledSH891011.gba;
-            vec3 sh5 = sampledSH12131415.rgb;
-            vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
-            vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
-            vec3 sh8 = sampledSH20212223.gba;
+            const vec3 sh4 = sampledSH891011.gba;
+            const vec3 sh5 = sampledSH12131415.rgb;
+            const vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
+            const vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
+            const vec3 sh8 = sampledSH20212223.gba;
 
             //if (sphericalHarmonics8BitMode == 1) {
             //    sh4 = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
@@ -168,7 +171,7 @@ void main() {
             //    sh8 = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
             //}
 
-            outFragCol.rgb +=
+            splatColor.rgb +=
                 (SH_C2[0] * xy) * sh4 +
                 (SH_C2[1] * yz) * sh5 +
                 (SH_C2[2] * (2.0 * zz - xx - yy)) * sh6 +
@@ -177,17 +180,23 @@ void main() {
         }
     }
     
+    // emit as early as possible for perf reasons
+    outFragCol = splatColor;
+
     // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
-    vec4 sampledCovarianceA =
+    const vec4 sampledCovarianceA =
         texelFetch(covariancesTexture, getDataPosF(nearestEvenIndex, 1.5, oddOffset, textureSize(covariancesTexture, 0)),0);
-    vec4 sampledCovarianceB = 
+    const vec4 sampledCovarianceB = 
       texelFetch(covariancesTexture, getDataPosF(nearestEvenIndex, 1.5, oddOffset + uint(1), textureSize(covariancesTexture,0)),0);
 
-    vec3 cov3D_M11_M12_M13 = vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
-    vec3 cov3D_M22_M23_M33 = vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
+    const vec3 cov3D_M11_M12_M13 =
+        vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
+    const vec3 cov3D_M22_M23_M33 =
+        vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
     
     // Construct the 3D covariance matrix
-    mat3 Vrk = mat3(
+    const mat3 Vrk =
+        mat3(
         cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z,
         cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x, cov3D_M22_M23_M33.y,
         cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z
@@ -213,44 +222,43 @@ void main() {
     }
 
     // Concatenate the projection approximation with the model-view transformation
-    mat3 W = transpose(mat3(transformModelViewMatrix));
-    mat3 T = W * J;
+    const mat3 W = transpose(mat3(transformModelViewMatrix));
+    const mat3 T = W * J;
 
     // Transform the 3D covariance matrix (Vrk) to compute the 2D covariance matrix
     mat3 cov2Dm = transpose(T) * Vrk * T;
-
-    float compensation = 1.0;
-
-    bool antialiased = false;
+    
+    const bool antialiased = false;
     if (antialiased) {
-        float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+      const float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
         cov2Dm[0][0] += 0.3;
         cov2Dm[1][1] += 0.3;
-        float detBlur = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
-        compensation = sqrt(max(detOrig / detBlur, 0.0));
+        const float detBlur      = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+        const float compensation = sqrt(max(detOrig / detBlur, 0.0));
+        splatColor.a *= compensation;
+        // overwrite 
+        outFragCol = splatColor;
     }
     else {
         cov2Dm[0][0] += 0.3;
         cov2Dm[1][1] += 0.3;
-        compensation = 1.0;
     }
 
-    outFragCol.a *= compensation;
-
-    // from original code
-    if (outFragCol.a < minAlpha) {
+    // alpha based culling
+    if(splatColor.a < minAlpha)
+    {
         // JEM added gl_position set for proper discard
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         return;
-        }
+    }
 
     // We are interested in the upper-left 2x2 portion of the projected 3D covariance matrix because
     // we only care about the X and Y values. We want the X-diagonal, cov2Dm[0][0],
     // the Y-diagonal, cov2Dm[1][1], and the correlation between the two cov2Dm[0][1]. We don't
     // need cov2Dm[1][0] because it is a symetric matrix.
-    vec3 cov2Dv = vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
+    const vec3 cov2Dv = vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
 
-    vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
+    const vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
 
     // We now need to solve for the eigen-values and eigen vectors of the 2D covariance matrix
     // so that we can determine the 2D basis for the splat. This is done using the method described
@@ -265,13 +273,13 @@ void main() {
     // times the maximum eigen-value, or 3 standard deviations. They then use the inverse 2D covariance
     // matrix (called 'conic') in the CUDA rendering thread to determine fragment opacity by calculating the
     // full gaussian: exp(-0.5 * (X - mean) * conic * (X - mean)) * splat opacity
-    float a = cov2Dv.x;
-    float d = cov2Dv.z;
-    float b = cov2Dv.y;
-    float D = a * d - b * b;
-    float trace = a + d;
-    float traceOver2 = 0.5 * trace;
-    float term2 = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
+    const float a           = cov2Dv.x;
+    const float d           = cov2Dv.z;
+    const float b           = cov2Dv.y;
+    const float D           = a * d - b * b;
+    const float trace       = a + d;
+    const float traceOver2  = 0.5 * trace;
+    const float term2       = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
     float eigenValue1 = traceOver2 + term2;
     float eigenValue2 = traceOver2 - term2;
 
@@ -287,19 +295,20 @@ void main() {
         return;
     }
 
-    vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
+    const vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
     // since the eigen vectors are orthogonal, we derive the second one from the first
-    vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
+    const vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
 
     // We use sqrt(8) standard deviations instead of 3 to eliminate more of the splat with a very low opacity.
-    vec2 basisVector1 = eigenVector1 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue1), 2048.0);
-    vec2 basisVector2 = eigenVector2 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue2), 2048.0);
+    const vec2 basisVector1 = eigenVector1 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue1), 2048.0);
+    const vec2 basisVector2 = eigenVector2 * frameInfo.splatScale * min(sqrt8 * sqrt(eigenValue2), 2048.0);
 
-    vec2 ndcOffset = vec2(outFragPos.x * basisVector1 + outFragPos.y * basisVector2) *  frameInfo.basisViewport * 2.0 * frameInfo.inverseFocalAdjustment;
+    const vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
+                           * frameInfo.inverseFocalAdjustment;
 
-    vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
+    const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
     gl_Position = quadPos;
     
-    // Scale the position data we send to the fragment shader
-    outFragPos *= sqrt8;
+
+
 }
