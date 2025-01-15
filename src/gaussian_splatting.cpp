@@ -325,7 +325,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   }
   // Drawing the primitives in the G-Buffer
   {
-    auto timerSection = m_profiler->timeRecurring("Splatting", cmd);
+    auto timerSection = m_profiler->timeRecurring("Rendering", cmd);
 
     nvvk::createRenderingInfo r_info({{0, 0}, m_gBuffers->getSize()}, {m_gBuffers->getColorImageView()},
                                      m_gBuffers->getDepthImageView(), VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -424,6 +424,47 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     m_alloc->unmap(m_indirectHost);
   }
   
+  // update rendering memory statustics
+  if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+  {
+    m_renderMemoryStats.hostAllocIndices = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.hostAllocDistances = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocIndices   = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedIndices    = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocDistances = 0;
+    m_renderMemoryStats.usedDistances  = 0;
+    m_renderMemoryStats.usedIndirect   = 0;
+  }
+  else
+  {
+    m_renderMemoryStats.hostAllocDistances = 0;
+    m_renderMemoryStats.hostAllocIndices   = 0;
+    m_renderMemoryStats.allocDistances = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedDistances  = m_indirectReadback.instanceCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocIndices   = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedIndices    = m_indirectReadback.instanceCount * sizeof(uint32_t);
+    if(m_selectedPipeline == PIPELINE_VERT)
+    {
+      m_renderMemoryStats.usedIndirect = 5 * sizeof(uint32_t);
+    }
+    else
+    {
+      m_renderMemoryStats.usedIndirect = sizeof(IndirectParams);
+    }
+  }
+  m_renderMemoryStats.usedUboFrameInfo = sizeof(DH::FrameInfo);
+
+  m_renderMemoryStats.hostTotal = m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances
+       + m_renderMemoryStats.usedUboFrameInfo;
+
+  uint32_t vrdxSize = frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
+
+  m_renderMemoryStats.deviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
+                                        + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
+
+  m_renderMemoryStats.deviceAllocTotal = m_renderMemoryStats.allocIndices + m_renderMemoryStats.allocDistances + vrdxSize
+                                         + m_renderMemoryStats.usedIndirect
+                                        + m_renderMemoryStats.usedUboFrameInfo;
 }
 
 void GaussianSplatting::sortingThreadFunc(void)
@@ -723,6 +764,7 @@ void GaussianSplatting::createVkBuffers()
       VrdxSorterStorageRequirements requirements;
       vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
       m_storageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      m_renderMemoryStats.allocVdrxInternal = requirements.size; // for stats reporting only
 
       // generate debug information for buffers
       m_dutil->DBG_NAME(m_splatIndicesHost.buffer);

@@ -163,9 +163,7 @@ private:  // Methods
   }
 
   // reset the memory usage stats
-  inline void resetMemoryStats() { 
-    memset((void*) & m_memoryStats, 0, sizeof(MemoryStats));
-  }
+  inline void resetMemoryStats() { memset((void*)&m_memoryStats, 0, sizeof(MemoryStats)); }
 
   // for multiple choice selectors
   enum GuiEnums
@@ -202,11 +200,11 @@ private:  // Attributes
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
-  // 
+  //
   nvvk::Buffer m_frameInfo;
   nvvk::Buffer m_pixelBuffer;
-  
-  // indirect parameters for 
+
+  // indirect parameters for
   // vkCmdDrawIndexedIndirect (first 6 attr)
   // and vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
   struct IndirectParams
@@ -215,7 +213,7 @@ private:  // Attributes
     uint32_t indexCount    = 0;
     uint32_t instanceCount = 0;
     uint32_t firstIndex    = 0;
-    int32_t  vertexOffset  = 0;
+    uint32_t vertexOffset  = 0;
     uint32_t firstInstance = 0;
     // for vkCmdDrawMeshTasksIndirectEXT
     uint32_t groupCountX = 0;
@@ -244,7 +242,7 @@ private:  // Attributes
   // CPU async sorting
   std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>
 
-  bool forceCpuSort; // forces a CPU stort (in case of CPU sort activation), otherwise CPU sort is lazy on viewpoint change
+  bool forceCpuSort;  // forces a CPU stort (in case of CPU sort activation), otherwise CPU sort is lazy on viewpoint change
 
   std::thread             sortingThread;
   std::mutex              mutex;
@@ -256,8 +254,8 @@ private:  // Attributes
   glm::vec3               sortCop   = {0.0f, 0.0f, 0.0f};
   std::vector<uint32_t>   gsIndex;
   std::vector<uint32_t>   sortGsIndex;
-  float                   m_distTime = 0.0f;  // distance update timer
-  float                   m_sortTime = 0.0f;  // distance sorting timer
+  float                   m_distTime        = 0.0f;  // distance update timer
+  float                   m_sortTime        = 0.0f;  // distance sorting timer
   std::string             m_cpuSortStatusUi = "Idled";
 
   // GPU radix sort
@@ -285,7 +283,7 @@ private:  // Attributes
   DH::FrameInfo    frameInfo{};                              // frame parameters, sent to device using a uniform buffer
   VkPipeline       m_computePipeline{};                      // The compute pipeline
 
-    // Memory usage statistics
+  // Model related memory usage statistics
   struct MemoryStats
   {
     // Memory footprint on host memory
@@ -295,10 +293,10 @@ private:  // Attributes
     // covariance
     uint32_t srcCov = 0;
     // spherical harmonics coeficients
-    uint32_t srcShAll = 0;  // RAM bytes used for all the SH coefs of source model
-    uint32_t srcSh0   = 0;  // RAM bytes used for SH degree 0 of source model
-    uint32_t srcShOther   = 0;  // RAM bytes used for SH degree 1 of source model
-    
+    uint32_t srcShAll   = 0;  // RAM bytes used for all the SH coefs of source model
+    uint32_t srcSh0     = 0;  // RAM bytes used for SH degree 0 of source model
+    uint32_t srcShOther = 0;  // RAM bytes used for SH degree 1 of source model
+
     // Memory footprint on device memory (allocated)
 
     uint32_t devAll     = 0;  // GRAM bytes used for all the data of source model
@@ -306,10 +304,10 @@ private:  // Attributes
     // covariance
     uint32_t devCov = 0;
     // spherical harmonics coeficients
-    uint32_t devShAll = 0;  // GRAM bytes used for all the SH coefs of source model
-    uint32_t devSh0   = 0;  // GRAM bytes used for SH degree 0 of source model
-    uint32_t devShOther   = 0;  // GRAM bytes used for SH degree 1 of source model
-    
+    uint32_t devShAll   = 0;  // GRAM bytes used for all the SH coefs of source model
+    uint32_t devSh0     = 0;  // GRAM bytes used for SH degree 0 of source model
+    uint32_t devShOther = 0;  // GRAM bytes used for SH degree 1 of source model
+
 
     // Actual data size within textures (a.k.a. mem footprint minus padding and
     // eventual unused components)
@@ -319,13 +317,37 @@ private:  // Attributes
     // covariance
     uint32_t odevCov = 0;
     // spherical harmonics coeficients
-    uint32_t odevShAll = 0;  // GRAM bytes used for all the SH coefs of source model
-    uint32_t odevSh0   = 0;  // GRAM bytes used for SH degree 0 of source model
-    uint32_t odevShOther   = 0;  // GRAM bytes used for SH degree 1 of source model
+    uint32_t odevShAll   = 0;  // GRAM bytes used for all the SH coefs of source model
+    uint32_t odevSh0     = 0;  // GRAM bytes used for SH degree 0 of source model
+    uint32_t odevShOther = 0;  // GRAM bytes used for SH degree 1 of source model
   };
 
-  // Memory usage statistics
+  // Model related memory usage statistics
   MemoryStats m_memoryStats;
-};
 
+  // Rendering (sorting and splatting) related memory usage statistics
+  struct RenderMemoryStats
+  {
+    uint32_t usedUboFrameInfo = 0;  // used = alloc all the time
+    uint32_t usedIndirect     = 0;  // used = alloc all the time, for the active pipeline
+
+    uint32_t hostAllocDistances = 0;  // used = alloc
+    uint32_t hostAllocIndices   = 0;  // used = alloc
+
+    uint32_t allocIndices      = 0;
+    uint32_t usedIndices       = 0;
+    uint32_t allocDistances    = 0;
+    uint32_t usedDistances     = 0;
+    uint32_t allocVdrxInternal = 0;  // used is unknown
+
+    uint32_t hostTotal        = 0;
+    uint32_t deviceUsedTotal  = 0;
+    uint32_t deviceAllocTotal = 0;
+
+  };
+
+  // Rendering (sorting and splatting) related memory usage statistics
+  RenderMemoryStats m_renderMemoryStats;
+
+};
 #endif

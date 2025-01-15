@@ -311,16 +311,16 @@ void GaussianSplatting::onUIRender()
       PE::end();
     }
     ImGui::End();
-    ImGui::Begin("Statistics");
+    ImGui::Begin("Memory Statistics");
 
-    if(ImGui::CollapsingHeader("Memory Statistics", ImGuiTreeNodeFlags_DefaultOpen))
+    //if(ImGui::CollapsingHeader("Memory Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
       if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
       {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Model", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Used", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Allocated", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Host used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device allocated", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -369,13 +369,96 @@ void GaussianSplatting::onUIRender()
         ImGui::Text(formatMemorySize(m_memoryStats.devShAll).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImGui::Text("Total");
+        ImGui::Text("Sub-total");
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(m_memoryStats.srcAll).c_str());
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(m_memoryStats.odevAll).c_str());
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(m_memoryStats.devAll).c_str());
+        ImGui::EndTable();
+      }
+      ImGui::Separator();
+      if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
+      {
+        ImGui::TableSetupColumn("Rendering", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Host used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device allocated", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("UBO frame info");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Indirect params");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Distances");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.hostAllocDistances).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedDistances).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.allocDistances).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Indices");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.hostAllocIndices).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.usedIndices).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.allocIndices).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("GPU sort");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
+                        .c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(
+            formatMemorySize(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Sub-total");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.hostTotal).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.deviceUsedTotal).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_renderMemoryStats.deviceAllocTotal).c_str());
+        ImGui::EndTable();
+      }
+      ImGui::Separator();
+      if(ImGui::BeginTable("Total", 4, ImGuiTableFlags_None))
+      {
+        ImGui::TableSetupColumn("Rendering", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Host used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device used", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Device allocated", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextColumn();
+        ImGui::Text("Total");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.srcAll + m_renderMemoryStats.hostTotal).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.odevAll + m_renderMemoryStats.deviceUsedTotal).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text(formatMemorySize(m_memoryStats.devAll + m_renderMemoryStats.deviceAllocTotal).c_str());
         ImGui::EndTable();
       }
     }
