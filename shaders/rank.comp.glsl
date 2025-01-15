@@ -17,13 +17,15 @@ layout(local_size_x = 256) in;
 
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
-// Key contains nbSplat keys + nbSplatSamples + nbSplats
-layout(set = 0, binding = 5) buffer InstanceKey
+layout(set = 0, binding = 5) buffer _distances
 {
-  uint32_t key[];
+  uint32_t distances[];
 };
-
-layout(std430, set = 0, binding = 6) buffer IndirectParams
+layout(std430, set = 0, binding = 6) buffer _indices
+{
+  uint32_t indices[];
+};
+layout(std430, set = 0, binding = 7) buffer _indirect
 {
   uint32_t indirect[];
 };
@@ -69,9 +71,9 @@ void main()
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     uint instance_index = atomicAdd(indirect[1], 1);
     // stores the key
-    key[instance_index] = encodeMinMaxFp32(-depth);
+    distances[instance_index] = encodeMinMaxFp32(-depth);
     // stores the value
-    key[frameInfo.splatCount + instance_index] = id;
+    indices[instance_index] = id;
     // set the workgroup count for the mesh shading pipeline
     if(instance_index % 32 == 0)
     {

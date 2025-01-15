@@ -202,14 +202,13 @@ private:  // Attributes
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
-  // Resources
+  // 
   nvvk::Buffer m_frameInfo;
   nvvk::Buffer m_pixelBuffer;
-
-  nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
-  nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
-
-  // indirect parameters
+  
+  // indirect parameters for 
+  // vkCmdDrawIndexedIndirect (first 6 attr)
+  // and vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
   struct IndirectParams
   {
     // for vkCmdDrawIndexedIndirect
@@ -245,6 +244,8 @@ private:  // Attributes
   // CPU async sorting
   std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>
 
+  bool forceCpuSort; // forces a CPU stort (in case of CPU sort activation), otherwise CPU sort is lazy on viewpoint change
+
   std::thread             sortingThread;
   std::mutex              mutex;
   std::condition_variable cond_var;
@@ -257,14 +258,25 @@ private:  // Attributes
   std::vector<uint32_t>   sortGsIndex;
   float                   m_distTime = 0.0f;  // distance update timer
   float                   m_sortTime = 0.0f;  // distance sorting timer
+  std::string             m_cpuSortStatusUi = "Idled";
 
   // GPU radix sort
   VrdxSorter           m_sorter = VK_NULL_HANDLE;
   VrdxSorterCreateInfo m_sorterInfo;
 
-  nvvk::Buffer m_keysDevice;  // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;    // will contain values and splat count
-  nvvk::Buffer m_storageDevice;  // used internally by VrdxSorter (never read or write from to/from host)
+  // buffers used by GPU and/or CPU sort
+  nvvk::Buffer m_splatIndicesHost;      // Buffer of splat indices on host for transfers (used by CPU sort)
+  nvvk::Buffer m_splatIndicesDevice;    // Buffer of splat indices on device (used by CPU and GPU sort)
+  nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
+  nvvk::Buffer m_storageDevice;         // Used internally by VrdxSorter, GPU sort
+  nvvk::Buffer m_debugReadbackHost;     // For debug readbacks. TODO remove after stabilization
+
+  /*
+  nvvk::Buffer m_keysDevice;     // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
+  nvvk::Buffer m_stagingHost;    // will contain values and splat count for debug readback
+  nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
+  nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
+  */
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders

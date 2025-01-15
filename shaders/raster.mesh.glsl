@@ -39,23 +39,15 @@ layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
 // but it may be less performant than aligning
 // attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = 0, scalar) uniform FrameInfo_
+layout(set = 0, binding = 0, scalar) uniform _frameInfo
 {
   FrameInfo frameInfo;
 };
 
-// GPU sorting
-// Key contains nbSplat keys + nbSplat indices + nbSplats
-layout(set = 0, binding = 5) buffer InstanceKey
+// sorted indices
+layout(set = 0, binding = 6) buffer _indices
 {
-  uint32_t key[];
-};
-
-// CPU sorting
-// Key contains nbSplat keys + nbSplat indices + nbSplats
-layout(set = 0, binding = 7) buffer CpuKey
-{
-  uint32_t cpuKey[];
+  uint32_t indices[];
 };
 
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
@@ -107,14 +99,7 @@ void main()
   if(baseIndex < splatCount)
   {
     uint splatIndex;
-    if(frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
-    {
-      splatIndex = key[splatCount + baseIndex];
-    }
-    else
-    {
-      splatIndex = cpuKey[baseIndex];
-    }
+    splatIndex = indices[baseIndex];
 
     //
     uint  oddOffset        = uint(splatIndex) & uint(0x00000001);

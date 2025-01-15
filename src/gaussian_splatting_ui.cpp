@@ -232,6 +232,8 @@ void GaussianSplatting::onUIRender()
         }
       }
 
+      PE::Text("CPU sorting ", m_cpuSortStatusUi);
+
       // Radio buttons for exclusive selection
       PE::entry("Frustum culling", [&]() {
         if(ImGui::RadioButton("Disabled", frameInfo.frustumCulling == FRUSTUM_CULLING_NONE))
