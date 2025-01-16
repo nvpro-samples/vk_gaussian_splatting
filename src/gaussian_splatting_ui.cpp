@@ -96,11 +96,7 @@ void GaussianSplatting::onUIRender()
     const auto splatCount = m_splatSet.positions.size() / 3;
     if(splatCount)
     {
-      vkDeviceWaitIdle(m_device);
-      destroyScene();
-      destroyDataTextures();
-      destroyVkBuffers();
-      destroyPipeline();
+      reset();
     }
 
     m_loadedSceneFilename = m_sceneToLoadFilename;
@@ -484,7 +480,7 @@ void GaussianSplatting::onUIMenu()
     {
       m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
     }
-    if(ImGui::MenuItem("Re open", "", false, m_loadedSceneFilename != ""))
+    if(ImGui::MenuItem("Re Open", "", false, m_loadedSceneFilename != ""))
     {
       m_sceneToLoadFilename = m_loadedSceneFilename;
     }
@@ -498,6 +494,11 @@ void GaussianSplatting::onUIMenu()
         }
       }
       ImGui::EndMenu();
+    }
+    ImGui::Separator();
+    if(ImGui::MenuItem("Close", ""))
+    {
+      reset();
     }
     ImGui::Separator();
     if(ImGui::MenuItem("Exit", "Ctrl+Q"))
@@ -553,7 +554,7 @@ void GaussianSplatting::onUIMenu()
 }
 
 
-void GaussianSplatting::addToRecentFiles(const std::string& filePath)
+void GaussianSplatting::addToRecentFiles(const std::string& filePath, int historySize)
 {
   auto it = std::find(m_recentFiles.begin(), m_recentFiles.end(), filePath);
   if(it != m_recentFiles.end())
@@ -561,7 +562,7 @@ void GaussianSplatting::addToRecentFiles(const std::string& filePath)
     m_recentFiles.erase(it);
   }
   m_recentFiles.insert(m_recentFiles.begin(), filePath);
-  if(m_recentFiles.size() > 10)
+  if(m_recentFiles.size() > historySize)
   {
     m_recentFiles.pop_back();
   }

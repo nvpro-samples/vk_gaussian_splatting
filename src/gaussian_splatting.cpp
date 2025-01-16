@@ -561,6 +561,7 @@ void GaussianSplatting::sortingThreadFunc(void)
 void GaussianSplatting::destroyScene()
 {
   m_splatSet = {};
+  m_loadedSceneFilename = "";
 }
 
 void GaussianSplatting::createPipeline()

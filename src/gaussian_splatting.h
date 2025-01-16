@@ -119,6 +119,14 @@ private:  // Methods
   // then wait for triggers
   void sortingThreadFunc(void);
 
+  void reset() {
+    vkDeviceWaitIdle(m_device);
+    destroyScene();
+    destroyDataTextures();
+    destroyVkBuffers();
+    destroyPipeline();
+  }
+
   void destroyScene();
 
   void createPipeline();
@@ -177,7 +185,7 @@ private:  // Methods
   void initGui(void);
 
   // methods to handle recent files in file menu
-  void addToRecentFiles(const std::string& filePath);
+  void addToRecentFiles(const std::string& filePath, int historySize = 20);
 
 private:  // Attributes
   
