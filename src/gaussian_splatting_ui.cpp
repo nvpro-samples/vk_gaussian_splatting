@@ -46,77 +46,6 @@ std::string formatMemorySize(size_t sizeInBytes)
   return fmt::format("{:.3} {}", size, units[currentUnit]);
 }
 
-void GaussianSplatting::onUIMenu()
-{
-  static bool close_app{false};
-  bool        v_sync = m_app->isVsync();
-#ifndef NDEBUG
-  static bool s_showDemo{false};
-  static bool s_showDemoPlot{false};
-#endif
-  if(ImGui::BeginMenu("File"))
-  {
-    if(ImGui::MenuItem("Open file", ""))
-    {
-      m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
-    }
-    if(ImGui::MenuItem("Re open", "", false, m_loadedSceneFilename != ""))
-    {
-      m_sceneToLoadFilename = m_loadedSceneFilename;
-    }
-    ImGui::Separator();
-    if(ImGui::MenuItem("Exit", "Ctrl+Q"))
-    {
-      close_app = true;
-    }
-    ImGui::EndMenu();
-  }
-  if(ImGui::BeginMenu("View"))
-  {
-    ImGui::MenuItem("V-Sync", "Ctrl+Shift+V", &v_sync);
-    ImGui::EndMenu();
-  }
-#ifndef NDEBUG
-  if(ImGui::BeginMenu("Debug"))
-  {
-    ImGui::MenuItem("Show ImGui Demo", nullptr, &s_showDemo);
-    ImGui::MenuItem("Show ImPlot Demo", nullptr, &s_showDemoPlot);
-    ImGui::EndMenu();
-  }
-#endif  // !NDEBUG
-
-  // Shortcuts
-  if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-  {
-    close_app = true;
-  }
-
-  if(ImGui::IsKeyPressed(ImGuiKey_V) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyDown(ImGuiKey_LeftShift))
-  {
-    v_sync = !v_sync;
-  }
-
-  if(close_app)
-  {
-    m_app->close();
-  }
-#ifndef NDEBUG
-  if(s_showDemo)
-  {
-    ImGui::ShowDemoWindow(&s_showDemo);
-  }
-  if(s_showDemoPlot)
-  {
-    ImPlot::ShowDemoWindow(&s_showDemoPlot);
-  }
-#endif  // !NDEBUG
-
-  if(m_app->isVsync() != v_sync)
-  {
-    m_app->setVsync(v_sync);
-  }
-}
-
 void GaussianSplatting::initGui()
 {
   // Pipeline selector
@@ -250,6 +179,7 @@ void GaussianSplatting::onUIRender()
         m_plyLoader.reset();
         //
         ImGui::CloseCurrentPopup();
+        addToRecentFiles(m_loadedSceneFilename.string());
       }
       break;
       default: {
@@ -538,4 +468,143 @@ void GaussianSplatting::onUIRender()
     }
     ImGui::End();
   }
+}
+
+void GaussianSplatting::onUIMenu()
+{
+  static bool close_app{false};
+  bool        v_sync = m_app->isVsync();
+#ifndef NDEBUG
+  static bool s_showDemo{false};
+  static bool s_showDemoPlot{false};
+#endif
+  if(ImGui::BeginMenu("File"))
+  {
+    if(ImGui::MenuItem("Open file", ""))
+    {
+      m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
+    }
+    if(ImGui::MenuItem("Re open", "", false, m_loadedSceneFilename != ""))
+    {
+      m_sceneToLoadFilename = m_loadedSceneFilename;
+    }
+    if(ImGui::BeginMenu("Recent Files"))
+    {
+      for(const auto& file : m_recentFiles)
+      {
+        if(ImGui::MenuItem(file.c_str()))
+        {
+          m_sceneToLoadFilename = file;
+        }
+      }
+      ImGui::EndMenu();
+    }
+    ImGui::Separator();
+    if(ImGui::MenuItem("Exit", "Ctrl+Q"))
+    {
+      close_app = true;
+    }
+    ImGui::EndMenu();
+  }
+  if(ImGui::BeginMenu("View"))
+  {
+    ImGui::MenuItem("V-Sync", "Ctrl+Shift+V", &v_sync);
+    ImGui::EndMenu();
+  }
+#ifndef NDEBUG
+  if(ImGui::BeginMenu("Debug"))
+  {
+    ImGui::MenuItem("Show ImGui Demo", nullptr, &s_showDemo);
+    ImGui::MenuItem("Show ImPlot Demo", nullptr, &s_showDemoPlot);
+    ImGui::EndMenu();
+  }
+#endif  // !NDEBUG
+
+  // Shortcuts
+  if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+  {
+    close_app = true;
+  }
+
+  if(ImGui::IsKeyPressed(ImGuiKey_V) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyDown(ImGuiKey_LeftShift))
+  {
+    v_sync = !v_sync;
+  }
+
+  if(close_app)
+  {
+    m_app->close();
+  }
+#ifndef NDEBUG
+  if(s_showDemo)
+  {
+    ImGui::ShowDemoWindow(&s_showDemo);
+  }
+  if(s_showDemoPlot)
+  {
+    ImPlot::ShowDemoWindow(&s_showDemoPlot);
+  }
+#endif  // !NDEBUG
+
+  if(m_app->isVsync() != v_sync)
+  {
+    m_app->setVsync(v_sync);
+  }
+}
+
+
+void GaussianSplatting::addToRecentFiles(const std::string& filePath)
+{
+  auto it = std::find(m_recentFiles.begin(), m_recentFiles.end(), filePath);
+  if(it != m_recentFiles.end())
+  {
+    m_recentFiles.erase(it);
+  }
+  m_recentFiles.insert(m_recentFiles.begin(), filePath);
+  if(m_recentFiles.size() > 10)
+  {
+    m_recentFiles.pop_back();
+  }
+}
+
+// Register handler
+void GaussianSplatting::registerRecentFilesHandler()
+{
+  // mandatory to work, see ImGui::DockContextInitialize as an example
+  auto readOpen = [](ImGuiContext*, ImGuiSettingsHandler*, const char* name) -> void* {
+    if(strcmp(name, "Data") != 0)
+      return NULL;
+    return (void*)1;
+  };
+
+  // Save settings handler, not using capture so can be used as a function pointer
+  auto saveRecentFilesToIni = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf) {
+    auto* self = static_cast<GaussianSplatting*>(handler->UserData);
+    buf->appendf("[%s][Data]\n", handler->TypeName);
+    for(const auto& file : self->m_recentFiles)
+    {
+      buf->appendf("File=%s\n", file.c_str());
+    }
+    buf->append("\n");
+  };
+
+  // Load settings handler, not using capture so can be used as a function pointer
+  auto loadRecentFilesFromIni = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line) {
+    auto* self = static_cast<GaussianSplatting*>(handler->UserData);
+    if(strncmp(line, "File=", 5) == 0)
+    {
+      const char* filePath = line + 5;
+      self->m_recentFiles.push_back(filePath);
+    }
+  };
+
+  //
+  ImGuiSettingsHandler iniHandler;
+  iniHandler.TypeName   = "RecentFiles";
+  iniHandler.TypeHash   = ImHashStr(iniHandler.TypeName);
+  iniHandler.ReadOpenFn = readOpen;
+  iniHandler.WriteAllFn = saveRecentFilesToIni;
+  iniHandler.ReadLineFn = loadRecentFilesFromIni;
+  iniHandler.UserData   = this;  // Pass the current instance to the handler
+  ImGui::GetCurrentContext()->SettingsHandlers.push_back(iniHandler);
 }

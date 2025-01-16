@@ -110,6 +110,9 @@ public:  // Methods specializing IAppElement
 
   void onFileDrop(const char* filename) override { m_sceneToLoadFilename = filename; }
 
+  // handle recent files save/load at imgui level
+  void registerRecentFilesHandler();
+
 private:  // Methods
   // main loop of the sorting thread for gaussians
   // the thread is started by the class constructor
@@ -173,9 +176,16 @@ private:  // Methods
 
   void initGui(void);
 
+  // methods to handle recent files in file menu
+  void addToRecentFiles(const std::string& filePath);
+
 private:  // Attributes
-  // UI
+  
+  // UI usility for choice menus
   ImGuiH::Registry m_ui;
+
+    // Recent files list
+  std::vector<std::string> m_recentFiles;
 
   // triggers a scene load when set to non empty string
   std::filesystem::path m_sceneToLoadFilename;
