@@ -410,13 +410,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     // sync with end of copy to host
     VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-    bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+    bmb.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+    bmb.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
     bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     bmb.buffer              = m_indirect.buffer;
     bmb.size                = VK_WHOLE_SIZE;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
 
     // copy to main memory

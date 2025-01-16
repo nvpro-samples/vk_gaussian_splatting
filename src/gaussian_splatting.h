@@ -189,10 +189,10 @@ private:  // Methods
 
 private:  // Attributes
   
-  // UI usility for choice menus
+  // UI utility for choice menus
   ImGuiH::Registry m_ui;
 
-    // Recent files list
+  // Recent files list
   std::vector<std::string> m_recentFiles;
 
   // triggers a scene load when set to non empty string

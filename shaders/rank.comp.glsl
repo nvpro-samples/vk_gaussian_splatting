@@ -63,7 +63,7 @@ void main()
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
   // the culling is not good since we only take into account
   // the center of each splat instead of its extent.
-  // for the time being we just add 0.1 to the NDC as a margin which
+  // for the time being we just add 0.2 to the NDC as a margin which
   // make the job with most models
   if(frameInfo.frustumCulling != FRUSTUM_CULLING_DIST // no culling
      || (frameInfo.frustumCulling == FRUSTUM_CULLING_DIST && abs(pos.x) <= 1.2f && abs(pos.y) <= 1.2f && pos.z >= 0.f && pos.z <= 1.f))
