@@ -41,7 +41,7 @@ layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
 // but it may be less performant than aligning
 // attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = 0, scalar) uniform _frameInfo
+layout(set = 0, binding = 0) uniform _frameInfo
 {
   FrameInfo frameInfo;
 };
@@ -84,9 +84,9 @@ const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics
 
 void main()
 {
-  const uint32_t baseIndex = gl_GlobalInvocationID.x;
-  const int splatCount = frameInfo.splatCount;
-  const uint outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
+  const uint32_t baseIndex       = gl_GlobalInvocationID.x;
+  const int      splatCount      = frameInfo.splatCount;
+  const uint     outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
 
   if(gl_LocalInvocationIndex == 0)
   {
@@ -97,7 +97,7 @@ void main()
   if(baseIndex < splatCount)
   {
     const uint splatIndex = indices[baseIndex];
-        
+
     // emit primitives (triangles) as soon as possible
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
@@ -116,7 +116,7 @@ void main()
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
 
     // culling
-    const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
+    const vec4  clipCenter = frameInfo.projectionMatrix * viewCenter;
     const float clip       = 1.2 * clipCenter.w;
     if(frameInfo.frustumCulling == FRUSTUM_CULLING_MESH
        && (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
@@ -245,8 +245,8 @@ void main()
       // 3D covariance matrix instead of using the actual projection matrix because that transformation would
       // require a non-linear component (perspective division) which would yield a non-gaussian result.
       const float s = 1.0 / (viewCenter.z * viewCenter.z);
-      J       = mat3(frameInfo.focal.x / viewCenter.z, 0., -(frameInfo.focal.x * viewCenter.x) * s, 0.,
-                     frameInfo.focal.y / viewCenter.z, -(frameInfo.focal.y * viewCenter.y) * s, 0., 0., 0.);
+      J             = mat3(frameInfo.focal.x / viewCenter.z, 0., -(frameInfo.focal.x * viewCenter.x) * s, 0.,
+                           frameInfo.focal.y / viewCenter.z, -(frameInfo.focal.y * viewCenter.y) * s, 0., 0., 0.);
     }
 
     // Concatenate the projection approximation with the model-view transformation
@@ -316,8 +316,8 @@ void main()
     const float trace       = a + d;
     const float traceOver2  = 0.5 * trace;
     const float term2       = sqrt(max(0.1f, traceOver2 * traceOver2 - D));
-    float eigenValue1 = traceOver2 + term2;
-    float eigenValue2 = traceOver2 - term2;
+    float       eigenValue1 = traceOver2 + term2;
+    float       eigenValue2 = traceOver2 - term2;
 
     if(frameInfo.pointCloudModeEnabled == 1)
     {
@@ -352,7 +352,7 @@ void main()
       const vec2 fragPos = positions[i].xy;
 
       const vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
-                       * frameInfo.inverseFocalAdjustment;
+                             * frameInfo.inverseFocalAdjustment;
 
       const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 

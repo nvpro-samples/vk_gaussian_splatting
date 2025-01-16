@@ -163,7 +163,7 @@ private:  // Methods
   }
 
   // reset the memory usage stats
-  inline void resetMemoryStats() { memset((void*)&m_memoryStats, 0, sizeof(MemoryStats)); }
+  inline void resetMemoryStats() { memset((void*)&m_memoryStats, 0, sizeof(ModelMemoryStats)); }
 
   // for multiple choice selectors
   enum GuiEnums
@@ -284,7 +284,7 @@ private:  // Attributes
   VkPipeline       m_computePipeline{};                      // The compute pipeline
 
   // Model related memory usage statistics
-  struct MemoryStats
+  struct ModelMemoryStats
   {
     // Memory footprint on host memory
 
@@ -323,7 +323,7 @@ private:  // Attributes
   };
 
   // Model related memory usage statistics
-  MemoryStats m_memoryStats;
+  ModelMemoryStats m_memoryStats;
 
   // Rendering (sorting and splatting) related memory usage statistics
   struct RenderMemoryStats
