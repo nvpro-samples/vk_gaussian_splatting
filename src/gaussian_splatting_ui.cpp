@@ -301,7 +301,7 @@ void GaussianSplatting::onUIRender()
       PE::entry(
           "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
       uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
-                        ((m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                        ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
                                                                                  (m_frameInfo.splatCount + 31) / 32) :
                         0;
       PE::entry(
