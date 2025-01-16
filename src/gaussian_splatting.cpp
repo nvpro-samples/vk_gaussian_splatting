@@ -129,26 +129,26 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       // Update frame parameters uniform buffer
       // some attributes of frameInfo were set by the user interface
       const glm::vec2& clip = CameraManip.getClipPlanes();
-      frameInfo.splatCount  = splatCount;
-      frameInfo.viewMatrix  = CameraManip.getMatrix();
-      frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
+      m_frameInfo.splatCount  = splatCount;
+      m_frameInfo.viewMatrix = CameraManip.getMatrix();
+      m_frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
       // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
-      frameInfo.projectionMatrix[1][1] *= -1;
-      frameInfo.cameraPosition         = eye;
+      m_frameInfo.projectionMatrix[1][1] *= -1;
+      m_frameInfo.cameraPosition       = eye;
       float       devicePixelRatio     = 1.0;
-      const float focalLengthX         = frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-      const float focalLengthY         = frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+      const float focalLengthX         = m_frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+      const float focalLengthY         = m_frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
       const bool  isOrthographicCamera = false;
       const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
       const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
-      frameInfo.orthoZoom              = 1.0f;
-      frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
-      frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
-      frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-      frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
-      frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+      m_frameInfo.orthoZoom              = 1.0f;
+      m_frameInfo.orthographicMode     = 0;  // disabled (uses perspective) TODO: activate support for orthographic
+      m_frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
+      m_frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
+      m_frameInfo.focal                        = glm::vec2(focalLengthX, focalLengthY);
+      m_frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
 
-      vkCmdUpdateBuffer(cmd, m_frameInfo.buffer, 0, sizeof(DH::FrameInfo), &frameInfo);
+      vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(DH::FrameInfo), &m_frameInfo);
 
       // sync with end of copy to device
       VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
@@ -156,19 +156,19 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
       bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.buffer              = m_frameInfo.buffer;
+      bmb.buffer              = m_frameInfoBuffer.buffer;
       bmb.size                = VK_WHOLE_SIZE;
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
                            | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
                            VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
     }
-    if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+    if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
     {
       // upload CPU sorted indices to the GPU if needed
       bool newIndexAvailable = false;
 
-      if(!frameInfo.opacityGaussianDisabled)
+      if(!m_frameInfo.opacityGaussianDisabled)
       {
         // Splatting/blending is on, we check for a newly sorted index table
         std::unique_lock<std::mutex> lock(mutex);
@@ -250,7 +250,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
 
     // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
-    if(frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
+    if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       { // reset the draw indirect parameters and counters, will be updated by compute shader
         const IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
@@ -261,7 +261,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
 
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                             0, 1,
                              &barrier,
                              0, NULL, 0, NULL);
       }
@@ -291,7 +292,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
           m_indirect.buffer, sizeof(uint32_t), 
           m_splatDistancesDevice.buffer, 0,
-          m_splatIndicesDevice.buffer, 0, m_storageDevice.buffer, 0, 0, 0);
+          m_splatIndicesDevice.buffer, 0, m_vrdxStorageDevice.buffer, 0, 0, 0);
 
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1,
@@ -345,7 +346,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
         // overrides the pipeline setup for depth test/write
-        vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
+        vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
 
         /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
           // transfo/color unused for the time beeing, could transform the whole 3DGS model
@@ -359,9 +360,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         // display the quad as many times as we have visible splats
 
         const VkDeviceSize offsets{0};
-        vkCmdBindIndexBuffer(cmd, m_indices.buffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertices.buffer, &offsets);
-        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+        vkCmdBindIndexBuffer(cmd, m_quadIndices.buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m_quadVertices.buffer, &offsets);
+        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
         {
           vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
           vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
@@ -379,11 +380,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
         // overrides the pipeline setup for depth test/write
-        vkCmdSetDepthTestEnable(cmd, (VkBool32)frameInfo.opacityGaussianDisabled);
-        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+        vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
         {
           // run the workgroups
-          vkCmdDrawMeshTasksEXT(cmd, (frameInfo.splatCount + 31) / 32, 1, 1);
+          vkCmdDrawMeshTasksEXT(cmd, (m_frameInfo.splatCount + 31) / 32, 1, 1);
         }
         else
         {
@@ -425,7 +426,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   }
   
   // update rendering memory statustics
-  if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+  if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
   {
     m_renderMemoryStats.hostAllocIndices = splatCount * sizeof(uint32_t);
     m_renderMemoryStats.hostAllocDistances = splatCount * sizeof(uint32_t);
@@ -457,7 +458,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   m_renderMemoryStats.hostTotal = m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances
        + m_renderMemoryStats.usedUboFrameInfo;
 
-  uint32_t vrdxSize = frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
+  uint32_t vrdxSize = m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
 
   m_renderMemoryStats.deviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
                                         + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
@@ -482,7 +483,7 @@ void GaussianSplatting::sortingThreadFunc(void)
     m_cpuSortStatusUi = "Sorting";
 
     // There is no reason this arrives but we test just in case
-    assert(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
+    assert(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
 
     // since it was not an exit it is a request for a sort
     // we suppose model does not change
@@ -574,7 +575,7 @@ void GaussianSplatting::createPipeline()
 
   // Writing to descriptors for frameInfo uniform buffer
   std::vector<VkWriteDescriptorSet> writes;
-  const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfo.buffer, 0, VK_WHOLE_SIZE};
+  const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfoBuffer.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_frameInfo));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -719,7 +720,7 @@ constexpr uint32_t MAX_ELEMENT_COUNT = 1 << 25;
 void GaussianSplatting::createVkBuffers()
 {
   // TODO: free all other buffers so createVKBuffers can be used on a scene reset
-  nvvkhl::Application::submitResourceFree([vertices = m_vertices, indices = m_indices, alloc = m_alloc]() {
+  nvvkhl::Application::submitResourceFree([vertices = m_quadVertices, indices = m_quadIndices, alloc = m_alloc]() {
     alloc->destroy(const_cast<nvvk::Buffer&>(vertices));
     alloc->destroy(const_cast<nvvk::Buffer&>(indices));
   });
@@ -763,7 +764,7 @@ void GaussianSplatting::createVkBuffers()
 
       VrdxSorterStorageRequirements requirements;
       vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
-      m_storageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      m_vrdxStorageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
       m_renderMemoryStats.allocVdrxInternal = requirements.size; // for stats reporting only
 
       // generate debug information for buffers
@@ -771,7 +772,7 @@ void GaussianSplatting::createVkBuffers()
       m_dutil->DBG_NAME(m_splatIndicesDevice.buffer);
       m_dutil->DBG_NAME(m_splatDistancesDevice.buffer);
       m_dutil->DBG_NAME(m_debugReadbackHost.buffer);
-      m_dutil->DBG_NAME(m_storageDevice.buffer);
+      m_dutil->DBG_NAME(m_vrdxStorageDevice.buffer);
     }
   }
 
@@ -804,18 +805,18 @@ void GaussianSplatting::createVkBuffers()
   m_dutil->DBG_NAME(m_indirectHost.buffer);
 
   // create the quad buffers
-  m_vertices = m_alloc->createBuffer(cmd, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-  m_indices  = m_alloc->createBuffer(cmd, indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-  m_dutil->DBG_NAME(m_vertices.buffer);
-  m_dutil->DBG_NAME(m_indices.buffer);
+  m_quadVertices = m_alloc->createBuffer(cmd, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  m_quadIndices  = m_alloc->createBuffer(cmd, indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+  m_dutil->DBG_NAME(m_quadVertices.buffer);
+  m_dutil->DBG_NAME(m_quadIndices.buffer);
 
   //
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
   //
-  m_frameInfo = m_alloc->createBuffer(sizeof(DH::FrameInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+  m_frameInfoBuffer = m_alloc->createBuffer(sizeof(DH::FrameInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-  m_dutil->DBG_NAME(m_frameInfo.buffer);
+  m_dutil->DBG_NAME(m_frameInfoBuffer.buffer);
 
   m_pixelBuffer = m_alloc->createBuffer(sizeof(float) * 4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
@@ -825,8 +826,8 @@ void GaussianSplatting::createVkBuffers()
 void GaussianSplatting::destroyVkBuffers()
 {
 
-  m_alloc->destroy(m_vertices);
-  m_alloc->destroy(m_indices);
+  m_alloc->destroy(m_quadVertices);
+  m_alloc->destroy(m_quadIndices);
 
   m_alloc->destroy(m_indirect);
   m_alloc->destroy(m_indirectHost);
@@ -835,9 +836,9 @@ void GaussianSplatting::destroyVkBuffers()
   m_alloc->destroy(m_splatDistancesDevice);
   m_alloc->destroy(m_splatIndicesDevice);
   m_alloc->destroy(m_splatIndicesHost);
-  m_alloc->destroy(m_storageDevice);
+  m_alloc->destroy(m_vrdxStorageDevice);
 
-  m_alloc->destroy(m_frameInfo);
+  m_alloc->destroy(m_frameInfoBuffer);
   m_alloc->destroy(m_pixelBuffer);
 }
 
@@ -871,9 +872,9 @@ void GaussianSplatting::createDataTextures(void)
   assert(m_centersMap->isValid());
   m_centersMap->setSampler(m_alloc->acquireSampler(sampler_info));  // sampler will be released by texture
   // memory statistics
-  m_memoryStats.srcCenters  = splatCount * 3 * sizeof(float);
-  m_memoryStats.odevCenters = splatCount * 3 * sizeof(float); // no compression or quantization yet
-  m_memoryStats.devCenters  = centersMapSize.x * centersMapSize.y * 4 * sizeof(float);
+  m_modelMemoryStats.srcCenters  = splatCount * 3 * sizeof(float);
+  m_modelMemoryStats.odevCenters = splatCount * 3 * sizeof(float); // no compression or quantization yet
+  m_modelMemoryStats.devCenters  = centersMapSize.x * centersMapSize.y * 4 * sizeof(float);
 
   // covariances
   glm::vec2          covariancesMapSize = computeDataTextureSize(4, 6, splatCount);
@@ -917,9 +918,9 @@ void GaussianSplatting::createDataTextures(void)
   assert(m_covariancesMap->isValid());
   m_covariancesMap->setSampler(m_alloc->acquireSampler(sampler_info));
   // memory statistics
-  m_memoryStats.srcCov  = ( splatCount * ( 4 + 3 ) ) * sizeof(float);
-  m_memoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
-  m_memoryStats.devCov  = covariancesMapSize.x * covariancesMapSize.y * 4 * sizeof(float);
+  m_modelMemoryStats.srcCov  = ( splatCount * ( 4 + 3 ) ) * sizeof(float);
+  m_modelMemoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
+  m_modelMemoryStats.devCov  = covariancesMapSize.x * covariancesMapSize.y * 4 * sizeof(float);
 
   // SH degree 0 is not view dependent, so we directly transform to base color
   // this will make some economy of processing in the shader at each frame
@@ -941,9 +942,9 @@ void GaussianSplatting::createDataTextures(void)
   assert(m_colorsMap->isValid());
   m_colorsMap->setSampler(m_alloc->acquireSampler(sampler_info));
   // memory statistics
-  m_memoryStats.srcSh0  = splatCount * 4 * sizeof(float);
-  m_memoryStats.odevSh0 = splatCount * 4 * sizeof(float);  // no compression or quantization yet
-  m_memoryStats.devSh0  = colorsMapSize.x * colorsMapSize.y * 4 * sizeof(float);
+  m_modelMemoryStats.srcSh0  = splatCount * 4 * sizeof(float);
+  m_modelMemoryStats.odevSh0 = splatCount * 4 * sizeof(float);  // no compression or quantization yet
+  m_modelMemoryStats.devSh0  = colorsMapSize.x * colorsMapSize.y * 4 * sizeof(float);
 
   // Prepare the spherical harmonics of degree 1 to 3
   const int sphericalHarmonicsElementsPerTexel       = 4;
@@ -1018,19 +1019,19 @@ void GaussianSplatting::createDataTextures(void)
   assert(m_sphericalHarmonicsMap->isValid());
   m_sphericalHarmonicsMap->setSampler(m_alloc->acquireSampler(sampler_info));
   // memory statistics
-  m_memoryStats.srcShOther  = m_splatSet.f_rest.size() * sizeof(float);
-  m_memoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
-  m_memoryStats.devShOther =  
+  m_modelMemoryStats.srcShOther  = m_splatSet.f_rest.size() * sizeof(float);
+  m_modelMemoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
+  m_modelMemoryStats.devShOther =  
       sphericalHarmonicsMapSize.x * sphericalHarmonicsMapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
 
   // update statistics totals
-  m_memoryStats.srcShAll = m_memoryStats.srcSh0 + m_memoryStats.srcShOther;
-  m_memoryStats.odevShAll = m_memoryStats.odevSh0 + m_memoryStats.odevShOther;
-  m_memoryStats.devShAll  = m_memoryStats.devSh0 + m_memoryStats.devShOther;
+  m_modelMemoryStats.srcShAll = m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevShAll = m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devShAll  = m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
 
-  m_memoryStats.srcAll = m_memoryStats.srcCenters + m_memoryStats.srcCov + m_memoryStats.srcSh0 + m_memoryStats.srcShOther;
-  m_memoryStats.odevAll = m_memoryStats.odevCenters + m_memoryStats.odevCov + m_memoryStats.odevSh0 + m_memoryStats.odevShOther;
-  m_memoryStats.devAll = m_memoryStats.devCenters + m_memoryStats.devCov + m_memoryStats.devSh0 + m_memoryStats.devShOther;
+  m_modelMemoryStats.srcAll = m_modelMemoryStats.srcCenters + m_modelMemoryStats.srcCov + m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevAll = m_modelMemoryStats.odevCenters + m_modelMemoryStats.odevCov + m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devAll = m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
 
   // Associate textures with bindings
   std::vector<VkWriteDescriptorSet> writes;

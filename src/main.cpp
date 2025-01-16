@@ -41,7 +41,7 @@ int main(int argc, char** argv)
       auto* feature = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(pFeatureStruct);
       // enabling and not using it may cost a tiny bit of performance on NV hardware
       feature->meshShaderQueries = VK_FALSE;
-      // disbale for the time beeing TODO need to understand
+      // diable for the time beeing TODO need to understand
       feature->primitiveFragmentShadingRateMeshShader = VK_FALSE;
     }
 
@@ -62,18 +62,17 @@ int main(int argc, char** argv)
 
   // Create the application
   auto app = std::make_unique<nvvkhl::Application>(appSetup);
-
   // Create the test framework
   auto test = std::make_shared<nvvkhl::ElementBenchmarkParameters>(argc, argv);
+  // create the profiler element
+  auto elementProfiler = std::make_shared<nvvkhl::ElementProfiler>(true);
 
   // Add all application elements
+  app->addElement(std::make_shared<GaussianSplatting>(elementProfiler));
   app->addElement(test);
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());
-  app->addElement(std::make_shared<nvvkhl::ElementDefaultMenu>());
   app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", SHADER_LANGUAGE_STR)));  // Window title info
-  auto elementProfiler = std::make_shared<nvvkhl::ElementProfiler>(true);
   app->addElement(elementProfiler);
-  app->addElement(std::make_shared<GaussianSplatting>(elementProfiler));
   app->addElement(std::make_shared<nvvkhl::ElementNvml>());
 
   app->run();

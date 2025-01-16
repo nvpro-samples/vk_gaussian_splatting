@@ -106,7 +106,7 @@ public:  // Methods specializing IAppElement
 
   void onUIRender() override;
 
-  void onUIMenu() override {}
+  void onUIMenu() override;
 
   void onFileDrop(const char* filename) override { m_sceneToLoadFilename = filename; }
 
@@ -136,11 +136,9 @@ private:  // Methods
   void destroyDataTextures(void);
 
   // Utility function to compute the texture size according to the size of the data to be stored
-  // TODO: doc of parameters
-  inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount)
+  // By default use map of 4K Width and 1K heightn then adjust the height according to the data size
+  inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount, glm::ivec2 texSize = {4096, 1024} )
   {
-    // we allways use map of 4K Width then adjust the height according to the data size
-    glm::ivec2 texSize(4096, 1024);
     while(texSize.x * texSize.y * elementsPerTexel < maxSplatCount * elementsPerSplat)
       texSize.y *= 2;
     return texSize;
@@ -150,20 +148,20 @@ private:  // Methods
   // be modified by the user interface
   inline void resetFrameInfo()
   {
-    frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
-    frameInfo.orthoZoom                  = 1.0f;  // in ?
-    frameInfo.orthographicMode           = 0;     // disabled, in {0,1}
-    frameInfo.pointCloudModeEnabled      = 0;     // disabled, in {0,1}
-    frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
-    frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
-    frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
-    frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
-    frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
-    frameInfo.frustumCulling             = FRUSTUM_CULLING_DIST;
+    m_frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
+    m_frameInfo.orthoZoom                  = 1.0f;  // in ?
+    m_frameInfo.orthographicMode           = 0;     // disabled, in {0,1}
+    m_frameInfo.pointCloudModeEnabled      = 0;     // disabled, in {0,1}
+    m_frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
+    m_frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
+    m_frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
+    m_frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
+    m_frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
+    m_frameInfo.frustumCulling             = FRUSTUM_CULLING_DIST;
   }
 
   // reset the memory usage stats
-  inline void resetMemoryStats() { memset((void*)&m_memoryStats, 0, sizeof(ModelMemoryStats)); }
+  inline void resetModelMemoryStats() { memset((void*)&m_modelMemoryStats, 0, sizeof(ModelMemoryStats)); }
 
   // for multiple choice selectors
   enum GuiEnums
@@ -179,10 +177,12 @@ private:  // Attributes
   // UI
   ImGuiH::Registry m_ui;
 
-  //
+  // triggers a scene load when set to non empty string
   std::filesystem::path m_sceneToLoadFilename;
+  // name of the loaded scene if successfull
+  std::filesystem::path m_loadedSceneFilename;
+  // scene loader
   PlyAsyncLoader        m_plyLoader;
-
   // loaded model
   SplatSet m_splatSet;
 
@@ -201,7 +201,7 @@ private:  // Attributes
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
   //
-  nvvk::Buffer m_frameInfo;
+  nvvk::Buffer m_frameInfoBuffer;
   nvvk::Buffer m_pixelBuffer;
 
   // indirect parameters for
@@ -226,8 +226,8 @@ private:  // Attributes
   IndirectParams m_indirectReadback;  // readback values
 
   //
-  nvvk::Buffer m_vertices;  // Buffer of vertices for the splat quad
-  nvvk::Buffer m_indices;   // Buffer of indices for the splat quad
+  nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad
+  nvvk::Buffer m_quadIndices;   // Buffer of indices for the splat quad
 
   // Data textures
   VkSampler                      m_sampler;  // texture sampler
@@ -266,21 +266,14 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesHost;      // Buffer of splat indices on host for transfers (used by CPU sort)
   nvvk::Buffer m_splatIndicesDevice;    // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
-  nvvk::Buffer m_storageDevice;         // Used internally by VrdxSorter, GPU sort
+  nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
   nvvk::Buffer m_debugReadbackHost;     // For debug readbacks. TODO remove after stabilization
-
-  /*
-  nvvk::Buffer m_keysDevice;     // will contain keys (distances), values (splat indices) and VkDrawIndexedIndirectCommand at the end
-  nvvk::Buffer m_stagingHost;    // will contain values and splat count for debug readback
-  nvvk::Buffer m_splatIndicesHost;    // Buffer of splat indices on host for transfers
-  nvvk::Buffer m_splatIndicesDevice;  // Buffer of splat indices on device
-  */
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
   VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
   DH::PushConstant m_pushConst{};                            // Information sent to the shader using constant
-  DH::FrameInfo    frameInfo{};                              // frame parameters, sent to device using a uniform buffer
+  DH::FrameInfo    m_frameInfo{};                            // frame parameters, sent to device using a uniform buffer
   VkPipeline       m_computePipeline{};                      // The compute pipeline
 
   // Model related memory usage statistics
@@ -323,7 +316,7 @@ private:  // Attributes
   };
 
   // Model related memory usage statistics
-  ModelMemoryStats m_memoryStats;
+  ModelMemoryStats m_modelMemoryStats;
 
   // Rendering (sorting and splatting) related memory usage statistics
   struct RenderMemoryStats

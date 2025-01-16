@@ -46,7 +46,79 @@ std::string formatMemorySize(size_t sizeInBytes)
   return fmt::format("{:.3} {}", size, units[currentUnit]);
 }
 
-void GaussianSplatting::initGui() {
+void GaussianSplatting::onUIMenu()
+{
+  static bool close_app{false};
+  bool        v_sync = m_app->isVsync();
+#ifndef NDEBUG
+  static bool s_showDemo{false};
+  static bool s_showDemoPlot{false};
+#endif
+  if(ImGui::BeginMenu("File"))
+  {
+    if(ImGui::MenuItem("Open file", ""))
+    {
+      m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
+    }
+    if(ImGui::MenuItem("Re open", "", false, m_loadedSceneFilename != ""))
+    {
+      m_sceneToLoadFilename = m_loadedSceneFilename;
+    }
+    ImGui::Separator();
+    if(ImGui::MenuItem("Exit", "Ctrl+Q"))
+    {
+      close_app = true;
+    }
+    ImGui::EndMenu();
+  }
+  if(ImGui::BeginMenu("View"))
+  {
+    ImGui::MenuItem("V-Sync", "Ctrl+Shift+V", &v_sync);
+    ImGui::EndMenu();
+  }
+#ifndef NDEBUG
+  if(ImGui::BeginMenu("Debug"))
+  {
+    ImGui::MenuItem("Show ImGui Demo", nullptr, &s_showDemo);
+    ImGui::MenuItem("Show ImPlot Demo", nullptr, &s_showDemoPlot);
+    ImGui::EndMenu();
+  }
+#endif  // !NDEBUG
+
+  // Shortcuts
+  if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+  {
+    close_app = true;
+  }
+
+  if(ImGui::IsKeyPressed(ImGuiKey_V) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyDown(ImGuiKey_LeftShift))
+  {
+    v_sync = !v_sync;
+  }
+
+  if(close_app)
+  {
+    m_app->close();
+  }
+#ifndef NDEBUG
+  if(s_showDemo)
+  {
+    ImGui::ShowDemoWindow(&s_showDemo);
+  }
+  if(s_showDemoPlot)
+  {
+    ImPlot::ShowDemoWindow(&s_showDemoPlot);
+  }
+#endif  // !NDEBUG
+
+  if(m_app->isVsync() != v_sync)
+  {
+    m_app->setVsync(v_sync);
+  }
+}
+
+void GaussianSplatting::initGui()
+{
   // Pipeline selector
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Vertex shader");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Mesh shader");
@@ -101,6 +173,8 @@ void GaussianSplatting::onUIRender()
       destroyVkBuffers();
       destroyPipeline();
     }
+
+    m_loadedSceneFilename = m_sceneToLoadFilename;
     //
     vkDeviceWaitIdle(m_device);
 
@@ -115,6 +189,7 @@ void GaussianSplatting::onUIRender()
       // open the modal window that will collect results
       ImGui::OpenPopup("Loading");
     }
+
     // reset request
     m_sceneToLoadFilename.clear();
   }
@@ -146,6 +221,7 @@ void GaussianSplatting::onUIRender()
         ImGui::Text("Error: invalid ply file");
         if(ImGui::Button("Ok", ImVec2(120, 0)))
         {
+          m_loadedSceneFilename = "";
           destroyScene();
           // TODO: use BBox of point cloud to set far plane
           CameraManip.setClipPlanes({0.1F, 2000.0F});
@@ -197,37 +273,36 @@ void GaussianSplatting::onUIRender()
       {
         resetFrameInfo();
       }
-      
+
       PE::begin("##3DGS rendering");
 
       bool vsync = m_app->isVsync();
-      PE::entry(
-          "V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); });
+      PE::entry("V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); });
       m_app->setVsync(vsync);
 
       if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
       {
-        if(m_selectedPipeline == PIPELINE_MESH && frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
+        if(m_selectedPipeline == PIPELINE_MESH && m_frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
         {
-          frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
         }
-        else if(m_selectedPipeline == PIPELINE_VERT && frameInfo.frustumCulling == FRUSTUM_CULLING_MESH)
+        else if(m_selectedPipeline == PIPELINE_VERT && m_frameInfo.frustumCulling == FRUSTUM_CULLING_MESH)
         {
-          frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
         }
       }
 
-      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &frameInfo.sortingMethod); }))
+      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
       {
-        if(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && frameInfo.frustumCulling == FRUSTUM_CULLING_DIST)
+        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_frameInfo.frustumCulling == FRUSTUM_CULLING_DIST)
         {
           if(m_selectedPipeline == PIPELINE_MESH)
           {
-            frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+            m_frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
           }
           else if(m_selectedPipeline == PIPELINE_VERT)
           {
-            frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+            m_frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
           }
         }
       }
@@ -236,51 +311,49 @@ void GaussianSplatting::onUIRender()
 
       // Radio buttons for exclusive selection
       PE::entry("Frustum culling", [&]() {
-        if(ImGui::RadioButton("Disabled", frameInfo.frustumCulling == FRUSTUM_CULLING_NONE))
-          frameInfo.frustumCulling = FRUSTUM_CULLING_NONE;
+        if(ImGui::RadioButton("Disabled", m_frameInfo.frustumCulling == FRUSTUM_CULLING_NONE))
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_NONE;
 
-        ImGui::BeginDisabled(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
-        if(ImGui::RadioButton("In distance shader", frameInfo.frustumCulling == FRUSTUM_CULLING_DIST))
-          frameInfo.frustumCulling = FRUSTUM_CULLING_DIST;
+        ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
+        if(ImGui::RadioButton("In distance shader", m_frameInfo.frustumCulling == FRUSTUM_CULLING_DIST))
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_DIST;
         ImGui::EndDisabled();
 
         ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_VERT);
-        if(ImGui::RadioButton("In vertex shader", frameInfo.frustumCulling == FRUSTUM_CULLING_VERT))
-          frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+        if(ImGui::RadioButton("In vertex shader", m_frameInfo.frustumCulling == FRUSTUM_CULLING_VERT))
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
         ImGui::EndDisabled();
-        
+
         ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
-        if(ImGui::RadioButton("In mesh shader", frameInfo.frustumCulling == FRUSTUM_CULLING_MESH))
-          frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+        if(ImGui::RadioButton("In mesh shader", m_frameInfo.frustumCulling == FRUSTUM_CULLING_MESH))
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
         ImGui::EndDisabled();
         return true;
-          });
-            
-      PE::SliderFloat(
-          "Splat scale",
-          (float*)&frameInfo.splatScale, 0.1f,
-          frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
-          );
+      });
+
+      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f,
+                      m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
+      );
 
       PE::entry(
           "Spherical Harmonic degree",
-          [&]() { return ImGui::SliderInt("##ShDegree", (int*)&frameInfo.sphericalHarmonicsDegree, 0, 2); }, "TODOC");
+          [&]() { return ImGui::SliderInt("##ShDegree", (int*)&m_frameInfo.sphericalHarmonicsDegree, 0, 2); }, "TODOC");
 
-      bool showShOnly = frameInfo.showShOnly != 0;
+      bool showShOnly = m_frameInfo.showShOnly != 0;
       PE::entry(
           "Show SH only", [&]() { return ImGui::Checkbox("##ShowSHOnly", &showShOnly); }, "TODOC");
-      frameInfo.showShOnly = showShOnly ? 1 : 0;
+      m_frameInfo.showShOnly = showShOnly ? 1 : 0;
 
-      bool disableSplatting = frameInfo.pointCloudModeEnabled != 0;
+      bool disableSplatting = m_frameInfo.pointCloudModeEnabled != 0;
       PE::entry(
           "Disable splatting", [&]() { return ImGui::Checkbox("##DisableSplatting", &disableSplatting); }, "TODOC");
-      frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
+      m_frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
 
-      bool opacityGaussianDisabled = frameInfo.opacityGaussianDisabled != 0;
+      bool opacityGaussianDisabled = m_frameInfo.opacityGaussianDisabled != 0;
       PE::entry(
           "Disable opacity gaussian",
           [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
-      frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
+      m_frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
 
       PE::end();
     }
@@ -298,12 +371,13 @@ void GaussianSplatting::onUIRender()
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
       uint32_t renderedSplatCount =
-          (frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
+          (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       PE::entry(
           "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
       uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
-                        ((frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
-                                                                               (frameInfo.splatCount + 31) / 32) : 0;
+                        ((m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                                                                                 (m_frameInfo.splatCount + 31) / 32) :
+                        0;
       PE::entry(
           "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
       ImGui::EndDisabled();
@@ -326,56 +400,56 @@ void GaussianSplatting::onUIRender()
         ImGui::TableNextColumn();
         ImGui::Text("Centers");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcCenters).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcCenters).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevCenters).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevCenters).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devCenters).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devCenters).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("Covariances");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcCov).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcCov).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevCov).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevCov).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devCov).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devCov).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("SH degree 0");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcSh0).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcSh0).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevSh0).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevSh0).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devSh0).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devSh0).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("SH degree 1,2,3");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcShOther).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcShOther).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevShOther).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevShOther).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devShOther).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devShOther).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("SH Total");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcShAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcShAll).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevShAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevShAll).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devShAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devShAll).c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("Sub-total");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcAll).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevAll).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devAll).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devAll).c_str());
         ImGui::EndTable();
       }
       ImGui::Separator();
@@ -428,11 +502,11 @@ void GaussianSplatting::onUIRender()
         ImGui::TableNextColumn();
         ImGui::Text(formatMemorySize(0).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
+        ImGui::Text(formatMemorySize(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
                         .c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(
-            formatMemorySize(frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal).c_str());
+        ImGui::Text(formatMemorySize(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
+                        .c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("Sub-total");
@@ -454,11 +528,11 @@ void GaussianSplatting::onUIRender()
         ImGui::TableNextColumn();
         ImGui::Text("Total");
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.srcAll + m_renderMemoryStats.hostTotal).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.srcAll + m_renderMemoryStats.hostTotal).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.odevAll + m_renderMemoryStats.deviceUsedTotal).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.odevAll + m_renderMemoryStats.deviceUsedTotal).c_str());
         ImGui::TableNextColumn();
-        ImGui::Text(formatMemorySize(m_memoryStats.devAll + m_renderMemoryStats.deviceAllocTotal).c_str());
+        ImGui::Text(formatMemorySize(m_modelMemoryStats.devAll + m_renderMemoryStats.deviceAllocTotal).c_str());
         ImGui::EndTable();
       }
     }
