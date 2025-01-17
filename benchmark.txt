@@ -1,0 +1,10 @@
+#how many frames to average
+-benchmarkframes 6000
+#-winpos 10 10
+#-winsize 500 500
+
+benchmark "No vsync"
+-vsync 0
+
+benchmark "Image only"
+-screenshot "test.jpg"

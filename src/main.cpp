@@ -62,25 +62,26 @@ int main(int argc, char** argv)
 
   // Create the application
   auto app = std::make_unique<nvvkhl::Application>(appSetup);
-  // Create the test framework
-  auto test = std::make_shared<nvvkhl::ElementBenchmarkParameters>(argc, argv);
   // create the profiler element
-  auto elementProfiler = std::make_shared<nvvkhl::ElementProfiler>(true);
+  auto profiler = std::make_shared<nvvkhl::ElementProfiler>(true);
+  // Create the benchmarking framework
+  auto benchmark = std::make_shared<nvvkhl::ElementBenchmarkParameters>(argc, argv);
+  benchmark->setProfiler(profiler);
   // create the core of the sample
-  auto gaussianSplatting   = std::make_shared<GaussianSplatting>(elementProfiler);
+  auto gaussianSplatting   = std::make_shared<GaussianSplatting>(profiler);
 
   // Add all application elements
   app->addElement(gaussianSplatting);
-  app->addElement(test);
+  app->addElement(benchmark);
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());
   app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", SHADER_LANGUAGE_STR)));  // Window title info
-  app->addElement(elementProfiler);
+  app->addElement(profiler);
   app->addElement(std::make_shared<nvvkhl::ElementNvml>());
   //
   gaussianSplatting->registerRecentFilesHandler();
   app->run();
   app.reset();
 
-  return test->errorCode();
+  return benchmark->errorCode();
 }
 
