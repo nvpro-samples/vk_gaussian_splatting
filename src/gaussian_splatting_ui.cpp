@@ -103,8 +103,8 @@ void GaussianSplatting::onUIRender()
     //
     vkDeviceWaitIdle(m_device);
 
-    std::cout << "Start loading file " << m_sceneToLoadFilename.string() << std::endl;
-    if(!m_plyLoader.loadScene(m_sceneToLoadFilename.string(), m_splatSet))
+    std::cout << "Start loading file " << m_sceneToLoadFilename << std::endl;
+    if(!m_plyLoader.loadScene(m_sceneToLoadFilename, m_splatSet))
     {
       // this should never occur since status is READY.
       std::cout << "Error: cannot start scene load while loader is not ready status=" << m_plyLoader.getStatus() << std::endl;
@@ -175,7 +175,7 @@ void GaussianSplatting::onUIRender()
         m_plyLoader.reset();
         //
         ImGui::CloseCurrentPopup();
-        addToRecentFiles(m_loadedSceneFilename.string());
+        addToRecentFiles(m_loadedSceneFilename);
       }
       break;
       default: {

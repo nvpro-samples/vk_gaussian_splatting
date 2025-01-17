@@ -1,10 +1,22 @@
 #how many frames to average
--benchmarkframes 6000
-#-winpos 10 10
-#-winsize 500 500
-
-benchmark "No vsync"
 -vsync 0
+-benchmarkframes 3000
+benchmark "Skip start frames"
 
-benchmark "Image only"
--screenshot "test.jpg"
+-vsync 0
+-benchmarkframes 6000
+-pipeline 0
+benchmark "Mesh pipeline"
+
+-benchmarkframes 2
+-screenshot "meshPipeline.png"
+benchmark "Mesh Screen shot"
+
+-benchmarkframes 6000
+-pipeline 1
+benchmark "Vert pipeline"
+
+-benchmarkframes 2
+-screenshot "vertPipeline.png"
+benchmark "Vert Screen shot"
+

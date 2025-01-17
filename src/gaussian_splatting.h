@@ -187,22 +187,24 @@ private:  // Methods
   // methods to handle recent files in file menu
   void addToRecentFiles(const std::string& filePath, int historySize = 20);
 
-private:  // Attributes
+public:  // Attributes
   
-  // UI utility for choice menus
-  ImGuiH::Registry m_ui;
+  // triggers a scene load when set to non empty string
+  std::string m_sceneToLoadFilename;
 
+private:  // Attributes
+
+  // name of the loaded scene if successfull
+  std::string m_loadedSceneFilename;  
   // Recent files list
   std::vector<std::string> m_recentFiles;
-
-  // triggers a scene load when set to non empty string
-  std::filesystem::path m_sceneToLoadFilename;
-  // name of the loaded scene if successfull
-  std::filesystem::path m_loadedSceneFilename;
   // scene loader
   PlyAsyncLoader        m_plyLoader;
   // loaded model
   SplatSet m_splatSet;
+
+  // UI utility for choice menus
+  ImGuiH::Registry m_ui;
 
   //
   nvvkhl::Application*                     m_app{nullptr};
@@ -254,9 +256,11 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
 
+public:
   // rendering pipeline selector
   uint32_t m_selectedPipeline = PIPELINE_MESH;
 
+private:
   // CPU async sorting
   std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>
 
