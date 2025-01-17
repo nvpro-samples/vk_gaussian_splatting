@@ -34,6 +34,9 @@ struct SplatSet
   std::vector<float> opacity;   // 1 value per point in ply file
   std::vector<float> scale;     // 3 components per point in ply file
   std::vector<float> rotation;  // 4 components per point in ply file - a quaternion
+
+  // returns the number of splate in the set
+  inline size_t size() const { return positions.size() / 3; }
 };
 
 #endif

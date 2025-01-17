@@ -101,20 +101,21 @@ void GaussianSplatting::onResize(uint32_t width, uint32_t height)
 
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
 {
+
   if(!m_gBuffers)
     return;
+
+  //
+  const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
 
   // for 0 if not ready so the rendering does not 
   // touch the splat set while loading
   size_t splatCount = 0;
   if(m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
   {
-    splatCount = m_splatSet.positions.size() / 3;
+    splatCount = m_splatSet.size();
   }
-
-  //
-  const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
-
+  
   const float aspect_ratio = m_viewSize.x / m_viewSize.y;
   glm::vec3   eye;
   glm::vec3   center;
@@ -206,8 +207,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       {
         // splatting off, we disable the sorting
         // indices would not be needed for non splatted points
-        // however, uisng the same mechanism allows to use exactly the same shader
-        // so if splatting/blending is off we provide an ordered table of indices 0->splatcount
+        // however, using the same mechanism allows to use exactly the same shader
+        // so if splatting/blending is off we provide an ordered table of indices
         bool refill = (gsIndex.size() != splatCount);
         if(refill)
         {
@@ -253,11 +254,11 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       { // reset the draw indirect parameters and counters, will be updated by compute shader
-        const IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
+        const IndirectParams drawIndexedIndirectParams;
         vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(IndirectParams), (void*)&drawIndexedIndirectParams);
 
         VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-        barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT ;
         barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
 
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -281,8 +282,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         constexpr int local_size = 256;
         vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                             &barrier, 0, NULL, 0, NULL);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT 
+                             ,0, 1, &barrier, 0, NULL, 0, NULL);
       }
 
       // invoke the radix sort from vrdx lib
@@ -297,30 +299,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1,
                              &barrier, 0, NULL, 0, NULL);
-      }
-
-      // TODO: to remove once stable
-      // read back m_keysDevice for debug
-      if(false)
-      {
-        // reset staging for debug
-        uint32_t* stagingBuffer = static_cast<uint32_t*>(m_alloc->map(m_debugReadbackHost));
-        //std::memset(stagingBuffer, 0, (2 * splatCount + 1) * sizeof(uint32_t));
-
-        // copy from device to host
-        VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
-        vkCmdCopyBuffer(cmd, m_splatDistancesDevice.buffer, m_debugReadbackHost.buffer, 1, &bc);
-        // sync with end of copy to host
-        VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-        bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-        bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bmb.buffer              = m_splatDistancesDevice.buffer;
-        bmb.size                = VK_WHOLE_SIZE;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                             VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-        m_alloc->unmap(m_debugReadbackHost);
       }
     }
   }
@@ -408,24 +386,25 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(IndirectParams)};
     vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
 
-    // sync with end of copy to host
+    // sync with end of copy to host, GPU timeline, 
+    // value will be available between now and next frame
     VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
     bmb.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
     bmb.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
     bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.buffer              = m_indirect.buffer;
+    bmb.buffer              = m_indirectHost.buffer;
     bmb.size                = VK_WHOLE_SIZE;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
 
-    // copy to main memory
+    // copy to main memory (this copy the value from last frame, CPU timeline)
     uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
     std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(IndirectParams));
     m_alloc->unmap(m_indirectHost);
   }
   
-  // update rendering memory statustics
+  // update rendering memory statistics
   if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
   {
     m_renderMemoryStats.hostAllocIndices = splatCount * sizeof(uint32_t);
@@ -715,20 +694,19 @@ void GaussianSplatting::destroyGbuffers()
   m_gBuffers.reset();
 }
 
-// to be cleaned
-constexpr uint32_t MAX_ELEMENT_COUNT = 1 << 25;
-
 void GaussianSplatting::createVkBuffers()
 {
+  /* TODO JEM why putting that in a submitResourceFree
   // TODO: free all other buffers so createVKBuffers can be used on a scene reset
   nvvkhl::Application::submitResourceFree([vertices = m_quadVertices, indices = m_quadIndices, alloc = m_alloc]() {
     alloc->destroy(const_cast<nvvk::Buffer&>(vertices));
     alloc->destroy(const_cast<nvvk::Buffer&>(indices));
   });
+  */
 
-  const auto splatCount = m_splatSet.positions.size() / 3;
+  const auto splatCount = m_splatSet.size();
 
-  // TODO: this has nothing to do here ?
+  // TODO: this has nothing to do here, check where to put this
   distArray.resize(splatCount);
   gsIndex.resize(splatCount);
   sortGsIndex.resize(splatCount);
@@ -744,27 +722,26 @@ void GaussianSplatting::createVkBuffers()
 
     {  // Create some buffer for GPU and/or CPU sorting
 
-      m_splatIndicesHost = m_alloc->createBuffer(splatCount * sizeof(uint32_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      const VkDeviceSize bufferSize = splatCount * sizeof(uint32_t);
+
+      m_splatIndicesHost = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-      m_splatIndicesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
-                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-                                                       | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                                                       | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      m_splatIndicesDevice =
+          m_alloc->createBuffer(bufferSize,
+                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                    | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-      m_splatDistancesDevice = m_alloc->createBuffer(splatCount * sizeof(uint32_t),
-                                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-                                                         | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                                                         | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-      m_debugReadbackHost = m_alloc->createBuffer((splatCount * 2) * sizeof(uint32_t),
-                                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
+      m_splatDistancesDevice =
+          m_alloc->createBuffer(bufferSize,
+                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                    | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                  
       VrdxSorterStorageRequirements requirements;
-      vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
+      // vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
+      vrdxGetSorterKeyValueStorageRequirements(m_sorter, splatCount, &requirements);
       m_vrdxStorageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
       m_renderMemoryStats.allocVdrxInternal = requirements.size; // for stats reporting only
 
@@ -772,7 +749,6 @@ void GaussianSplatting::createVkBuffers()
       m_dutil->DBG_NAME(m_splatIndicesHost.buffer);
       m_dutil->DBG_NAME(m_splatIndicesDevice.buffer);
       m_dutil->DBG_NAME(m_splatDistancesDevice.buffer);
-      m_dutil->DBG_NAME(m_debugReadbackHost.buffer);
       m_dutil->DBG_NAME(m_vrdxStorageDevice.buffer);
     }
   }
@@ -786,24 +762,22 @@ void GaussianSplatting::createVkBuffers()
 		-1.0, 1.0, 0.0
 	};
 
-  //
-  const IndirectParams indirect = {6, 0, 0, 0, 0, 0, 0, 0};
-
-  //
-  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
-
   // create the buffer for indirect parameters
-  m_indirect = m_alloc->createBuffer(cmd, sizeof(IndirectParams), (void*)&indirect,
+  m_indirect = m_alloc->createBuffer(sizeof(IndirectParams),
                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                         | VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                          | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
   // for statistics readback
-  m_indirectHost = m_alloc->createBuffer(8 * sizeof(uint32_t),
+  m_indirectHost = m_alloc->createBuffer(sizeof(IndirectParams),
                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   m_dutil->DBG_NAME(m_indirect.buffer);
   m_dutil->DBG_NAME(m_indirectHost.buffer);
+
+  //
+  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // create the quad buffers
   m_quadVertices = m_alloc->createBuffer(cmd, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -826,14 +800,14 @@ void GaussianSplatting::createVkBuffers()
 
 void GaussianSplatting::destroyVkBuffers()
 {
+  vrdxDestroySorter(m_sorter);
 
   m_alloc->destroy(m_quadVertices);
   m_alloc->destroy(m_quadIndices);
 
   m_alloc->destroy(m_indirect);
   m_alloc->destroy(m_indirectHost);
-
-  m_alloc->destroy(m_debugReadbackHost);
+    
   m_alloc->destroy(m_splatDistancesDevice);
   m_alloc->destroy(m_splatIndicesDevice);
   m_alloc->destroy(m_splatIndicesHost);

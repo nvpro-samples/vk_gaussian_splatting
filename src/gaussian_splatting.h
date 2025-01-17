@@ -223,20 +223,20 @@ private:  // Attributes
   nvvk::Buffer m_pixelBuffer;
 
   // indirect parameters for
-  // vkCmdDrawIndexedIndirect (first 6 attr)
-  // and vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
+  // - vkCmdDrawIndexedIndirect (first 6 attr)
+  // - vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
   struct IndirectParams
   {
     // for vkCmdDrawIndexedIndirect
-    uint32_t indexCount    = 0;
-    uint32_t instanceCount = 0;
-    uint32_t firstIndex    = 0;
+    uint32_t indexCount    = 6; // 6 indices for the quad (2 triangles)
+    uint32_t instanceCount = 0; // will be incremented by the distance compute shader
+    uint32_t firstIndex    = 0; 
     uint32_t vertexOffset  = 0;
     uint32_t firstInstance = 0;
     // for vkCmdDrawMeshTasksIndirectEXT
-    uint32_t groupCountX = 0;
-    uint32_t groupCountY = 0;
-    uint32_t groupCountZ = 0;
+    uint32_t groupCountX = 0; // Will be incremented by distance the compute shader
+    uint32_t groupCountY = 1; // Allways one workgroup on Y
+    uint32_t groupCountZ = 1; // Allways one workgroup on Z
   };
 
   nvvk::Buffer   m_indirect;          // indirect parameter buffer
@@ -285,7 +285,6 @@ private:  // Attributes
   nvvk::Buffer m_splatIndicesDevice;    // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
-  nvvk::Buffer m_debugReadbackHost;     // For debug readbacks. TODO remove after stabilization
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders

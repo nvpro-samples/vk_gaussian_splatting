@@ -1,6 +1,7 @@
 #version 460
 
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 #include "device_host.h"
 
@@ -17,28 +18,27 @@ layout(local_size_x = 256) in;
 
 layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
-layout(set = 0, binding = 5) buffer _distances
+layout(set = 0, binding = 5, scalar) buffer _distances
 {
   uint32_t distances[];
 };
-layout(std430, set = 0, binding = 6) buffer _indices
+layout(std430, set = 0, binding = 6, scalar) writeonly buffer _indices
 {
   uint32_t indices[];
 };
-layout(std430, set = 0, binding = 7) buffer _indirect
+layout(std430, set = 0, binding = 7, scalar) writeonly buffer _indirect
 {
   uint32_t indirect[];
 };
 
-vec2 getDataUV(in uint index, in int stride, in int offset, in vec2 dimensions)
+ivec2 getDataPos(in uint splatIndex, in uint stride, in uint offset, in ivec2 dimensions)
 {
-  vec2  samplerUV = vec2(0.0, 0.0);
-  float d         = float(index * uint(stride) + uint(offset)) / dimensions.x;
-  samplerUV.y     = float(floor(d)) / dimensions.y;
-  samplerUV.x     = fract(d);
-  return samplerUV;
+  const uint fullOffset = splatIndex * stride + offset;
+
+  return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
+// encodes an fp32 into a uint32 that can be ordered
 uint encodeMinMaxFp32(float val)
 {
   uint bits = floatBitsToUint(val);
@@ -48,16 +48,16 @@ uint encodeMinMaxFp32(float val)
 
 void main()
 {
-  uint id = gl_GlobalInvocationID.x;
+  const uint id = gl_GlobalInvocationID.x;
   if(id >= frameInfo.splatCount)
     return;
 
-  vec4 pos = texture(centersTexture, getDataUV(id, 1, 0, textureSize(centersTexture, 0)));
+  vec4 pos = texelFetch(centersTexture, getDataPos(id, 1, 0, textureSize(centersTexture, 0)), 0);
   pos.w    = 1.0;
   //pos = projection * view * model * pos;
-  pos         = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
-  pos         = pos / pos.w;
-  float depth = pos.z;
+  pos      = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
+  pos      = pos / pos.w;
+  const float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
@@ -69,10 +69,10 @@ void main()
      || (frameInfo.frustumCulling == FRUSTUM_CULLING_DIST && abs(pos.x) <= 1.2f && abs(pos.y) <= 1.2f && pos.z >= 0.f && pos.z <= 1.f))
   {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
-    uint instance_index = atomicAdd(indirect[1], 1);
-    // stores the key
+    const uint instance_index = atomicAdd(indirect[1], 1);
+    // stores the distance
     distances[instance_index] = encodeMinMaxFp32(-depth);
-    // stores the value
+    // stores the base index
     indices[instance_index] = id;
     // set the workgroup count for the mesh shading pipeline
     if(instance_index % 32 == 0)
