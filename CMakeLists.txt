@@ -79,7 +79,7 @@ _add_package_ShaderC()          # tiny_shader_toy
 CPMAddPackage(
   NAME vulkan_radix_sort
   GITHUB_REPOSITORY jaesung-cs/vulkan_radix_sort
-  GIT_TAG 2cda1ef1e6760da5faa5f5b616eb8e13b3af289b
+  GIT_TAG 3faac413f643ca799f42950af6f7fb9c12913003
 )
 #add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/build/_deps/vulkan_radix_sort-src")
 
@@ -170,7 +170,7 @@ function(create_sample  PROJECT_NAME)
         ${PLATFORM_LIBRARIES}
         ${UNIXLINKLIBS}
     )
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE Vulkan::Vulkan VulkanMemoryAllocator vk_radix_sort)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE Vulkan::Vulkan vk_radix_sort)
 
     # Compile definitions
     # the "config" directory doesn't really exist but serves as place holder
