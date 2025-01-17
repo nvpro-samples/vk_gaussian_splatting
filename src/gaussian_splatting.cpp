@@ -800,7 +800,8 @@ void GaussianSplatting::createVkBuffers()
 
 void GaussianSplatting::destroyVkBuffers()
 {
-  vrdxDestroySorter(m_sorter);
+  if(m_sorter != VK_NULL_HANDLE ) 
+    vrdxDestroySorter(m_sorter);
 
   m_alloc->destroy(m_quadVertices);
   m_alloc->destroy(m_quadIndices);
