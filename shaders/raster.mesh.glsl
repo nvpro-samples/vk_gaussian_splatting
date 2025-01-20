@@ -28,6 +28,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_GOOGLE_include_directive : require
 #include "device_host.h"
+#include "common.glsl"
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 128, max_primitives = 64) out;
@@ -41,23 +42,22 @@ layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
 // but it may be less performant than aligning
 // attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = 0) uniform _frameInfo
+layout(set = 0, binding = BINDING_FRAME_INFO_UBO) uniform _frameInfo
 {
   FrameInfo frameInfo;
 };
 
 // sorted indices
-layout(set = 0, binding = 6) buffer _indices
+layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
 {
   uint32_t indices[];
 };
 
-layout(set = 0, binding = 1) uniform sampler2D centersTexture;
-layout(set = 0, binding = 2) uniform sampler2D colorsTexture;
-layout(set = 0, binding = 3) uniform sampler2D covariancesTexture;
-layout(set = 0, binding = 4) uniform sampler2D sphericalHarmonicsTexture;
-
-#include "common.glsl"
+// textures map describing the 3DGS model
+layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
+layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTexture;
+layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
+layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
 
 void main()
 {
@@ -79,15 +79,8 @@ void main()
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
 
-    ///////
-    //
-    const uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
-    const uint  doubleOddOffset  = oddOffset * uint(2);
-    const bool  isEven           = oddOffset == uint(0);
-    const uint  nearestEvenIndex = uint(splatIndex) - oddOffset;
-    const float fOddOffset       = float(oddOffset);
-
-    const vec3 splatCenter = vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
+    // 
+    const vec3 splatCenter = fetchCenter(centersTexture, splatIndex);
 
     const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
@@ -118,7 +111,7 @@ void main()
     }
 
     // work on color
-    vec4 splatColor = texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
+    vec4 splatColor = fetchColor(colorsTexture, splatIndex);
     if(frameInfo.showShOnly == 1)
     {
       splatColor.r = 0.5;
@@ -128,30 +121,19 @@ void main()
 
     if(frameInfo.sphericalHarmonicsDegree >= 1)
     {
+      // SH coefficients for degree 1 (1,2,3)
+      vec3 shd1[3];
+      // SH coefficients for degree 2 (4 5 6 7 8)
+      vec3 shd2[5];
+      // fetch the data (only what is needed according to degree)
+      fetchSh(sphericalHarmonicsTexture, splatIndex, frameInfo.sphericalHarmonicsDegree,
+                     frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
 
-      const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-
-      const vec4 sampledSH0123 =
-          texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      const vec4 sampledSH4567 =
-          texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      const vec4 sampledSH891011 =
-          texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 2, textureSize(sphericalHarmonicsTexture, 0)), 0);
-      const vec3 sh1 = sampledSH0123.rgb;
-      const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
-      const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
-
-
-      //if (sphericalHarmonics8BitMode == 1) {
-      //    sh1 = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-      //    sh2 = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-      //    sh3 = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-      //}
-
+      const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
       const float x = worldViewDir.x;
       const float y = worldViewDir.y;
       const float z = worldViewDir.z;
-      splatColor.rgb += SH_C1 * (-sh1 * y + sh2 * z - sh3 * x);
+      splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
 
       if(frameInfo.sphericalHarmonicsDegree >= 2)
       {
@@ -163,29 +145,8 @@ void main()
         const float yz = y * z;
         const float xz = x * z;
 
-        const vec4 sampledSH12131415 =
-            texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        const vec4 sampledSH16171819 =
-            texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
-        const vec4 sampledSH20212223 =
-            texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
-
-        const vec3 sh4 = sampledSH891011.gba;
-        const vec3 sh5 = sampledSH12131415.rgb;
-        const vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
-        const vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
-        const vec3 sh8 = sampledSH20212223.gba;
-
-        //if (sphericalHarmonics8BitMode == 1) {
-        //    sh4 = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-        //    sh5 = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-        //    sh6 = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-        //    sh7 = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-        //    sh8 = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-        //}
-
-        splatColor.rgb += (SH_C2[0] * xy) * sh4 + (SH_C2[1] * yz) * sh5 + (SH_C2[2] * (2.0 * zz - xx - yy)) * sh6
-                          + (SH_C2[3] * xz) * sh7 + (SH_C2[4] * (xx - yy)) * sh8;
+        splatColor.rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
+                          + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
       }
     }
 
@@ -193,22 +154,8 @@ void main()
     outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
     outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
-    // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
-    const vec4 sampledCovarianceA =
-        texelFetch(covariancesTexture, getDataPosF(nearestEvenIndex, 1.5, oddOffset, textureSize(covariancesTexture, 0)), 0);
-    const vec4 sampledCovarianceB =
-        texelFetch(covariancesTexture,
-                   getDataPosF(nearestEvenIndex, 1.5, oddOffset + uint(1), textureSize(covariancesTexture, 0)), 0);
-
-    const vec3 cov3D_M11_M12_M13 =
-        vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
-    const vec3 cov3D_M22_M23_M33 =
-        vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
-
-    // Construct the 3D covariance matrix
-    const mat3 Vrk =
-        mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
-             cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
+    // Fetch and construct the 3D covariance matrix
+    const mat3 Vrk = fetchCovariance(covariancesTexture, splatIndex);
 
     mat3 J;
     if(frameInfo.orthographicMode == 1)
@@ -233,6 +180,7 @@ void main()
     // Transform the 3D covariance matrix (Vrk) to compute the 2D covariance matrix
     mat3 cov2Dm = transpose(T) * Vrk * T;
 
+    // TODO decide if we keep this, visual effect is not obvious
     const bool antialiased = false;
     if(antialiased)
     {
@@ -244,7 +192,7 @@ void main()
 
       splatColor.a *= compensation;
 
-      // overwrite
+      // overwrite output
       outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
       outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
     }

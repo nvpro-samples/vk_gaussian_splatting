@@ -33,6 +33,16 @@
 #define FRUSTUM_CULLING_VERT 2
 #define FRUSTUM_CULLING_MESH 3
 
+// bindings for set 0
+#define BINDING_FRAME_INFO_UBO 0
+#define BINDING_CENTERS_TEXTURE 1
+#define BINDING_COLORS_TEXTURE 2
+#define BINDING_COVARIANCES_TEXTURE 3
+#define BINDING_SH_TEXTURE 4
+#define BINDING_DISTANCES_BUFFER 5
+#define BINDING_INDICES_BUFFER 6
+#define BINDING_INDIRECT_BUFFER 7
+
 // Warning, struct members must
 // be aligned to 128 bits
 //

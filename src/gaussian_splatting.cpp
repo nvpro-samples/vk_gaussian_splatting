@@ -556,7 +556,7 @@ void GaussianSplatting::createPipeline()
   // Writing to descriptors for frameInfo uniform buffer
   std::vector<VkWriteDescriptorSet> writes;
   const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfoBuffer.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 0, &dbi_frameInfo));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_FRAME_INFO_UBO, &dbi_frameInfo));
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
   {  //  create the rasterization pipelines
@@ -1011,18 +1011,18 @@ void GaussianSplatting::createDataTextures(void)
 
   // Associate textures with bindings
   std::vector<VkWriteDescriptorSet> writes;
-  writes.emplace_back(m_dset->makeWrite(0, 1, &m_centersMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 2, &m_colorsMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 3, &m_covariancesMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, 4, &m_sphericalHarmonicsMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_TEXTURE, &m_colorsMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_TEXTURE, &m_covariancesMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_TEXTURE, &m_sphericalHarmonicsMap->descriptor()));
   
   // TODO can we move this at a better place ?
   const VkDescriptorBufferInfo keys_desc{m_splatDistancesDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 5, &keys_desc));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_DISTANCES_BUFFER, &keys_desc));
   const VkDescriptorBufferInfo cpuKeys_desc{m_splatIndicesDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 6, &cpuKeys_desc));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDICES_BUFFER, &cpuKeys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, 7, &indirect_desc));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
 
 
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);

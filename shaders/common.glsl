@@ -28,11 +28,6 @@ const float minAlpha = 1.0 / 255.0;
 const float SH_C1    = 0.4886025119029199f;
 const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
 
-const float SphericalHarmonics8BitCompressionRange     = 3.0;
-const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
-const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
-
-
 // data texture accessors
 ivec2 getDataPos(in uint splatIndex, in uint stride, in uint offset, in ivec2 dimensions)
 {
@@ -49,3 +44,107 @@ ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 
   return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
+// fetch center value from textur emap
+vec3 fetchCenter(in sampler2D centersTexture, in uint splatIndex)
+{
+  return vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
+}
+
+// fetchColor replaces fetchSH0 since non view dependent color is precomputed on CPU
+vec4 fetchColor(in sampler2D colorsTexture, in uint splatIndex)
+{
+  return texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
+}
+
+void fetchSh(in sampler2D sphericalHarmonicsTexture, in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
+{
+  const float SphericalHarmonics8BitCompressionRange     = 3.0;
+  const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
+  const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
+
+  // fetching degree 1
+  const vec4 sampledSH0123 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH4567 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH891011 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 2, textureSize(sphericalHarmonicsTexture, 0)), 0);
+
+  const vec3 sh1 = sampledSH0123.rgb;
+  const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
+  const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
+
+  if(format8bit == 0)
+  {
+    shd1[0] = sh1;
+    shd1[1] = sh2;
+    shd1[2] = sh3;
+  }
+  else
+  {
+    shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  }
+
+  // fetching degree 2
+  if(degree >= 2)
+  {
+    const vec4 sampledSH12131415 =
+        texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
+    const vec4 sampledSH16171819 =
+        texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
+    const vec4 sampledSH20212223 =
+        texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
+
+    const vec3 sh4 = sampledSH891011.gba;
+    const vec3 sh5 = sampledSH12131415.rgb;
+    const vec3 sh6 = vec3(sampledSH12131415.a, sampledSH16171819.rg);
+    const vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
+    const vec3 sh8 = sampledSH20212223.gba;
+
+    if(format8bit == 0)
+    {
+      shd2[0] = sh4;
+      shd2[1] = sh5;
+      shd2[2] = sh6;
+      shd2[3] = sh7;
+      shd2[4] = sh8;
+    }
+    else
+    {
+      shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    }
+  }
+}
+
+mat3 fetchCovariance(in sampler2D covariancesTexture, in uint splatIndex)
+{
+  // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
+
+  const uint  oddOffset        = uint(splatIndex) & uint(0x00000001);
+  const uint  doubleOddOffset  = oddOffset * uint(2);
+  const bool  isEven           = oddOffset == uint(0);
+  const uint  nearestEvenIndex = uint(splatIndex) - oddOffset;
+  const float fOddOffset       = float(oddOffset);
+
+  const vec4 sampledCovarianceA =
+      texelFetch(covariancesTexture, getDataPosF(nearestEvenIndex, 1.5, oddOffset, textureSize(covariancesTexture, 0)), 0);
+
+  const vec4 sampledCovarianceB =
+      texelFetch(covariancesTexture,
+                 getDataPosF(nearestEvenIndex, 1.5, oddOffset + uint(1), textureSize(covariancesTexture, 0)), 0);
+
+  const vec3 cov3D_M11_M12_M13 =
+      vec3(sampledCovarianceA.rgb) * (1.0 - fOddOffset) + vec3(sampledCovarianceA.ba, sampledCovarianceB.r) * fOddOffset;
+
+  const vec3 cov3D_M22_M23_M33 =
+      vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
+
+  return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
+       cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
+}
