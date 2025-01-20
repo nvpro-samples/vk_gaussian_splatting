@@ -12,7 +12,13 @@ cmake -S . -B build
 cmake --build build --config Release
 
 # Running
-build\Release\vk_gaussian_splatting.exe
+../bin_x64/Release/vk_gaussian_splatting.exe
+
+# Running the benchmark defined in benchmark.txt 
+mkdir _benchmark
+cd _benchmark
+../bin_x64/Release/vk_gaussian_splatting.exe -benchmark ../benchmark.txt <path_to_3dgs_dataset>/bicycle/point_cloud/iteration_30000/point_cloud.ply
+
 ```
 
 ## License
