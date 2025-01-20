@@ -57,37 +57,14 @@ layout(set = 0, binding = 2) uniform sampler2D colorsTexture;
 layout(set = 0, binding = 3) uniform sampler2D covariancesTexture;
 layout(set = 0, binding = 4) uniform sampler2D sphericalHarmonicsTexture;
 
-const float sqrt8    = sqrt(8.0);
-const float minAlpha = 1.0 / 255.0;
-
-// texture accessors
-ivec2 getDataPos(in uint splatIndex, in uint stride, in uint offset, in ivec2 dimensions)
-{
-  const uint fullOffset = splatIndex * stride + offset;
-
-  return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
-}
-
-ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 dimensions)
-{
-  const uint fullOffset = uint(float(splatIndex) * stride) + offset;
-
-  return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
-}
-
-const float SH_C1    = 0.4886025119029199f;
-const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
-
-const float SphericalHarmonics8BitCompressionRange     = 3.0;
-const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
-const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
+#include "common.glsl"
 
 void main()
 {
   const uint32_t baseIndex       = gl_GlobalInvocationID.x;
   const int      splatCount      = frameInfo.splatCount;
   const uint     outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
-
+  
   if(gl_LocalInvocationIndex == 0)
   {
     // set the number of vertices and primitives to put out just once for the complete workgroup

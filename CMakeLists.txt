@@ -274,6 +274,7 @@ create_sample(gaussian_splatting
     ${SHD_DIR}/raster.mesh.glsl
   SHADER_HEADERS
     ${SHD_DIR}/device_host.h
+    ${SHD_DIR}/common.glsl
   SHADER_HLSL
     ${SHD_DIR}/raster.hlsl 
   SHADER_SLANG
