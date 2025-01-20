@@ -170,8 +170,8 @@ void GaussianSplatting::onUIRender()
         resetFrameInfo();
         //
         createVkBuffers();
-        createPipeline();
         createDataTextures();
+        createPipeline();
         m_plyLoader.reset();
         //
         ImGui::CloseCurrentPopup();

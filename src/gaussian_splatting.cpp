@@ -63,15 +63,15 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   //
   m_dset        = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
   m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
-  //
-  m_dset->addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  // create descriptor bindings
+  m_dset->addBinding(BINDING_FRAME_INFO_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_CENTERS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_COLORS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_COVARIANCES_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_SH_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_INDIRECT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 };
 
 void GaussianSplatting::onDetach()
@@ -553,13 +553,53 @@ void GaussianSplatting::createPipeline()
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
-  // Writing to descriptors for frameInfo uniform buffer
+  // Write descriptors for the buffers
   std::vector<VkWriteDescriptorSet> writes;
+  // add texture maps
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_TEXTURE, &m_colorsMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_TEXTURE, &m_covariancesMap->descriptor()));
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_TEXTURE, &m_sphericalHarmonicsMap->descriptor()));
+  // add buffers
   const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfoBuffer.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_FRAME_INFO_UBO, &dbi_frameInfo));
+  const VkDescriptorBufferInfo keys_desc{m_splatDistancesDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_DISTANCES_BUFFER, &keys_desc));
+  const VkDescriptorBufferInfo cpuKeys_desc{m_splatIndicesDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDICES_BUFFER, &cpuKeys_desc));
+  const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
+  // write
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-  {  //  create the rasterization pipelines
+  // Create the pipeline to run the compute shader for distance & culling
+  {
+    const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                              .codeSize = sizeof(rank_comp_glsl),
+                                              .pCode    = &rank_comp_glsl[0]};
+    VkShaderModule                 compute{};
+    vkCreateShaderModule(m_device, &createInfo, nullptr, &compute);
+
+    auto pipelineLayout = m_dset->getPipeLayout();
+
+    VkComputePipelineCreateInfo pipelineInfo{
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            {
+                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = compute,
+                .pName  = "main",
+            },
+        .layout = pipelineLayout,
+    };
+    vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
+
+    // Shader module is not needed anymore
+    vkDestroyShaderModule(m_device, compute, nullptr);
+  }
+  // Create the two rasterization pipelines
+  {  
 
     VkPipelineRenderingCreateInfo prend_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR};
     prend_info.colorAttachmentCount    = 1;
@@ -589,7 +629,6 @@ void GaussianSplatting::createPipeline()
     pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
 
     // TODOC: 
-
     pstate.addBindingDescriptions({{0, 3 * sizeof(float)}}); // 3 component per vertex position
     pstate.addAttributeDescriptions({
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}
@@ -642,33 +681,6 @@ void GaussianSplatting::createPipeline()
 #endif
     }
   }
-  {  // create the compute pipeline
-
-    // Creating the pipeline to run the compute shader for distance & culling 
-    const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                              .codeSize = sizeof(rank_comp_glsl),
-                                              .pCode    = &rank_comp_glsl[0]};
-    VkShaderModule                 compute{};
-    vkCreateShaderModule(m_device, &createInfo, nullptr, &compute);
-
-    auto pipelineLayout = m_dset->getPipeLayout();
-
-    VkComputePipelineCreateInfo pipelineInfo{
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage =
-            {
-                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = compute,
-                .pName  = "main",
-            },
-        .layout = pipelineLayout,
-    };
-    vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
-
-    // Shader module is not needed anymore
-    vkDestroyShaderModule(m_device, compute, nullptr);
-  }
 }
 
 void GaussianSplatting::destroyPipeline()
@@ -711,9 +723,9 @@ void GaussianSplatting::createVkBuffers()
   gsIndex.resize(splatCount);
   sortGsIndex.resize(splatCount);
 
-  // All this block for the vrdx GPU sorter
+  // All this block for the sorting
   {
-    // sorter
+    // Vrdx sorter
     m_sorter                    = VK_NULL_HANDLE;
     m_sorterInfo                = {};
     m_sorterInfo.physicalDevice = m_app->getPhysicalDevice();
@@ -1009,23 +1021,6 @@ void GaussianSplatting::createDataTextures(void)
   m_modelMemoryStats.odevAll = m_modelMemoryStats.odevCenters + m_modelMemoryStats.odevCov + m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
   m_modelMemoryStats.devAll = m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
 
-  // Associate textures with bindings
-  std::vector<VkWriteDescriptorSet> writes;
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_TEXTURE, &m_colorsMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_TEXTURE, &m_covariancesMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_TEXTURE, &m_sphericalHarmonicsMap->descriptor()));
-  
-  // TODO can we move this at a better place ?
-  const VkDescriptorBufferInfo keys_desc{m_splatDistancesDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_DISTANCES_BUFFER, &keys_desc));
-  const VkDescriptorBufferInfo cpuKeys_desc{m_splatIndicesDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDICES_BUFFER, &cpuKeys_desc));
-  const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
-
-
-  vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 void GaussianSplatting::destroyDataTextures()
