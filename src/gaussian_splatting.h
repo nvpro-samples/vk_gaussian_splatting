@@ -119,13 +119,7 @@ private:  // Methods
   // then wait for triggers
   void sortingThreadFunc(void);
 
-  void reset() {
-    vkDeviceWaitIdle(m_device);
-    destroyScene();
-    destroyDataTextures();
-    destroyVkBuffers();
-    destroyPipeline();
-  }
+  void reset();
 
   void destroyScene();
 
@@ -145,6 +139,11 @@ private:  // Methods
   void createDataTextures(void);
 
   void destroyDataTextures(void);
+
+  // create the buffers on the device and upload the splat set data from host to device
+  void createDataBuffers(void);
+  
+  void destroyDataBuffers(void);
 
   // Utility function to compute the texture size according to the size of the data to be stored
   // By default use map of 4K Width and 1K heightn then adjust the height according to the data size
@@ -255,6 +254,12 @@ private:  // Attributes
   std::shared_ptr<SampleTexture> m_colorsMap;
   std::shared_ptr<SampleTexture> m_covariancesMap;
   std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
+
+  // Data buffers
+  nvvk::Buffer m_centersDevice;    
+  nvvk::Buffer m_colorsDevice;  
+  nvvk::Buffer m_covariancesDevice;
+  nvvk::Buffer m_sphericalHarmonicsDevice;   
 
 public:
   // rendering pipeline selector

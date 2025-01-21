@@ -22,7 +22,6 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
-#define UNROLL_LOOP [[UNROLL]]
 //#extension GL_KHR_shader_subgroup : enable
 //#extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : require
@@ -103,7 +102,7 @@ void main()
     const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
 
     // emit per vertex attributes as early as possible
-    UNROLL_LOOP
+    [[unroll]]
     for(uint i = 0; i < 4; ++i)
     {
       // Scale the fragment position data we send to the fragment shader
@@ -271,7 +270,7 @@ void main()
     /////////////////////////////
     // emiting quad vertices
 
-    UNROLL_LOOP
+    [[unroll]]
     for(uint i = 0; i < 4; ++i)
     {
       const vec2 fragPos = positions[i].xy;

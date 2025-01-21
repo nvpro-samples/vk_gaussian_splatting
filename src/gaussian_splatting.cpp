@@ -72,6 +72,11 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_INDIRECT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+
+  m_dset->addBinding(BINDING_CENTERS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_COLORS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_COVARIANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_SH_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 };
 
 void GaussianSplatting::onDetach()
@@ -85,11 +90,7 @@ void GaussianSplatting::onDetach()
   lock.unlock();
   sortingThread.join();
   // release resources
-  vkDeviceWaitIdle(m_device);
-  destroyScene();
-  destroyDataTextures();
-  destroyVkBuffers();
-  destroyPipeline();
+  reset();
   destroyGbuffers();
   m_dset->deinit();
 }
@@ -511,7 +512,7 @@ void GaussianSplatting::sortingThreadFunc(void)
   auto time1 = std::chrono::high_resolution_clock::now();
   m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
 
-  // comparison function working of the data <dist,idex>
+  // comparison function working on the data <dist,idex>
   auto compare = [](const std::pair<float, int>& a, const std::pair<float, int>& b) { return a.first > b.first; };
 
   // Sorting the array with respect to distance keys
@@ -535,6 +536,16 @@ void GaussianSplatting::sortingThreadFunc(void)
   sortStart = false;
   lock.unlock();
 }
+}
+
+void GaussianSplatting::reset()
+{
+  vkDeviceWaitIdle(m_device);
+  destroyScene();
+  destroyDataTextures();
+  destroyDataBuffers();
+  destroyVkBuffers();
+  destroyPipeline();
 }
 
 void GaussianSplatting::destroyScene()
@@ -569,6 +580,15 @@ void GaussianSplatting::createPipeline()
   writes.emplace_back(m_dset->makeWrite(0, BINDING_INDICES_BUFFER, &cpuKeys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
+
+  const VkDescriptorBufferInfo centers_desc{m_centersDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_BUFFER, &centers_desc));
+  const VkDescriptorBufferInfo colors_desc{m_colorsDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_BUFFER, &colors_desc));
+  const VkDescriptorBufferInfo covariances_desc{m_covariancesDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_BUFFER, &covariances_desc));
+  const VkDescriptorBufferInfo sh_desc{m_sphericalHarmonicsDevice.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_BUFFER, &sh_desc));
   // write
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -765,15 +785,6 @@ void GaussianSplatting::createVkBuffers()
     }
   }
 
-  // Quad with UV coordinates
-  const std::vector<uint16_t> indices = {0, 2, 1, 2, 0, 3};
-	const std::vector<float> vertices = {
-		-1.0, -1.0, 0.0,
-		1.0,  -1.0, 0.0,
-		1.0,  1.0, 0.0,
-		-1.0, 1.0, 0.0
-	};
-
   // create the buffer for indirect parameters
   m_indirect = m_alloc->createBuffer(sizeof(IndirectParams),
                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
@@ -791,6 +802,10 @@ void GaussianSplatting::createVkBuffers()
   //
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
+  // The Quad 
+  const std::vector<uint16_t> indices  = {0, 2, 1, 2, 0, 3};
+  const std::vector<float>    vertices = {-1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.0};
+
   // create the quad buffers
   m_quadVertices = m_alloc->createBuffer(cmd, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
   m_quadIndices  = m_alloc->createBuffer(cmd, indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
@@ -800,11 +815,12 @@ void GaussianSplatting::createVkBuffers()
   //
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
-  //
+  // Uniform buffer
   m_frameInfoBuffer = m_alloc->createBuffer(sizeof(DH::FrameInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   m_dutil->DBG_NAME(m_frameInfoBuffer.buffer);
 
+  // Frame buffer
   m_pixelBuffer = m_alloc->createBuffer(sizeof(float) * 4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
@@ -1030,4 +1046,273 @@ void GaussianSplatting::destroyDataTextures()
   m_colorsMap.reset();
   m_covariancesMap.reset();
   m_sphericalHarmonicsMap.reset();
+}
+
+void GaussianSplatting::createDataBuffers(void)
+{
+  const int splatCount = m_splatSet.positions.size() / 3;
+  
+  //
+  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
+  VkBufferUsageFlags hostBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  VkMemoryPropertyFlags hostMemoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+  VkBufferUsageFlags deviceBufferUsageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+                                              | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                                              | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  VkMemoryPropertyFlags deviceMemoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+  // Centers
+  {
+    const VkDeviceSize bufferSize = splatCount * 3 * sizeof(float);
+
+    // allocate host and device buffers
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, hostBufferUsageFlags, hostMemoryPropertyFlags);
+
+    m_centersDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
+    m_dutil->DBG_NAME(m_centersDevice.buffer);
+
+    // map and fill host buffer
+    float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
+    memcpy(hostBufferMapped, m_splatSet.positions.data(), bufferSize);
+    m_alloc->unmap(hostBuffer);
+
+    // copy from host buffer to device buffer
+    // barrier at the end of this method.
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
+    vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_centersDevice.buffer, 1, &bc);
+
+    // free host buffer (at next frame)
+    nvvkhl::Application::submitResourceFree([buffer = hostBuffer, alloc = m_alloc]() {
+      alloc->destroy(const_cast<nvvk::Buffer&>(buffer));
+    });
+
+    // memory statistics
+    m_modelMemoryStats.srcCenters  = bufferSize;
+    m_modelMemoryStats.odevCenters = bufferSize; // no compression or quantization
+    m_modelMemoryStats.devCenters  = bufferSize; // same size as source
+  }
+
+  // covariances
+  {
+    const VkDeviceSize bufferSize = splatCount * 2 * 3 * sizeof(float);
+
+    // allocate host and device buffers
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    m_covariancesDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
+    m_dutil->DBG_NAME(m_covariancesDevice.buffer);
+
+    // map and fill host buffer
+    float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
+
+    glm::vec3          scale;
+    glm::quat          rotation;
+    for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto stride3 = splatIdx * 3;
+      const auto stride4 = splatIdx * 4;
+      const auto stride6 = splatIdx * 6;
+      scale.x            = std::exp(m_splatSet.scale[stride3 + 0]);
+      scale.y            = std::exp(m_splatSet.scale[stride3 + 1]);
+      scale.z            = std::exp(m_splatSet.scale[stride3 + 2]);
+
+      rotation.x = m_splatSet.rotation[stride4 + 1];
+      rotation.y = m_splatSet.rotation[stride4 + 2];
+      rotation.z = m_splatSet.rotation[stride4 + 3];
+      rotation.w = m_splatSet.rotation[stride4 + 0];
+      rotation   = glm::normalize(rotation);
+
+      // computes the covariance
+      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
+      const glm::mat3 rotationMatrix        = glm::mat3_cast(rotation);  // where rotation is a quaternion
+      const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
+      glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
+
+      hostBufferMapped[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
+      hostBufferMapped[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
+      hostBufferMapped[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
+
+      hostBufferMapped[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
+      hostBufferMapped[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
+      hostBufferMapped[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
+    }
+
+    m_alloc->unmap(hostBuffer);
+
+    // copy from host buffer to device buffer
+    // barrier at the end of this method.
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
+    vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_covariancesDevice.buffer, 1, &bc);
+
+   // free host buffer (at next frame)
+    nvvkhl::Application::submitResourceFree(
+        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+
+    // memory statistics
+    m_modelMemoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
+    m_modelMemoryStats.odevCov = bufferSize; // no compression
+    m_modelMemoryStats.devCov  = bufferSize; // covariance takes less space than rotation + scale
+  }
+
+  // SH degree 0 is not view dependent, so we directly transform to base color
+  // this will make some economy of processing in the shader at each frame
+  {
+    const VkDeviceSize bufferSize = splatCount * 4 * sizeof(float);
+
+    // allocate host and device buffers
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    m_colorsDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
+    m_dutil->DBG_NAME(m_colorsDevice.buffer);
+
+    // fill host buffer
+    float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
+   
+    for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto  stride3 = splatIdx * 3;
+      const auto  stride4 = splatIdx * 4;
+      const float SH_C0   = 0.28209479177387814;
+      hostBufferMapped[stride4 + 0] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
+      hostBufferMapped[stride4 + 1] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
+      hostBufferMapped[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
+      hostBufferMapped[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
+    }
+
+    m_alloc->unmap(hostBuffer);
+
+    // copy from host buffer to device buffer
+    // barrier at the end of this method.
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
+    vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_colorsDevice.buffer, 1, &bc);
+
+    // free host buffer (at next frame)
+    nvvkhl::Application::submitResourceFree(
+        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+
+    // memory statistics
+    m_modelMemoryStats.srcSh0  = bufferSize;
+    m_modelMemoryStats.odevSh0 = bufferSize;  // no compression or quantization 
+    m_modelMemoryStats.devSh0  = bufferSize;
+  }
+
+  // Spherical harmonics of degree 1 to 3
+  {
+    const int totalSphericalHarmonicsComponentCount    = m_splatSet.f_rest.size() / splatCount;
+    const int sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
+    // find the maximum SH degree stored in the file
+    int sphericalHarmonicsDegree = 0;
+    int splatStride              = 0;
+    if(sphericalHarmonicsCoefficientsPerChannel >= 3)
+    {
+      sphericalHarmonicsDegree = 1;
+      splatStride += 3 * 3;
+    }
+    if(sphericalHarmonicsCoefficientsPerChannel >= 8)
+    {
+      sphericalHarmonicsDegree = 2;
+      splatStride += 5 * 3;
+    }
+    if(sphericalHarmonicsCoefficientsPerChannel == 15)
+    {
+      sphericalHarmonicsDegree = 2;
+      splatStride += 7 * 3;
+    }
+    
+    int targetSplatStride = splatStride; // same for the time beeing, would be less if we do not upload all src degrees
+
+    // allocate host and device buffers
+    const VkDeviceSize bufferSize = splatCount * splatStride * sizeof(float);
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    m_sphericalHarmonicsDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
+    m_dutil->DBG_NAME(m_sphericalHarmonicsDevice.buffer);
+
+    // fill host buffer
+    float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
+       
+    for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto srcBase   = splatStride * splatIdx;
+      const auto destBase  = targetSplatStride * splatIdx;
+      int        dstOffset = 0;
+      // degree 1, three coefs per component
+      for(auto i = 0; i < 3; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+
+      // degree 2, five coefs per component
+      for(auto i = 0; i < 5; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+      // degree 3, seven coefs per component
+      for(auto i = 0; i < 7; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+        
+          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+    }
+    
+    m_alloc->unmap(hostBuffer);
+
+    // copy from host buffer to device buffer
+    // barrier at the end of this method.
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
+    vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_sphericalHarmonicsDevice.buffer, 1, &bc);
+
+       // free host buffer (at next frame)
+    nvvkhl::Application::submitResourceFree(
+        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+
+    // memory statistics
+    m_modelMemoryStats.srcShOther  = m_splatSet.f_rest.size() * sizeof(float);
+    m_modelMemoryStats.odevShOther = bufferSize;  // no compression or quantization
+    m_modelMemoryStats.devShOther  = bufferSize;
+  }
+
+  //
+  m_app->submitAndWaitTempCmdBuffer(cmd);
+
+  // update statistics totals
+  m_modelMemoryStats.srcShAll  = m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevShAll = m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devShAll  = m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+
+  m_modelMemoryStats.srcAll =
+      m_modelMemoryStats.srcCenters + m_modelMemoryStats.srcCov + m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevAll = m_modelMemoryStats.odevCenters + m_modelMemoryStats.odevCov + m_modelMemoryStats.odevSh0
+                               + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devAll =
+      m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+}
+
+void GaussianSplatting::destroyDataBuffers()
+{
+  m_alloc->destroy(m_centersDevice);
+  m_alloc->destroy(m_colorsDevice);
+  m_alloc->destroy(m_covariancesDevice);
+  m_alloc->destroy(m_sphericalHarmonicsDevice);
 }

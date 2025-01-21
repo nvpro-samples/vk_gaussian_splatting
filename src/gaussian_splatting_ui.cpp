@@ -171,6 +171,7 @@ void GaussianSplatting::onUIRender()
         //
         createVkBuffers();
         createDataTextures();
+        createDataBuffers();
         createPipeline();
         m_plyLoader.reset();
         //

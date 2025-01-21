@@ -42,6 +42,10 @@
 #define BINDING_DISTANCES_BUFFER 5
 #define BINDING_INDICES_BUFFER 6
 #define BINDING_INDIRECT_BUFFER 7
+#define BINDING_CENTERS_BUFFER 8
+#define BINDING_COLORS_BUFFER 9
+#define BINDING_COVARIANCES_BUFFER 10
+#define BINDING_SH_BUFFER 11
 
 // Warning, struct members must
 // be aligned to 128 bits
