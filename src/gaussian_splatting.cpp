@@ -648,19 +648,41 @@ void GaussianSplatting::createPipeline()
     // The dynamic state is used to change the depth test state dynamically
     pstate.addDynamicStateEnable(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
 
-    // TODOC: 
-    pstate.addBindingDescriptions({{0, 3 * sizeof(float)}}); // 3 component per vertex position
-    pstate.addAttributeDescriptions({
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}
-    });
+    // create the pipeline that uses mesh shaders
+    {
+      nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
 
-    pstate.addBindingDescriptions({{1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
-    pstate.addAttributeDescriptions({
-        {1, 1, VK_FORMAT_R32_UINT, 0},  
-    });
+#if USE_SLANG
+      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
+      // TODO: what is the name foe mesh shader main if not GLSL ?
+      pgen.addShader(shaderModule, VK_SHADER_STAGE_MESH_BIT_EXT, "meshMain");
+      pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
+#else
+      // TODO: what is the name foe mesh shader main if not GLSL ?
+      pgen.addShader(mesh_shd, VK_SHADER_STAGE_MESH_BIT_EXT, USE_GLSL ? "main" : "meshMain");
+      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
+#endif
+      m_graphicsPipelineMesh = pgen.createPipeline();
+      m_dutil->setObjectName(m_graphicsPipelineMesh, "PipelineMeshShader");
+      pgen.clearShaders();
+#if USE_SLANG
+      vkDestroyShaderModule(m_device, shaderModule, nullptr);
+#endif
+    }
 
     // create the pipeline that uses vertex shaders
     {
+      // add vertex attributes descriptions (only in vertex shader mode)
+      const auto POS_BINDING = 0;
+      const auto IDX_BINDING = 1;
+      
+      pstate.addBindingDescriptions({{POS_BINDING, 3 * sizeof(float)}});  // 3 component per vertex position
+      pstate.addAttributeDescriptions({{0, POS_BINDING, VK_FORMAT_R32G32B32_SFLOAT, 0}});
+
+      pstate.addBindingDescriptions({{IDX_BINDING, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
+      pstate.addAttributeDescriptions({{1, IDX_BINDING, VK_FORMAT_R32_UINT, 0}});
+
+      //
       nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
 
 #if USE_SLANG
@@ -679,27 +701,6 @@ void GaussianSplatting::createPipeline()
 #endif
     }
 
-    // create the pipeline that uses mesh shaders
-    {
-      nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
-
-#if USE_SLANG
-      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
-      // TODO: what is the name foe mesh shader main if not GLSL ?
-      pgenMeshShaders.addShader(shaderModule, VK_SHADER_STAGE_MESH_BIT_EXT, "meshMain");
-      pgenMeshShaders.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
-#else
-      // TODO: what is the name foe mesh shader main if not GLSL ?
-      pgen.addShader(mesh_shd, VK_SHADER_STAGE_MESH_BIT_EXT, USE_GLSL ? "main" : "meshMain");   
-      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
-#endif
-      m_graphicsPipelineMesh = pgen.createPipeline();
-      m_dutil->setObjectName(m_graphicsPipelineMesh, "PipelineMeshShader");
-      pgen.clearShaders();
-#if USE_SLANG
-      vkDestroyShaderModule(m_device, shaderModule, nullptr);
-#endif
-    }
   }
 }
 
@@ -1098,8 +1099,7 @@ void GaussianSplatting::createDataBuffers(void)
     const VkDeviceSize bufferSize = splatCount * 2 * 3 * sizeof(float);
 
     // allocate host and device buffers
-    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, hostBufferUsageFlags, hostMemoryPropertyFlags);
 
     m_covariancesDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
     m_dutil->DBG_NAME(m_covariancesDevice.buffer);
@@ -1156,14 +1156,13 @@ void GaussianSplatting::createDataBuffers(void)
     m_modelMemoryStats.devCov  = bufferSize; // covariance takes less space than rotation + scale
   }
 
-  // SH degree 0 is not view dependent, so we directly transform to base color
+  // Colors. SH degree 0 is not view dependent, so we directly transform to base color
   // this will make some economy of processing in the shader at each frame
   {
     const VkDeviceSize bufferSize = splatCount * 4 * sizeof(float);
 
     // allocate host and device buffers
-    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, hostBufferUsageFlags, hostMemoryPropertyFlags);
 
     m_colorsDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
     m_dutil->DBG_NAME(m_colorsDevice.buffer);
@@ -1176,10 +1175,10 @@ void GaussianSplatting::createDataBuffers(void)
       const auto  stride3 = splatIdx * 3;
       const auto  stride4 = splatIdx * 4;
       const float SH_C0   = 0.28209479177387814;
-      hostBufferMapped[stride4 + 0] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
-      hostBufferMapped[stride4 + 1] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
-      hostBufferMapped[stride4 + 2] = glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
-      hostBufferMapped[stride4 + 3] = glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
+      hostBufferMapped[stride4 + 0] = glm::clamp(0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0], 0.0f, 1.0f);
+      hostBufferMapped[stride4 + 1] = glm::clamp(0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1], 0.0f, 1.0f);
+      hostBufferMapped[stride4 + 2] = glm::clamp(0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2], 0.0f, 1.0f);
+      hostBufferMapped[stride4 + 3] = glm::clamp(1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx])), 0.0f, 1.0f);
     }
 
     m_alloc->unmap(hostBuffer);
@@ -1226,8 +1225,8 @@ void GaussianSplatting::createDataBuffers(void)
 
     // allocate host and device buffers
     const VkDeviceSize bufferSize = splatCount * splatStride * sizeof(float);
-    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, hostBufferUsageFlags, hostMemoryPropertyFlags);
 
     m_sphericalHarmonicsDevice = m_alloc->createBuffer(bufferSize, deviceBufferUsageFlags, deviceMemoryPropertyFlags);
     m_dutil->DBG_NAME(m_sphericalHarmonicsDevice.buffer);
@@ -1275,7 +1274,7 @@ void GaussianSplatting::createDataBuffers(void)
         }
       }
     }
-    
+
     m_alloc->unmap(hostBuffer);
 
     // copy from host buffer to device buffer
@@ -1283,7 +1282,7 @@ void GaussianSplatting::createDataBuffers(void)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_sphericalHarmonicsDevice.buffer, 1, &bc);
 
-       // free host buffer (at next frame)
+    // free host buffer (at next frame)
     nvvkhl::Application::submitResourceFree(
         [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
 
@@ -1292,6 +1291,15 @@ void GaussianSplatting::createDataBuffers(void)
     m_modelMemoryStats.odevShOther = bufferSize;  // no compression or quantization
     m_modelMemoryStats.devShOther  = bufferSize;
   }
+
+  //
+  // sync with end of copy to device
+  VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
+                       0, 1, &barrier, 0, NULL, 0, NULL);
 
   //
   m_app->submitAndWaitTempCmdBuffer(cmd);

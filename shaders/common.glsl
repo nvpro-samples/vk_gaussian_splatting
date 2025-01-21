@@ -19,6 +19,24 @@
 
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
+// buffers describing the 3DGS model (alternative to textures)
+layout(set = 0, binding = BINDING_CENTERS_BUFFER) buffer _centersBuffer
+{
+  float centersBuffer[];
+};
+layout(set = 0, binding = BINDING_COLORS_BUFFER) buffer _colorsBuffer
+{
+  float colorsBuffer[];
+};
+layout(set = 0, binding = BINDING_COVARIANCES_BUFFER) buffer _covariancesBuffer
+{
+  float covariancesBuffer[];
+};
+layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
+{
+  float sphericalHarmonicsBuffer[];
+};
+
 ////////////
 // constants
 
@@ -44,16 +62,29 @@ ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 
   return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
-// fetch center value from textur emap
+// fetch center value from texture map
 vec3 fetchCenter(in sampler2D centersTexture, in uint splatIndex)
 {
   return vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
+}
+
+// fetch center value from data buffer
+vec3 fetchCenter(in uint splatIndex)
+{
+  return vec3(centersBuffer[splatIndex*3+0],centersBuffer[splatIndex*3+1],centersBuffer[splatIndex*3+2]);
 }
 
 // fetchColor replaces fetchSH0 since non view dependent color is precomputed on CPU
 vec4 fetchColor(in sampler2D colorsTexture, in uint splatIndex)
 {
   return texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
+}
+
+// fetch center value from data buffer
+vec4 fetchColor(in uint splatIndex)
+{
+  return vec4(colorsBuffer[splatIndex * 4 + 0], colorsBuffer[splatIndex * 4 + 1], colorsBuffer[splatIndex * 4 + 2],
+              colorsBuffer[splatIndex * 4 + 3]);
 }
 
 void fetchSh(in sampler2D sphericalHarmonicsTexture, in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
@@ -122,6 +153,82 @@ void fetchSh(in sampler2D sphericalHarmonicsTexture, in uint splatIndex, in uint
   }
 }
 
+void fetchSh(in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
+{
+  const uint splatStride = 45; // three degrees in memory, but we only fetch degrees 1 and 2
+
+  const float SphericalHarmonics8BitCompressionRange     = 3.0;
+  const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
+  const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
+
+  // fetching degree 1
+  const vec3 sh1 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 0 + 0],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 0 + 1],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 0 + 2]);
+
+  const vec3 sh2 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 0],
+                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 1],
+                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 2]);
+
+  const vec3 sh3 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 0],
+                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 1],
+                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 2]);
+
+  if(format8bit == 0)
+  {
+    shd1[0] = sh1;
+    shd1[1] = sh2;
+    shd1[2] = sh3;
+  }
+  else
+  {
+    shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  }
+
+  // fetching degree 2
+  if(degree >= 2)
+  {
+    const vec3 sh4 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 3 + 0],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 3 + 1],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 3 + 2]);
+
+    const vec3 sh5 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 4 + 0],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 4 + 1],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 4 + 2]);
+
+    const vec3 sh6 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 5 + 0],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 5 + 1],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 5 + 2]);
+
+    const vec3 sh7 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 6 + 0],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 6 + 1],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 6 + 2]);
+
+    const vec3 sh8 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 0],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 1],
+                          sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 2]);
+
+    if(format8bit == 0)
+    {
+      shd2[0] = sh4;
+      shd2[1] = sh5;
+      shd2[2] = sh6;
+      shd2[3] = sh7;
+      shd2[4] = sh8;
+    }
+    else
+    {
+      shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+      shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    }
+  }
+}
+
 mat3 fetchCovariance(in sampler2D covariancesTexture, in uint splatIndex)
 {
   // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
@@ -147,4 +254,16 @@ mat3 fetchCovariance(in sampler2D covariancesTexture, in uint splatIndex)
 
   return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
        cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
+}
+
+mat3 fetchCovariance(in uint splatIndex)
+{
+  // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
+  const vec3 cov3D_M11_M12_M13 = vec3(covariancesBuffer[splatIndex * 6 + 0], covariancesBuffer[splatIndex * 6 + 1],
+                                      covariancesBuffer[splatIndex * 6 + 2]);
+  const vec3 cov3D_M22_M23_M33 = vec3(covariancesBuffer[splatIndex * 6 + 3], covariancesBuffer[splatIndex * 6 + 4],
+                                      covariancesBuffer[splatIndex * 6 + 5]);
+
+  return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
+              cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 }

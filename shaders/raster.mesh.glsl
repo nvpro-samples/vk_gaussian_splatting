@@ -58,12 +58,14 @@ layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTextur
 layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
 layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
 
+//#define USE_TEXTURES
+
 void main()
 {
   const uint32_t baseIndex       = gl_GlobalInvocationID.x;
   const int      splatCount      = frameInfo.splatCount;
   const uint     outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
-  
+
   if(gl_LocalInvocationIndex == 0)
   {
     // set the number of vertices and primitives to put out just once for the complete workgroup
@@ -78,8 +80,12 @@ void main()
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
 
-    // 
+    //
+#ifdef USE_TEXTURES
     const vec3 splatCenter = fetchCenter(centersTexture, splatIndex);
+#else
+    const vec3 splatCenter = fetchCenter(splatIndex);
+#endif
 
     const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
@@ -102,15 +108,19 @@ void main()
     const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
 
     // emit per vertex attributes as early as possible
-    [[unroll]]
-    for(uint i = 0; i < 4; ++i)
+    [[unroll]] for(uint i = 0; i < 4; ++i)
     {
       // Scale the fragment position data we send to the fragment shader
       outFragPos[gl_LocalInvocationIndex * 4 + i] = positions[i].xy * sqrt8;
     }
 
     // work on color
+#ifdef USE_TEXTURES
     vec4 splatColor = fetchColor(colorsTexture, splatIndex);
+#else
+    vec4 splatColor = fetchColor(splatIndex);
+#endif
+
     if(frameInfo.showShOnly == 1)
     {
       splatColor.r = 0.5;
@@ -125,13 +135,18 @@ void main()
       // SH coefficients for degree 2 (4 5 6 7 8)
       vec3 shd2[5];
       // fetch the data (only what is needed according to degree)
+
+#ifdef USE_TEXTURES
       fetchSh(sphericalHarmonicsTexture, splatIndex, frameInfo.sphericalHarmonicsDegree,
-                     frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
+              frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
+#else
+      fetchSh(splatIndex, frameInfo.sphericalHarmonicsDegree, frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
+#endif
 
       const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-      const float x = worldViewDir.x;
-      const float y = worldViewDir.y;
-      const float z = worldViewDir.z;
+      const float x            = worldViewDir.x;
+      const float y            = worldViewDir.y;
+      const float z            = worldViewDir.z;
       splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
 
       if(frameInfo.sphericalHarmonicsDegree >= 2)
@@ -154,7 +169,11 @@ void main()
     outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
     // Fetch and construct the 3D covariance matrix
+#ifdef USE_TEXTURES
     const mat3 Vrk = fetchCovariance(covariancesTexture, splatIndex);
+#else
+    const mat3 Vrk = fetchCovariance(splatIndex);
+#endif
 
     mat3 J;
     if(frameInfo.orthographicMode == 1)
@@ -270,8 +289,7 @@ void main()
     /////////////////////////////
     // emiting quad vertices
 
-    [[unroll]]
-    for(uint i = 0; i < 4; ++i)
+    [[unroll]] for(uint i = 0; i < 4; ++i)
     {
       const vec2 fragPos = positions[i].xy;
 
