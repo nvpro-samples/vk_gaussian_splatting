@@ -213,8 +213,9 @@ void GaussianSplatting::onUIRender()
     }
     initShaders();
     createPipeline();
-    m_updateData = false;
   }
+
+  m_updateData = false;
 
   //
   namespace PE = ImGuiH::PropertyEditor;

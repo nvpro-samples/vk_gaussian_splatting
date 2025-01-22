@@ -24,21 +24,6 @@
 
 #include <gaussian_splatting.h>
 
-// shaders code
-/*
-#if USE_SLANG
-#include "_autogen/raster_slang.h"
-#else
-#include "_autogen/rank.comp.glsl.h"
-#include "_autogen/raster.frag.glsl.h"
-#include "_autogen/raster.vert.glsl.h"
-#include "_autogen/raster.mesh.glsl.h"
-const auto& comp_shd = std::vector<uint32_t>{std::begin(rank_comp_glsl), std::end(rank_comp_glsl)};
-const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::end(raster_vert_glsl)};
-const auto& mesh_shd = std::vector<uint32_t>{std::begin(raster_mesh_glsl), std::end(raster_mesh_glsl)};
-const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
-#endif
-*/
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
@@ -571,7 +556,7 @@ bool GaussianSplatting::initShaders(void)
   }
   
   // let's generate the shader modules
-  m_shaders.distShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "rank.comp.glsl");
+  m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "rank.comp.glsl", prepends);
   m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
   m_shaders.meshShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_EXT, "raster.mesh.glsl", prepends);
   m_shaders.fragmentShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "raster.frag.glsl");

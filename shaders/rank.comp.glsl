@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 #include "device_host.h"
+#include "common.glsl"
 
 // we could write to manage alignment automatically
 // layout(set = 0, binding = 0, scalar) uniform FrameInfo_
@@ -15,8 +16,6 @@ layout(set = 0, binding = 0) uniform FrameInfo_
 };
 
 layout(local_size_x = 256) in;
-
-layout(set = 0, binding = 1) uniform sampler2D centersTexture;
 
 layout(set = 0, binding = 5, scalar) buffer _distances
 {
@@ -30,13 +29,6 @@ layout(std430, set = 0, binding = 7, scalar) writeonly buffer _indirect
 {
   uint32_t indirect[];
 };
-
-ivec2 getDataPos(in uint splatIndex, in uint stride, in uint offset, in ivec2 dimensions)
-{
-  const uint fullOffset = splatIndex * stride + offset;
-
-  return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
-}
 
 // encodes an fp32 into a uint32 that can be ordered
 uint encodeMinMaxFp32(float val)
@@ -52,8 +44,7 @@ void main()
   if(id >= frameInfo.splatCount)
     return;
 
-  vec4 pos = texelFetch(centersTexture, getDataPos(id, 1, 0, textureSize(centersTexture, 0)), 0);
-  pos.w    = 1.0;
+  vec4 pos = vec4(fetchCenter(id), 1.0);
   //pos = projection * view * model * pos;
   pos      = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
   pos      = pos / pos.w;
