@@ -80,20 +80,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   //
   m_dset        = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
   m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
-  // create descriptor bindings
-  m_dset->addBinding(BINDING_FRAME_INFO_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_CENTERS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_COLORS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_COVARIANCES_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_SH_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_INDIRECT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 
-  m_dset->addBinding(BINDING_CENTERS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_COLORS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_COVARIANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  m_dset->addBinding(BINDING_SH_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 };
 
 void GaussianSplatting::onDetach()
@@ -577,9 +564,8 @@ bool GaussianSplatting::initShaders(void)
   deinitShaders();
 
   // prepare definitions prepend
-  bool useDataTextures = false;
   std::string prepends;
-  if(useDataTextures)
+  if(m_useDataTextures)
   {
     prepends += "#define USE_DATA_TEXTURES\n";
   }
@@ -615,15 +601,21 @@ void GaussianSplatting::createPipeline()
                                                     sizeof(DH::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
-  // Write descriptors for the buffers
+
+  // reset descriptor bindings
+  std::vector<VkDescriptorSetLayoutBinding> empty;
+  m_dset->setBindings(empty);
+
+  m_dset->addBinding(BINDING_FRAME_INFO_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+  m_dset->addBinding(BINDING_INDIRECT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+
+  // Write descriptors for the buffers and textures
   std::vector<VkWriteDescriptorSet> writes;
-  // add texture maps
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_TEXTURE, &m_colorsMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_TEXTURE, &m_covariancesMap->descriptor()));
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_TEXTURE, &m_sphericalHarmonicsMap->descriptor()));
-  // add buffers
-  const VkDescriptorBufferInfo      dbi_frameInfo{m_frameInfoBuffer.buffer, 0, VK_WHOLE_SIZE};
+
+  // add common buffers
+  const VkDescriptorBufferInfo dbi_frameInfo{m_frameInfoBuffer.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_FRAME_INFO_UBO, &dbi_frameInfo));
   const VkDescriptorBufferInfo keys_desc{m_splatDistancesDevice.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_DISTANCES_BUFFER, &keys_desc));
@@ -631,15 +623,41 @@ void GaussianSplatting::createPipeline()
   writes.emplace_back(m_dset->makeWrite(0, BINDING_INDICES_BUFFER, &cpuKeys_desc));
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
+  
+  if(m_useDataTextures)
+  {
+    // create descriptor bindings
+    m_dset->addBinding(BINDING_SH_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_CENTERS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_COLORS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_COVARIANCES_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
 
-  const VkDescriptorBufferInfo centers_desc{m_centersDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_BUFFER, &centers_desc));
-  const VkDescriptorBufferInfo colors_desc{m_colorsDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_BUFFER, &colors_desc));
-  const VkDescriptorBufferInfo covariances_desc{m_covariancesDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_BUFFER, &covariances_desc));
-  const VkDescriptorBufferInfo sh_desc{m_sphericalHarmonicsDevice.buffer, 0, VK_WHOLE_SIZE};
-  writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_BUFFER, &sh_desc));
+    // add texture maps
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap->descriptor()));
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_TEXTURE, &m_colorsMap->descriptor()));
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_TEXTURE, &m_covariancesMap->descriptor()));
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_TEXTURE, &m_sphericalHarmonicsMap->descriptor()));
+  }
+  else
+  {
+    //
+    m_dset->addBinding(BINDING_CENTERS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_COLORS_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_COVARIANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+    m_dset->addBinding(BINDING_SH_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
+    // add buffers 
+    const VkDescriptorBufferInfo centers_desc{m_centersDevice.buffer, 0, VK_WHOLE_SIZE};
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_BUFFER, &centers_desc));
+    const VkDescriptorBufferInfo colors_desc{m_colorsDevice.buffer, 0, VK_WHOLE_SIZE};
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_COLORS_BUFFER, &colors_desc));
+    const VkDescriptorBufferInfo covariances_desc{m_covariancesDevice.buffer, 0, VK_WHOLE_SIZE};
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_COVARIANCES_BUFFER, &covariances_desc));
+    const VkDescriptorBufferInfo sh_desc{m_sphericalHarmonicsDevice.buffer, 0, VK_WHOLE_SIZE};
+    writes.emplace_back(m_dset->makeWrite(0, BINDING_SH_BUFFER, &sh_desc));
+  
+  }
+
+
   // write
   vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 

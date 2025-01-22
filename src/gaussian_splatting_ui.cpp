@@ -169,13 +169,14 @@ void GaussianSplatting::onUIRender()
         // reset general parameters
         resetFrameInfo();
         //
-        deinitShaders();
         initShaders();
         createVkBuffers();
-        createDataTextures();
-        createDataBuffers();
+        if(m_useDataTextures)
+          createDataTextures();
+        else
+          createDataBuffers();
         createPipeline();
-        m_plyLoader.reset();
+        m_plyLoader.reset(); // change status to READY
         //
         ImGui::CloseCurrentPopup();
         addToRecentFiles(m_loadedSceneFilename);
@@ -186,6 +187,33 @@ void GaussianSplatting::onUIRender()
       }
     }
     ImGui::EndPopup();
+  }
+  
+  //
+  if(m_updateData && m_splatSet.size())
+  {
+    //
+    if(m_centersMap != nullptr)
+    {
+      destroyDataTextures();
+    }
+    else
+    {
+      destroyDataBuffers();
+    }
+    destroyPipeline();
+    //
+    if(m_useDataTextures)
+    {
+      createDataTextures();
+    }
+    else
+    {
+      createDataBuffers();
+    }
+    initShaders();
+    createPipeline();
+    m_updateData = false;
   }
 
   //
@@ -284,6 +312,22 @@ void GaussianSplatting::onUIRender()
           [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &opacityGaussianDisabled); }, "TODOC");
       m_frameInfo.opacityGaussianDisabled = opacityGaussianDisabled ? 1 : 0;
 
+      PE::end();
+    }
+    if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      if(ImGui::Button("Reset TODO"))
+      {
+        //resetFrameInfo();
+      }
+
+      PE::begin("##3DGS format");
+      
+      if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
+      {
+        m_updateData=true;
+      }
+      
       PE::end();
     }
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))

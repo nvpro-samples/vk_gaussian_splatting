@@ -251,6 +251,16 @@ private:  // Attributes
   //
   nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad
   nvvk::Buffer m_quadIndices;   // Buffer of indices for the splat quad
+  
+  // trigger a rebuild of the shaders and pipelines at next frame
+  bool m_updateShaders = false;
+
+  // trigger a rebuild of the data in vram (textures or buffers) at next frame
+  // also triggers shaders and pipeline rebuild
+  bool m_updateData = false;
+
+  // switch between data textures and data buffers
+  bool m_useDataTextures = false;
 
   // Data textures
   VkSampler                      m_sampler;  // texture sampler

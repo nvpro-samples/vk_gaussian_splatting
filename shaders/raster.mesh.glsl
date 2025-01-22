@@ -52,12 +52,6 @@ layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
   uint32_t indices[];
 };
 
-// textures map describing the 3DGS model
-layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
-layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTexture;
-layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
-layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
-
 void main()
 {
   const uint32_t baseIndex       = gl_GlobalInvocationID.x;
@@ -79,11 +73,7 @@ void main()
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
 
     //
-#ifdef USE_DATA_TEXTURES
-    const vec3 splatCenter = fetchCenter(centersTexture, splatIndex);
-#else
     const vec3 splatCenter = fetchCenter(splatIndex);
-#endif
 
     const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
@@ -113,11 +103,7 @@ void main()
     }
 
     // work on color
-#ifdef USE_DATA_TEXTURES
-    vec4 splatColor = fetchColor(colorsTexture, splatIndex);
-#else
     vec4 splatColor = fetchColor(splatIndex);
-#endif
 
     if(frameInfo.showShOnly == 1)
     {
@@ -133,13 +119,7 @@ void main()
       // SH coefficients for degree 2 (4 5 6 7 8)
       vec3 shd2[5];
       // fetch the data (only what is needed according to degree)
-
-#ifdef USE_DATA_TEXTURES
-      fetchSh(sphericalHarmonicsTexture, splatIndex, frameInfo.sphericalHarmonicsDegree,
-              frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
-#else
       fetchSh(splatIndex, frameInfo.sphericalHarmonicsDegree, frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
-#endif
 
       const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
       const float x            = worldViewDir.x;
@@ -167,11 +147,7 @@ void main()
     outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
     // Fetch and construct the 3D covariance matrix
-#ifdef USE_DATA_TEXTURES
-    const mat3 Vrk = fetchCovariance(covariancesTexture, splatIndex);
-#else
     const mat3 Vrk = fetchCovariance(splatIndex);
-#endif
 
     mat3 J;
     if(frameInfo.orthographicMode == 1)

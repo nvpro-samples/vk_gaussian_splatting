@@ -19,6 +19,13 @@
 
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
+#ifdef USE_DATA_TEXTURES
+// textures map describing the 3DGS model
+layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
+layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTexture;
+layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
+layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
+#else
 // buffers describing the 3DGS model (alternative to textures)
 layout(set = 0, binding = BINDING_CENTERS_BUFFER) buffer _centersBuffer
 {
@@ -36,6 +43,7 @@ layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
 {
   float sphericalHarmonicsBuffer[];
 };
+#endif
 
 ////////////
 // constants
@@ -62,32 +70,37 @@ ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 
   return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
+#ifdef USE_DATA_TEXTURES
 // fetch center value from texture map
-vec3 fetchCenter(in sampler2D centersTexture, in uint splatIndex)
+vec3 fetchCenter(in uint splatIndex)
 {
   return vec3(texelFetch(centersTexture, getDataPos(splatIndex, 1, 0, textureSize(centersTexture, 0)), 0));
 }
-
+#else
 // fetch center value from data buffer
 vec3 fetchCenter(in uint splatIndex)
 {
   return vec3(centersBuffer[splatIndex*3+0],centersBuffer[splatIndex*3+1],centersBuffer[splatIndex*3+2]);
 }
+#endif
 
+#ifdef USE_DATA_TEXTURES
 // fetchColor replaces fetchSH0 since non view dependent color is precomputed on CPU
-vec4 fetchColor(in sampler2D colorsTexture, in uint splatIndex)
+vec4 fetchColor(in uint splatIndex)
 {
   return texelFetch(colorsTexture, getDataPos(splatIndex, 1, 0, textureSize(colorsTexture, 0)), 0);
 }
-
+#else
 // fetch center value from data buffer
 vec4 fetchColor(in uint splatIndex)
 {
   return vec4(colorsBuffer[splatIndex * 4 + 0], colorsBuffer[splatIndex * 4 + 1], colorsBuffer[splatIndex * 4 + 2],
               colorsBuffer[splatIndex * 4 + 3]);
 }
+#endif
 
-void fetchSh(in sampler2D sphericalHarmonicsTexture, in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
+#ifdef USE_DATA_TEXTURES
+void fetchSh(in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
 {
   const float SphericalHarmonics8BitCompressionRange     = 3.0;
   const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
@@ -152,7 +165,7 @@ void fetchSh(in sampler2D sphericalHarmonicsTexture, in uint splatIndex, in uint
     }
   }
 }
-
+#else
 void fetchSh(in uint splatIndex, in uint degree, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
 {
   const uint splatStride = 45; // three degrees in memory, but we only fetch degrees 1 and 2
@@ -228,8 +241,10 @@ void fetchSh(in uint splatIndex, in uint degree, in uint format8bit, out vec3 sh
     }
   }
 }
+#endif
 
-mat3 fetchCovariance(in sampler2D covariancesTexture, in uint splatIndex)
+#ifdef USE_DATA_TEXTURES
+mat3 fetchCovariance(in uint splatIndex)
 {
   // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
 
@@ -255,7 +270,7 @@ mat3 fetchCovariance(in sampler2D covariancesTexture, in uint splatIndex)
   return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
        cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 }
-
+#else
 mat3 fetchCovariance(in uint splatIndex)
 {
   // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex
@@ -267,3 +282,4 @@ mat3 fetchCovariance(in uint splatIndex)
   return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
               cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 }
+#endif
