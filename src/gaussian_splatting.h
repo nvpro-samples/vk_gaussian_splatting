@@ -61,6 +61,7 @@
 #include "nvvk/extensions_vk.hpp"
 #include "nvvk/pipeline_vk.hpp"
 #include "nvvk/shaders_vk.hpp"
+#include "nvvk/shadermodulemanager_vk.hpp"
 //
 #include "nvvkhl/alloc_vma.hpp"
 #include "nvvkhl/application.hpp"
@@ -145,6 +146,9 @@ private:  // Methods
   
   void destroyDataBuffers(void);
 
+  bool initShaders(void);
+  void deinitShaders(void);
+
   // Utility function to compute the texture size according to the size of the data to be stored
   // By default use map of 4K Width and 1K heightn then adjust the height according to the data size
   inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount, glm::ivec2 texSize = {4096, 1024} )
@@ -194,11 +198,11 @@ public:  // Attributes
 private:  // Attributes
 
   // name of the loaded scene if successfull
-  std::string m_loadedSceneFilename;  
+  std::string m_loadedSceneFilename;
   // Recent files list
   std::vector<std::string> m_recentFiles;
   // scene loader
-  PlyAsyncLoader        m_plyLoader;
+  PlyAsyncLoader m_plyLoader;
   // loaded model
   SplatSet m_splatSet;
 
@@ -294,6 +298,18 @@ private:
   nvvk::Buffer m_splatIndicesDevice;    // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
+
+  //
+  nvvk::ShaderModuleManager m_shaderManager;
+  
+  //
+  struct Shaders
+  {
+    nvvk::ShaderModuleID distShader;
+    nvvk::ShaderModuleID meshShader;
+    nvvk::ShaderModuleID vertexShader;
+    nvvk::ShaderModuleID fragmentShader;
+  } m_shaders;
 
   // Pipeline
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders

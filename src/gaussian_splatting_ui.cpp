@@ -169,6 +169,8 @@ void GaussianSplatting::onUIRender()
         // reset general parameters
         resetFrameInfo();
         //
+        deinitShaders();
+        initShaders();
         createVkBuffers();
         createDataTextures();
         createDataBuffers();

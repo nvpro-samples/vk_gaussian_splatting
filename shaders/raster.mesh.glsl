@@ -58,8 +58,6 @@ layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTextur
 layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
 layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
 
-//#define USE_TEXTURES
-
 void main()
 {
   const uint32_t baseIndex       = gl_GlobalInvocationID.x;
@@ -81,7 +79,7 @@ void main()
     gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
 
     //
-#ifdef USE_TEXTURES
+#ifdef USE_DATA_TEXTURES
     const vec3 splatCenter = fetchCenter(centersTexture, splatIndex);
 #else
     const vec3 splatCenter = fetchCenter(splatIndex);
@@ -115,7 +113,7 @@ void main()
     }
 
     // work on color
-#ifdef USE_TEXTURES
+#ifdef USE_DATA_TEXTURES
     vec4 splatColor = fetchColor(colorsTexture, splatIndex);
 #else
     vec4 splatColor = fetchColor(splatIndex);
@@ -136,7 +134,7 @@ void main()
       vec3 shd2[5];
       // fetch the data (only what is needed according to degree)
 
-#ifdef USE_TEXTURES
+#ifdef USE_DATA_TEXTURES
       fetchSh(sphericalHarmonicsTexture, splatIndex, frameInfo.sphericalHarmonicsDegree,
               frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
 #else
@@ -169,7 +167,7 @@ void main()
     outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
     // Fetch and construct the 3D covariance matrix
-#ifdef USE_TEXTURES
+#ifdef USE_DATA_TEXTURES
     const mat3 Vrk = fetchCovariance(covariancesTexture, splatIndex);
 #else
     const mat3 Vrk = fetchCovariance(splatIndex);

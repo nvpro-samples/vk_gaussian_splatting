@@ -25,7 +25,7 @@
 #include <gaussian_splatting.h>
 
 // shaders code
-
+/*
 #if USE_SLANG
 #include "_autogen/raster_slang.h"
 #else
@@ -38,7 +38,7 @@ const auto& vert_shd = std::vector<uint32_t>{std::begin(raster_vert_glsl), std::
 const auto& mesh_shd = std::vector<uint32_t>{std::begin(raster_mesh_glsl), std::end(raster_mesh_glsl)};
 const auto& frag_shd = std::vector<uint32_t>{std::begin(raster_frag_glsl), std::end(raster_frag_glsl)};
 #endif
-
+*/
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
@@ -50,6 +50,23 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   //
   m_app    = app;
   m_device = m_app->getDevice();
+
+  // Shader validation
+  std::vector<std::string> shaderSearchPaths;
+  std::string              path = NVPSystem::exePath();
+  shaderSearchPaths.push_back(NVPSystem::exePath());
+  shaderSearchPaths.push_back(std::string("GLSL_" PROJECT_NAME));
+  shaderSearchPaths.push_back(NVPSystem::exePath() + std::string("GLSL_" PROJECT_NAME));
+  shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "Shaders");
+  shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "nvpro_core");
+
+  m_shaderManager.init(m_device, 1, 2);
+  m_shaderManager.m_filetype        = nvh::ShaderFileManager::FILETYPE_GLSL;
+  m_shaderManager.m_keepModuleSPIRV = true;
+  for(auto it : shaderSearchPaths)
+  {
+    m_shaderManager.addDirectory(it);
+  }
 
   // Debug utility
   m_dutil = std::make_unique<nvvk::DebugUtil>(m_device);
@@ -554,6 +571,40 @@ void GaussianSplatting::destroyScene()
   m_loadedSceneFilename = "";
 }
 
+bool GaussianSplatting::initShaders(void)
+{
+  // blank page
+  deinitShaders();
+
+  // prepare definitions prepend
+  bool useDataTextures = false;
+  std::string prepends;
+  if(useDataTextures)
+  {
+    prepends += "#define USE_DATA_TEXTURES\n";
+  }
+  
+  // let's generate the shader modules
+  m_shaders.distShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "rank.comp.glsl");
+  m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
+  m_shaders.meshShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_EXT, "raster.mesh.glsl", prepends);
+  m_shaders.fragmentShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "raster.frag.glsl");
+
+  if(!m_shaderManager.areShaderModulesValid())
+  {
+    m_shaderManager.deleteShaderModules();
+    return false;
+  }
+}
+
+void GaussianSplatting::deinitShaders(void)
+{
+  if(m_shaderManager.areShaderModulesValid())
+  {
+    m_shaderManager.deleteShaderModules();
+  }
+}
+
 void GaussianSplatting::createPipeline()
 {
 
@@ -594,12 +645,13 @@ void GaussianSplatting::createPipeline()
 
   // Create the pipeline to run the compute shader for distance & culling
   {
+    /*
     const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                               .codeSize = sizeof(rank_comp_glsl),
                                               .pCode    = &rank_comp_glsl[0]};
     VkShaderModule                 compute{};
     vkCreateShaderModule(m_device, &createInfo, nullptr, &compute);
-
+    */
     auto pipelineLayout = m_dset->getPipeLayout();
 
     VkComputePipelineCreateInfo pipelineInfo{
@@ -608,7 +660,7 @@ void GaussianSplatting::createPipeline()
             {
                 .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = compute,
+                .module = m_shaderManager.get(m_shaders.distShader),
                 .pName  = "main",
             },
         .layout = pipelineLayout,
@@ -616,7 +668,7 @@ void GaussianSplatting::createPipeline()
     vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
 
     // Shader module is not needed anymore
-    vkDestroyShaderModule(m_device, compute, nullptr);
+    // vkDestroyShaderModule(m_device, compute, nullptr);
   }
   // Create the two rasterization pipelines
   {  
@@ -651,23 +703,11 @@ void GaussianSplatting::createPipeline()
     // create the pipeline that uses mesh shaders
     {
       nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
-
-#if USE_SLANG
-      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
-      // TODO: what is the name foe mesh shader main if not GLSL ?
-      pgen.addShader(shaderModule, VK_SHADER_STAGE_MESH_BIT_EXT, "meshMain");
-      pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
-#else
-      // TODO: what is the name foe mesh shader main if not GLSL ?
-      pgen.addShader(mesh_shd, VK_SHADER_STAGE_MESH_BIT_EXT, USE_GLSL ? "main" : "meshMain");
-      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
-#endif
+      pgen.addShader(m_shaderManager.get(m_shaders.meshShader), VK_SHADER_STAGE_MESH_BIT_EXT);
+      pgen.addShader(m_shaderManager.get(m_shaders.fragmentShader), VK_SHADER_STAGE_FRAGMENT_BIT);
       m_graphicsPipelineMesh = pgen.createPipeline();
       m_dutil->setObjectName(m_graphicsPipelineMesh, "PipelineMeshShader");
-      pgen.clearShaders();
-#if USE_SLANG
-      vkDestroyShaderModule(m_device, shaderModule, nullptr);
-#endif
+      // pgen.clearShaders();
     }
 
     // create the pipeline that uses vertex shaders
@@ -684,21 +724,11 @@ void GaussianSplatting::createPipeline()
 
       //
       nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
-
-#if USE_SLANG
-      VkShaderModule shaderModule = nvvk::createShaderModule(m_device, &rasterSlang[0], sizeof(rasterSlang));
-      pgen.addShader(shaderModule, VK_SHADER_STAGE_VERTEX_BIT, "vertexMain");
-      pgen.addShader(shaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, "fragmentMain");
-#else
-      pgen.addShader(vert_shd, VK_SHADER_STAGE_VERTEX_BIT, USE_GLSL ? "main" : "vertexMain");
-      pgen.addShader(frag_shd, VK_SHADER_STAGE_FRAGMENT_BIT, USE_GLSL ? "main" : "fragmentMain");
-#endif
+      pgen.addShader(m_shaderManager.get(m_shaders.vertexShader), VK_SHADER_STAGE_VERTEX_BIT);
+      pgen.addShader(m_shaderManager.get(m_shaders.fragmentShader), VK_SHADER_STAGE_FRAGMENT_BIT);
       m_graphicsPipeline = pgen.createPipeline();
       m_dutil->setObjectName(m_graphicsPipeline, "PipelineVertexShader");
-      pgen.clearShaders();
-#if USE_SLANG
-      vkDestroyShaderModule(m_device, shaderModule, nullptr);
-#endif
+      // pgen.clearShaders();
     }
 
   }
