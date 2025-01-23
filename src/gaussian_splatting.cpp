@@ -761,14 +761,6 @@ void GaussianSplatting::destroyGbuffers()
 
 void GaussianSplatting::createVkBuffers()
 {
-  /* TODO JEM why putting that in a submitResourceFree
-  // TODO: free all other buffers so createVKBuffers can be used on a scene reset
-  nvvkhl::Application::submitResourceFree([vertices = m_quadVertices, indices = m_quadIndices, alloc = m_alloc]() {
-    alloc->destroy(const_cast<nvvk::Buffer&>(vertices));
-    alloc->destroy(const_cast<nvvk::Buffer&>(indices));
-  });
-  */
-
   const auto splatCount = m_splatSet.size();
 
   // TODO: this has nothing to do here, check where to put this
@@ -864,19 +856,23 @@ void GaussianSplatting::destroyVkBuffers()
   if(m_sorter != VK_NULL_HANDLE ) 
     vrdxDestroySorter(m_sorter);
 
-  m_alloc->destroy(m_quadVertices);
-  m_alloc->destroy(m_quadIndices);
+  // will delete at next frame
+  nvvkhl::Application::submitResourceFree([this]() {
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadVertices));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadIndices));
 
-  m_alloc->destroy(m_indirect);
-  m_alloc->destroy(m_indirectHost);
-    
-  m_alloc->destroy(m_splatDistancesDevice);
-  m_alloc->destroy(m_splatIndicesDevice);
-  m_alloc->destroy(m_splatIndicesHost);
-  m_alloc->destroy(m_vrdxStorageDevice);
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirect));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirectHost));
 
-  m_alloc->destroy(m_frameInfoBuffer);
-  m_alloc->destroy(m_pixelBuffer);
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatDistancesDevice));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesDevice));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesHost));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_vrdxStorageDevice));
+
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_frameInfoBuffer));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_pixelBuffer));
+
+  });
 }
 
 void GaussianSplatting::createDataTextures(void)
@@ -1351,8 +1347,11 @@ void GaussianSplatting::createDataBuffers(void)
 
 void GaussianSplatting::destroyDataBuffers()
 {
-  m_alloc->destroy(m_centersDevice);
-  m_alloc->destroy(m_colorsDevice);
-  m_alloc->destroy(m_covariancesDevice);
-  m_alloc->destroy(m_sphericalHarmonicsDevice);
+  // will delete at next frame
+  nvvkhl::Application::submitResourceFree([this]() {
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_centersDevice));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
+    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_sphericalHarmonicsDevice));
+  });
 }

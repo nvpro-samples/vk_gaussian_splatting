@@ -125,7 +125,6 @@ void GaussianSplatting::onUIRender()
   ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
   if(ImGui::BeginPopupModal("Loading", NULL, ImGuiWindowFlags_AlwaysAutoResize))
   {
-
     // managment of async load
     switch(m_plyLoader.getStatus())
     {
@@ -188,10 +187,10 @@ void GaussianSplatting::onUIRender()
     }
     ImGui::EndPopup();
   }
-  
-  //
-  if(m_updateData && m_splatSet.size())
+
+  if(m_updateData)
   {
+    vkDeviceWaitIdle(m_device);
     //
     if(m_centersMap != nullptr)
     {
@@ -213,9 +212,9 @@ void GaussianSplatting::onUIRender()
     }
     initShaders();
     createPipeline();
+    // Done
+    m_updateData = false;
   }
-
-  m_updateData = false;
 
   //
   namespace PE = ImGuiH::PropertyEditor;
@@ -323,12 +322,13 @@ void GaussianSplatting::onUIRender()
       }
 
       PE::begin("##3DGS format");
-      
       if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
       {
-        m_updateData=true;
+        if(m_splatSet.size())
+        {
+          m_updateData = true;
+        }
       }
-      
       PE::end();
     }
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
@@ -512,6 +512,7 @@ void GaussianSplatting::onUIRender()
     }
     ImGui::End();
   }
+
 }
 
 void GaussianSplatting::onUIMenu()
