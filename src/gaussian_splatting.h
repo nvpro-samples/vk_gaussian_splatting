@@ -79,6 +79,7 @@ using namespace glm;
 
 #include "splat_set.h"
 #include "ply_async_loader.h"
+#include "splat_sorter_async.h"
 #include "sampler_texture.h"
 
 //
@@ -87,8 +88,7 @@ class GaussianSplatting : public nvvkhl::IAppElement
 public:  // Methods specializing IAppElement
   GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
       // starts the splat sorting thread
-      : sortingThread([this] { this->sortingThreadFunc(); })
-      , m_profiler(profiler){};
+      : m_profiler(profiler){};
 
   ~GaussianSplatting() override{
       // all threads must be stoped,
@@ -207,6 +207,7 @@ private:  // Attributes
 
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
+  std::string      m_cpuSortStatusUi = "Idled";  // 
 
   //
   nvvkhl::Application*                     m_app{nullptr};
@@ -280,23 +281,8 @@ public:
 
 private:
   // CPU async sorting
-  std::vector<std::pair<float, int>> distArray;  // splat - <dist, index>
-
-  bool forceCpuSort;  // forces a CPU stort (in case of CPU sort activation), otherwise CPU sort is lazy on viewpoint change
-
-  std::thread             sortingThread;
-  std::mutex              mutex;
-  std::condition_variable cond_var;
-  bool                    sortStart = false;
-  bool                    sortDone  = false;
-  bool                    sortExit  = false;
-  glm::vec3               sortDir   = {1.0f, 0.0f, 0.0f};
-  glm::vec3               sortCop   = {0.0f, 0.0f, 0.0f};
-  std::vector<uint32_t>   gsIndex;
-  std::vector<uint32_t>   sortGsIndex;
-  float                   m_distTime        = 0.0f;  // distance update timer
-  float                   m_sortTime        = 0.0f;  // distance sorting timer
-  std::string             m_cpuSortStatusUi = "Idled";
+  SplatSorterAsync m_cpuSplatSorter;
+  std::vector<uint32_t> gsIndex;      // the array of cpu sorted indices to use for rendering
 
   // GPU radix sort
   VrdxSorter           m_sorter = VK_NULL_HANDLE;

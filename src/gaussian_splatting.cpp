@@ -29,6 +29,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 
   // starts the loader
   m_plyLoader.initialize();
+  m_cpuSplatSorter.initialize();
   
   //
   m_app    = app;
@@ -68,14 +69,9 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 
 void GaussianSplatting::onDetach()
 {
-  // stops the loader
+  // stops the threads
   m_plyLoader.shutdown();
-  // stop the sorting thread
-  std::unique_lock<std::mutex> lock(mutex);
-  sortExit = true;
-  cond_var.notify_one();
-  lock.unlock();
-  sortingThread.join();
+  m_cpuSplatSorter.shutdown();
   // release resources
   reset();
   destroyGbuffers();
@@ -160,35 +156,21 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       if(!m_frameInfo.opacityGaussianDisabled)
       {
         // Splatting/blending is on, we check for a newly sorted index table
-        std::unique_lock<std::mutex> lock(mutex);
-        bool                         sortDoneCopy = sortDone;
-        if(sortDone)
-          sortDone = false;
-        lock.unlock();
-        if(sortDoneCopy || !sortStart)
+        auto status = m_cpuSplatSorter.getStatus();
+        if(status == SplatSorterAsync::SORTED || status != SplatSorterAsync::SORTING )
         {
           // sorter is sleeping, we can work on shared data
           // we take into account the result of the sort
-          if(sortDoneCopy)
+          if(status == SplatSorterAsync::SORTED)
           {
-            gsIndex.swap(sortGsIndex);
-            //
+            gsIndex.swap(m_cpuSplatSorter.gsIndex);
             newIndexAvailable = true;
+            m_cpuSplatSorter.reset();
           }
           // then if view point has changed we restart a sort
           const auto nrmDir = glm::normalize(center - eye);
-          if(sortDir != nrmDir || sortCop != eye)
-          {
-            // now we wake the sorting thread with new
-            // camera information
-            sortDir   = nrmDir;
-            sortCop   = eye;
-            sortStart = true;
-            // let's wakeup teh sorting thread
-            lock.lock();
-            cond_var.notify_one();
-            lock.unlock();
-          }
+          // let's wakeup the sorting thread to run a new sort
+          m_cpuSplatSorter.sortAsync(nrmDir, eye, m_splatSet.positions);
         }
       }
       else
@@ -207,7 +189,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
           }
           newIndexAvailable = true;
         }
-        m_sortTime = 0;
+        m_cpuSplatSorter.m_sortTime = 0;
       }
 
       {  // upload to GPU is needed
@@ -435,95 +417,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                                         + m_renderMemoryStats.usedUboFrameInfo;
 }
 
-void GaussianSplatting::sortingThreadFunc(void)
-{
-  while(true)
-  {
-    // wait until a sort or an exit is requested
-    std::unique_lock<std::mutex> lock(mutex);
-    m_cpuSortStatusUi = "Idled";
-    cond_var.wait(lock, [this] { return sortStart || sortExit; });
-    const bool exitSortCopy = sortExit;
-    lock.unlock();
-    if(exitSortCopy)
-      return;
-    m_cpuSortStatusUi = "Sorting";
-
-    // There is no reason this arrives but we test just in case
-    assert(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
-
-    // since it was not an exit it is a request for a sort
-    // we suppose model does not change
-    // however during the process dir and cop can change so we use the copy
-    auto startTime = std::chrono::high_resolution_clock::now();
-    // we do the sorting if needed
-    // find plane passing through COP and with normal dir.
-    // we use distance to plane instead of distance to COP as an approximation.
-    // https://mathinsight.org/distance_point_plane
-    const glm::vec4 plane(sortDir[0], sortDir[1], sortDir[2],
-                          -sortDir[0] * sortCop[0] - sortDir[1] * sortCop[1] - sortDir[2] * sortCop[2]);
-    const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
-
-    const auto splatCount = m_splatSet.positions.size() / 3;
-
-    // prepare an array of pair <distance, original index>
-    distArray.resize(splatCount);
-
-    // Sequential version of compute distances
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-    for(int i = 0; i < splatCount; ++i)
-    {
-      const auto pos = &(m_splatSet.positions[i * 3]);
-      // distance to plane
-      const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-      distArray[i].first  = dist;
-      distArray[i].second = i;
-    }
-  }
-#else
-    // parallel for, compute distances
-    auto& tmpArray = distArray;
-    auto& splatSet = m_splatSet;
-    std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
-                  //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
-                  [&tmpArray, &splatSet, &plane, &divider](std::pair<float, int> const& val) {
-                    size_t i = &val - &tmpArray[0];
-                    const auto pos = &(splatSet.positions[i * 3]);
-                    // distance to plane
-                    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-                    tmpArray[i].first = dist;
-                    tmpArray[i].second = i;
-                  });
-#endif
-
-  auto time1 = std::chrono::high_resolution_clock::now();
-  m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
-
-  // comparison function working on the data <dist,idex>
-  auto compare = [](const std::pair<float, int>& a, const std::pair<float, int>& b) { return a.first > b.first; };
-
-  // Sorting the array with respect to distance keys
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-  std::sort(distArray.begin(), distArray.end(), compare);
-#else
-    std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
-#endif
-  // create the sorted index array
-  sortGsIndex.resize(splatCount);
-  for(int i = 0; i < splatCount; ++i)
-  {
-    sortGsIndex[i] = distArray[i].second;
-  }
-
-  auto time2 = std::chrono::high_resolution_clock::now();
-  m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
-
-  lock.lock();
-  sortDone  = true;
-  sortStart = false;
-  lock.unlock();
-}
-}
 
 void GaussianSplatting::reset()
 {
@@ -763,9 +656,7 @@ void GaussianSplatting::createVkBuffers()
   const auto splatCount = m_splatSet.size();
 
   // TODO: this has nothing to do here, check where to put this
-  distArray.resize(splatCount);
   gsIndex.resize(splatCount);
-  sortGsIndex.resize(splatCount);
 
   // All this block for the sorting
   {

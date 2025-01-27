@@ -264,6 +264,8 @@ create_sample(gaussian_splatting
     src/gaussian_splatting_ui.cpp
     src/ply_async_loader.h
     src/ply_async_loader.cpp
+    src/splat_sorter_async.h
+    src/splat_sorter_async.cpp
     src/splat_set.h
     src/miniply.h
     src/miniply.cpp

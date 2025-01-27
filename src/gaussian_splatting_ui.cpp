@@ -337,9 +337,11 @@ void GaussianSplatting::onUIRender()
       ImGui::BeginDisabled();
 
       PE::entry(
-          "Distances  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_distTime, 0, 100000); }, "TODOC");
+          "Distances  (ms)",
+          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_cpuSplatSorter.m_distTime), 0, 100000); }, "TODOC");
       PE::entry(
-          "Sorting  (ms)", [&]() { return ImGui::InputFloat("##HiddenID", (float*)&m_sortTime, 0, 100000); }, "TODOC");
+          "Sorting  (ms)",
+          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_cpuSplatSorter.m_sortTime), 0, 100000); }, "TODOC");
       uint32_t totalSplatCount = (uint32_t)gsIndex.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
