@@ -19,8 +19,6 @@
 
 // Vulkan Memory Allocator 
 #define VMA_IMPLEMENTATION
-// ImGUI ImVec maths
-#define IMGUI_DEFINE_MATH_OPERATORS
 
 #include <gaussian_splatting.h>
 
@@ -566,6 +564,7 @@ bool GaussianSplatting::initShaders(void)
     m_shaderManager.deleteShaderModules();
     return false;
   }
+  return true;
 }
 
 void GaussianSplatting::deinitShaders(void)

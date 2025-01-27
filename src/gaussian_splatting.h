@@ -20,6 +20,7 @@
 #ifndef _GAUSSIAN_SPLATTING_H_
 #define _GAUSSIAN_SPLATTING_H_
 
+#include <iostream>
 #include <string>
 #include <array>
 #include <chrono>
@@ -44,39 +45,37 @@
 #include <mutex>
 // GPU radix sort
 #include <vk_radix_sort.h>
-
 //
-#include "imgui/imgui_camera_widget.h"
-#include "imgui/imgui_helper.h"
-#include "imgui/imgui_axis.hpp"
+#include <imgui/imgui_camera_widget.h>
+#include <imgui/imgui_helper.h>
+#include <imgui/imgui_axis.hpp>
 //
-#include "nvh/primitives.hpp"
-//
-#include "nvvk/context_vk.hpp"
-#include "nvvk/renderpasses_vk.hpp"
-#include "nvvk/commands_vk.hpp"
-#include "nvvk/debug_util_vk.hpp"
-#include "nvvk/descriptorsets_vk.hpp"
-#include "nvvk/dynamicrendering_vk.hpp"
-#include "nvvk/extensions_vk.hpp"
-#include "nvvk/pipeline_vk.hpp"
-#include "nvvk/shaders_vk.hpp"
-#include "nvvk/shadermodulemanager_vk.hpp"
-//
-#include "nvvkhl/alloc_vma.hpp"
-#include "nvvkhl/application.hpp"
-#include "nvvkhl/element_benchmark_parameters.hpp"
-#include "nvvkhl/element_camera.hpp"
-#include "nvvkhl/element_gui.hpp"
-#include "nvvkhl/element_profiler.hpp"
-#include "nvvkhl/element_nvml.hpp"
-#include "nvvkhl/gbuffer.hpp"
-#include "nvvkhl/pipeline_container.hpp"
+#include <nvh/primitives.hpp>
+#include <nvvk/context_vk.hpp>
+#include <nvvk/renderpasses_vk.hpp>
+#include <nvvk/commands_vk.hpp>
+#include <nvvk/debug_util_vk.hpp>
+#include <nvvk/descriptorsets_vk.hpp>
+#include <nvvk/dynamicrendering_vk.hpp>
+#include <nvvk/extensions_vk.hpp>
+#include <nvvk/pipeline_vk.hpp>
+#include <nvvk/shaders_vk.hpp>
+#include <nvvk/shadermodulemanager_vk.hpp>
+#include <nvvkhl/alloc_vma.hpp>
+#include <nvvkhl/application.hpp>
+#include <nvvkhl/element_benchmark_parameters.hpp>
+#include <nvvkhl/element_camera.hpp>
+#include <nvvkhl/element_gui.hpp>
+#include <nvvkhl/element_profiler.hpp>
+#include <nvvkhl/element_nvml.hpp>
+#include <nvvkhl/gbuffer.hpp>
+#include <nvvkhl/pipeline_container.hpp>
 
 namespace DH {
 using namespace glm;
-#include "shaders/device_host.h"  // Shared between host and device
-}  // namespace DH
+// Shared between host and device
+#include "shaders/device_host.h" 
+}
 
 #include "splat_set.h"
 #include "ply_async_loader.h"

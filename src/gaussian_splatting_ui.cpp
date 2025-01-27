@@ -19,7 +19,6 @@
 
 // ImGUI ImVec maths
 #define IMGUI_DEFINE_MATH_OPERATORS
-
 // clang-format off
 #define IM_VEC2_CLASS_EXTRA ImVec2(const glm::vec2& f) {x = f.x; y = f.y;} operator glm::vec2() const { return glm::vec2(x, y); }
 // clang-format on
