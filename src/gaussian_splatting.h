@@ -86,9 +86,16 @@ using namespace glm;
 class GaussianSplatting : public nvvkhl::IAppElement
 {
 public:  // Methods specializing IAppElement
-  GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler)
+  GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler, std::shared_ptr<nvvkhl::ElementBenchmarkParameters> benchmark)
       // starts the splat sorting thread
-      : m_profiler(profiler){};
+      : m_profiler(profiler)
+      , m_benchmark()
+  {
+    // Register command line arguments 
+    // Done in this class instead of in main() so private members can be registered for direct modification
+    benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
+    benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
+  };
 
   ~GaussianSplatting() override{
       // all threads must be stoped,
@@ -188,14 +195,11 @@ private:  // Methods
 
   // methods to handle recent files in file menu
   void addToRecentFiles(const std::string& filePath, int historySize = 20);
-
-public:  // Attributes
-  
-  // triggers a scene load when set to non empty string
-  std::string m_sceneToLoadFilename;
-
+ 
 private:  // Attributes
 
+  // triggers a scene load when set to non empty string
+  std::string m_sceneToLoadFilename;
   // name of the loaded scene if successfull
   std::string m_loadedSceneFilename;
   // Recent files list
@@ -211,6 +215,7 @@ private:  // Attributes
   //
   nvvkhl::Application*                     m_app{nullptr};
   std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
+  std::shared_ptr<nvvkhl::ElementProfiler> m_benchmark;
   std::unique_ptr<nvvk::DebugUtil>         m_dutil;
   std::shared_ptr<nvvkhl::AllocVma>        m_alloc;
 
@@ -274,11 +279,9 @@ private:  // Attributes
   nvvk::Buffer m_covariancesDevice;
   nvvk::Buffer m_sphericalHarmonicsDevice;   
 
-public:
-  // rendering pipeline selector
+  // rasterization pipeline selector
   uint32_t m_selectedPipeline = PIPELINE_MESH;
 
-private:
   // CPU async sorting
   SplatSorterAsync m_cpuSplatSorter;
   std::vector<uint32_t> gsIndex;      // the array of cpu sorted indices to use for rendering

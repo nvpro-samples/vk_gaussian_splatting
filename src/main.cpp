@@ -68,11 +68,7 @@ int main(int argc, char** argv)
   auto benchmark = std::make_shared<nvvkhl::ElementBenchmarkParameters>(argc, argv);
   benchmark->setProfiler(profiler);
   // create the core of the sample
-  auto gaussianSplatting   = std::make_shared<GaussianSplatting>(profiler);
-  
-  // Parsing arguments
-  benchmark->parameterLists().addFilename(".ply|load a ply file", &gaussianSplatting->m_sceneToLoadFilename);
-  benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &gaussianSplatting->m_selectedPipeline);
+  auto gaussianSplatting   = std::make_shared<GaussianSplatting>(profiler, benchmark);
 
   // Add all application elements
   app->addElement(gaussianSplatting);
