@@ -70,7 +70,7 @@ int main(int argc, char** argv)
   // create the core of the sample
   auto gaussianSplatting   = std::make_shared<GaussianSplatting>(profiler, benchmark);
 
-  // Add all application elements
+  // Add all application elements including our sample specific gaussianSplatting
   app->addElement(gaussianSplatting);
   app->addElement(benchmark);
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());

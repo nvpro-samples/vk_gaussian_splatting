@@ -173,7 +173,7 @@ void GaussianSplatting::onUIRender()
           createDataTextures();
         else
           createDataBuffers();
-        createPipeline();
+        createPipelines();
         m_plyLoader.reset(); // change status to READY
         //
         ImGui::CloseCurrentPopup();
@@ -199,7 +199,7 @@ void GaussianSplatting::onUIRender()
     {
       destroyDataBuffers();
     }
-    destroyPipeline();
+    destroyPipelines();
     //
     if(m_useDataTextures)
     {
@@ -210,7 +210,7 @@ void GaussianSplatting::onUIRender()
       createDataBuffers();
     }
     initShaders();
-    createPipeline();
+    createPipelines();
     // Done
     m_updateData = false;
   }

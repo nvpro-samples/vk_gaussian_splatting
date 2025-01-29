@@ -130,9 +130,9 @@ private:  // Methods
 
   void destroyScene();
 
-  void createPipeline();
+  void createPipelines();
 
-  void destroyPipeline();
+  void destroyPipelines();
 
   void createGbuffers(const glm::vec2& size);
 
@@ -183,7 +183,7 @@ private:  // Methods
   // reset the memory usage stats
   inline void resetModelMemoryStats() { memset((void*)&m_modelMemoryStats, 0, sizeof(ModelMemoryStats)); }
 
-  // for multiple choice selectors
+  // for multiple choice selectors in the UI
   enum GuiEnums
   {
     GUI_SORTING,         // the sorting method to use
@@ -191,6 +191,7 @@ private:  // Methods
     GUI_FRUSTUM_CULLING  // where to perform frustum culling (or disabled)
   };
 
+  // initialize UI specifics 
   void initGui(void);
 
   // methods to handle recent files in file menu
@@ -198,7 +199,7 @@ private:  // Methods
  
 private:  // Attributes
 
-  // triggers a scene load when set to non empty string
+  // triggers a scene load at next frame when set to non empty string
   std::string m_sceneToLoadFilename;
   // name of the loaded scene if successfull
   std::string m_loadedSceneFilename;
@@ -211,6 +212,9 @@ private:  // Attributes
 
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
+  // cpu sorter feedback for ui
+  float m_distTime = 0.0f; // distance compute time
+  float m_sortTime = 0.0f; // sorting compute time
 
   //
   nvvkhl::Application*                     m_app{nullptr};
@@ -228,7 +232,6 @@ private:  // Attributes
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
   //
-  nvvk::Buffer m_frameInfoBuffer;
   nvvk::Buffer m_pixelBuffer;
 
   // indirect parameters for
@@ -296,10 +299,10 @@ private:  // Attributes
   nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
 
-  //
+  // used to load and compile shaders
   nvvk::ShaderModuleManager m_shaderManager;
   
-  //
+  // The different shaders that are used in the pipelines
   struct Shaders
   {
     nvvk::ShaderModuleID distShader;
@@ -308,12 +311,13 @@ private:  // Attributes
     nvvk::ShaderModuleID fragmentShader;
   } m_shaders;
 
-  // Pipeline
+  // Pipelines
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
   VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
-  DH::PushConstant m_pushConst{};                            // Information sent to the shader using constant
-  DH::FrameInfo    m_frameInfo{};                            // frame parameters, sent to device using a uniform buffer
-  VkPipeline       m_computePipeline{};                      // The compute pipeline
+  VkPipeline       m_computePipeline{};                      // The compute pipeline to compute distances and cull
+  DH::PushConstant m_pushConst{};                            // Information sent to the shader using push constant
+  DH::FrameInfo    m_frameInfo{};                            // Frame parameters, sent to device using a uniform buffer
+  nvvk::Buffer     m_frameInfoBuffer;                        // uniform buffer to store frame info 
 
   // Model related memory usage statistics
   struct ModelMemoryStats
@@ -352,10 +356,7 @@ private:  // Attributes
     uint32_t odevShAll   = 0;  // GRAM bytes used for all the SH coefs of source model
     uint32_t odevSh0     = 0;  // GRAM bytes used for SH degree 0 of source model
     uint32_t odevShOther = 0;  // GRAM bytes used for SH degree 1 of source model
-  };
-
-  // Model related memory usage statistics
-  ModelMemoryStats m_modelMemoryStats;
+  } m_modelMemoryStats;
 
   // Rendering (sorting and splatting) related memory usage statistics
   struct RenderMemoryStats
@@ -376,14 +377,7 @@ private:  // Attributes
     uint32_t deviceUsedTotal  = 0;
     uint32_t deviceAllocTotal = 0;
 
-  };
-
-  // Rendering (sorting and splatting) related memory usage statistics
-  RenderMemoryStats m_renderMemoryStats;
-
-  //
-  float m_distTime = 0.0f;
-  float m_sortTime = 0.0f;
+  } m_renderMemoryStats;
 
 };
 #endif

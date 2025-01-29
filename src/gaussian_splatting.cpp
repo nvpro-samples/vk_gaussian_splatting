@@ -31,11 +31,24 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_plyLoader.initialize();
   m_cpuSplatSorter.initialize();
   
-  //
-  m_app    = app;
-  m_device = m_app->getDevice();
+  // shortcuts
+  m_app         = app;
+  m_device      = m_app->getDevice();
 
-  // Shader validation
+  m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
+  // Debug utility
+  m_dutil = std::make_unique<nvvk::DebugUtil>(m_device);
+  //
+  m_dset = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
+  // Memory allocator
+  m_alloc = std::make_unique<nvvkhl::AllocVma>(VmaAllocatorCreateInfo{
+      .flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+      .physicalDevice = app->getPhysicalDevice(),
+      .device         = app->getDevice(),
+      .instance       = app->getInstance(),
+  });
+  
+  // Where to find shader' source code
   std::vector<std::string> shaderSearchPaths;
   std::string              path = NVPSystem::exePath();
   shaderSearchPaths.push_back(NVPSystem::exePath());
@@ -47,23 +60,10 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   m_shaderManager.init(m_device, 1, 2);
   m_shaderManager.m_filetype        = nvh::ShaderFileManager::FILETYPE_GLSL;
   m_shaderManager.m_keepModuleSPIRV = true;
-  for(auto it : shaderSearchPaths)
+  for(std::string& path : shaderSearchPaths)
   {
-    m_shaderManager.addDirectory(it);
+    m_shaderManager.addDirectory(path);
   }
-
-  // Debug utility
-  m_dutil = std::make_unique<nvvk::DebugUtil>(m_device);
-  // Allocator
-  m_alloc = std::make_unique<nvvkhl::AllocVma>(VmaAllocatorCreateInfo{
-      .flags          = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-      .physicalDevice = app->getPhysicalDevice(),
-      .device         = app->getDevice(),
-      .instance       = app->getInstance(),
-  });
-  //
-  m_dset        = std::make_unique<nvvk::DescriptorSetContainer>(m_device);
-  m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
 
 };
 
@@ -92,7 +92,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   //
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
 
-  // for 0 if not ready so the rendering does not 
+  // 0 if not ready so the rendering does not 
   // touch the splat set while loading
   size_t splatCount = 0;
   if(m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
@@ -220,7 +220,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       }
     }
 
-    // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
+    // when GPU sorting, we sort at each frame, all buffer in device memory, no copy from RAM
     if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       // reset cpu sorting stats
@@ -428,7 +428,7 @@ void GaussianSplatting::reset()
   destroyDataTextures();
   destroyDataBuffers();
   destroyVkBuffers();
-  destroyPipeline();
+  destroyPipelines();
 }
 
 void GaussianSplatting::destroyScene()
@@ -449,7 +449,7 @@ bool GaussianSplatting::initShaders(void)
     prepends += "#define USE_DATA_TEXTURES\n";
   }
   
-  // let's generate the shader modules
+  // generate the shader modules
   m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "rank.comp.glsl", prepends);
   m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
   m_shaders.meshShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_EXT, "raster.mesh.glsl", prepends);
@@ -471,7 +471,7 @@ void GaussianSplatting::deinitShaders(void)
   }
 }
 
-void GaussianSplatting::createPipeline()
+void GaussianSplatting::createPipelines()
 {
   // reset descriptor bindings
   std::vector<VkDescriptorSetLayoutBinding> empty;
@@ -543,13 +543,6 @@ void GaussianSplatting::createPipeline()
 
   // Create the pipeline to run the compute shader for distance & culling
   {
-    /*
-    const VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                              .codeSize = sizeof(rank_comp_glsl),
-                                              .pCode    = &rank_comp_glsl[0]};
-    VkShaderModule                 compute{};
-    vkCreateShaderModule(m_device, &createInfo, nullptr, &compute);
-    */
     auto pipelineLayout = m_dset->getPipeLayout();
 
     VkComputePipelineCreateInfo pipelineInfo{
@@ -564,9 +557,6 @@ void GaussianSplatting::createPipeline()
         .layout = pipelineLayout,
     };
     vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
-
-    // Shader module is not needed anymore
-    // vkDestroyShaderModule(m_device, compute, nullptr);
   }
   // Create the two rasterization pipelines
   {  
@@ -605,7 +595,6 @@ void GaussianSplatting::createPipeline()
       pgen.addShader(m_shaderManager.get(m_shaders.fragmentShader), VK_SHADER_STAGE_FRAGMENT_BIT);
       m_graphicsPipelineMesh = pgen.createPipeline();
       m_dutil->setObjectName(m_graphicsPipelineMesh, "PipelineMeshShader");
-      // pgen.clearShaders();
     }
 
     // create the pipeline that uses vertex shaders
@@ -626,18 +615,19 @@ void GaussianSplatting::createPipeline()
       pgen.addShader(m_shaderManager.get(m_shaders.fragmentShader), VK_SHADER_STAGE_FRAGMENT_BIT);
       m_graphicsPipeline = pgen.createPipeline();
       m_dutil->setObjectName(m_graphicsPipeline, "PipelineVertexShader");
-      // pgen.clearShaders();
     }
   }
 }
 
-void GaussianSplatting::destroyPipeline()
+void GaussianSplatting::destroyPipelines()
 {
 
   m_dset->deinitPool();
   m_dset->deinitLayout();
 
   vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+  vkDestroyPipeline(m_device, m_graphicsPipelineMesh, nullptr);
+  vkDestroyPipeline(m_device, m_computePipeline, nullptr);
 }
 
 void GaussianSplatting::createGbuffers(const glm::vec2& size)
