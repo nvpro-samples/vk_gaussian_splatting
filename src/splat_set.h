@@ -27,7 +27,6 @@ struct SplatSet
 {
   // standard poiont cloud attributes
   std::vector<float> positions;  // point positions (x,y,z)
-  std::vector<float> normals;    // point normals (x,y,z) - not used but stored in file
   // specific data fields introduced by INRIA for 3DGS
   std::vector<float> f_dc;      // 3 components per point (f_dc_0, f_dc_1, f_dc_2 in ply file)
   std::vector<float> f_rest;    // 45 components per point (f_rest_0 to f_rest_44 in ply file), SH coeficients

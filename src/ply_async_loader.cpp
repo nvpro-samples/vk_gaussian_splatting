@@ -22,10 +22,9 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <iostream>
 
 // 3rd party ply library
-#define TINYPLY_IMPLEMENTATION
-#include "tinyply.h"
 #include "miniply.h"
 
 //
@@ -63,7 +62,7 @@ bool PlyAsyncLoader::initialize()
     m_status = READY;
     lock.unlock();
     //
-    while(true) //!isShutdown())
+    while(true)
     {
       // wait to load new scene
       std::unique_lock<std::mutex> lock(m_mutex);
@@ -76,7 +75,7 @@ bool PlyAsyncLoader::initialize()
         std::unique_lock<std::mutex> lock(m_mutex);
         m_status = LOADING;
         lock.unlock();
-        if(innerLoadMiniPly(m_filename, *m_output))
+        if(m_output != nullptr && innerLoad(m_filename, *m_output))
         {
           std::lock_guard<std::mutex> lock(m_mutex);
           m_status = LOADED;
@@ -98,10 +97,12 @@ bool PlyAsyncLoader::initialize()
         m_shutdownRequested = false;
         m_output            = nullptr;
         m_filename          = "";
-        return;
+        return true;
       }
     }
   });
+
+  return true;
 }
 
 void PlyAsyncLoader::cancel() {
@@ -128,7 +129,7 @@ bool PlyAsyncLoader::reset()
   }
 }
 
-bool PlyAsyncLoader::innerLoadMiniPly(std::string filename, SplatSet& output)
+bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -221,177 +222,4 @@ bool PlyAsyncLoader::innerLoadMiniPly(std::string filename, SplatSet& output)
   }
 
   return gsFound;
-}
-
-bool PlyAsyncLoader::innerLoadTinyPly(std::string filename, SplatSet& output)
-{
-  // Open the file
-  std::ifstream file(filename, std::ios::binary);
-  if(!file.is_open())
-  {
-    std::cout << "Error: Failed to open file: " << filename << std::endl;
-    return false;
-  }
-
-  // Create a tinyply::PlyFile object
-  tinyply::PlyFile plyFile;
-
-  plyFile.parse_header(file);
-
-  std::shared_ptr<tinyply::PlyData> _vertices, _normals, _colors, _colorsRGBA, _texcoords, _faces, _tristrip;
-
-  // The header information can be used to programmatically extract properties on elements
-  // known to exist in the header prior to reading the data. For brevity of this sample, properties
-  // like vertex position are hard-coded:
-  try
-  {
-    _vertices = plyFile.request_properties_from_element("vertex", {"x", "y", "z"});
-  }
-  catch(const std::exception& e)
-  {
-  }
-  try
-  {
-    _normals = plyFile.request_properties_from_element("vertex", {"nx", "ny", "nz"});
-  }
-  catch(const std::exception)
-  {
-  }
-  try
-  {
-    _colorsRGBA = plyFile.request_properties_from_element("vertex", {"red", "green", "blue", "alpha"});
-  }
-  catch(const std::exception)
-  {
-  }
-
-  if(!_colorsRGBA)
-  {
-    try
-    {
-      _colorsRGBA = plyFile.request_properties_from_element("vertex", {"r", "g", "b", "a"});
-    }
-    catch(const std::exception)
-    {
-    }
-  }
-  try
-  {
-    _colors = plyFile.request_properties_from_element("vertex", {"red", "green", "blue"});
-  }
-  catch(const std::exception)
-  {
-  }
-  if(!_colors)
-  {
-    try
-    {
-      _colors = plyFile.request_properties_from_element("vertex", {"r", "g", "b"});
-    }
-    catch(const std::exception)
-    {
-    }
-  }
-  try
-  {
-    _texcoords = plyFile.request_properties_from_element("vertex", {"u", "v"});
-  }
-  catch(const std::exception)
-  {
-  }
-
-  // 3DGS specifics
-  std::shared_ptr<tinyply::PlyData> _f_dc, _f_rest, _opacity, _scale, _rotation;
-  try
-  {
-    _f_dc = plyFile.request_properties_from_element("vertex", {"f_dc_0", "f_dc_1", "f_dc_2"});
-  }
-  catch(const std::exception)
-  {
-  }
-  try
-  {
-    _f_rest = plyFile.request_properties_from_element(
-        "vertex",
-        {"f_rest_0",  "f_rest_1",  "f_rest_2",  "f_rest_3",  "f_rest_4",  "f_rest_5",  "f_rest_6",  "f_rest_7",
-         "f_rest_8",  "f_rest_9",  "f_rest_10", "f_rest_11", "f_rest_12", "f_rest_13", "f_rest_14", "f_rest_15",
-         "f_rest_16", "f_rest_17", "f_rest_18", "f_rest_19", "f_rest_20", "f_rest_21", "f_rest_22", "f_rest_23",
-         "f_rest_24", "f_rest_25", "f_rest_26", "f_rest_27", "f_rest_28", "f_rest_29", "f_rest_30", "f_rest_31",
-         "f_rest_32", "f_rest_33", "f_rest_34", "f_rest_35", "f_rest_36", "f_rest_37", "f_rest_38", "f_rest_39",
-         "f_rest_40", "f_rest_41", "f_rest_42", "f_rest_43", "f_rest_44"});
-  }
-  catch(const std::exception)
-  {
-  }
-  try
-  {
-    _opacity = plyFile.request_properties_from_element("vertex", {"opacity"});
-  }
-  catch(const std::exception)
-  {
-  }
-  try
-  {
-    _scale = plyFile.request_properties_from_element("vertex", {"scale_0", "scale_1", "scale_2"});
-  }
-  catch(const std::exception)
-  {
-  }
-  try
-  {
-    _rotation = plyFile.request_properties_from_element("vertex", {"rot_0", "rot_1", "rot_2", "rot_3"});
-  }
-  catch(const std::exception)
-  {
-  }
-
-  //
-  plyFile.read(file);
-
-  // now feed the data to the frame structure
-  if(_vertices)
-  {
-    const size_t numVerticesBytes = _vertices->buffer.size_bytes();
-    output.positions.resize(_vertices->count * 3);
-    std::memcpy(output.positions.data(), _vertices->buffer.get(), numVerticesBytes);
-  }
-  else
-  {
-    std::cerr << "Error: missing vertex positions. " << std::endl;
-    return false;
-  }
-  if(_normals)
-  {
-    const size_t numNormalsBytes = _normals->buffer.size_bytes();
-    output.normals.resize(_normals->count * 3);
-    std::memcpy(output.normals.data(), _normals->buffer.get(), numNormalsBytes);
-  }
-
-  // 3DGS per vertex infos
-
-  if(_f_dc && _f_rest && _opacity && _scale && _rotation)
-  {
-    const size_t numFDcBytes      = _f_dc->buffer.size_bytes();
-    const size_t numFRestBytes    = _f_rest->buffer.size_bytes();
-    const size_t numOpacityBytes  = _opacity->buffer.size_bytes();
-    const size_t numScaleBytes    = _scale->buffer.size_bytes();
-    const size_t numRotationBytes = _rotation->buffer.size_bytes();
-    output.f_dc.resize(_f_dc->count * 3);
-    output.f_rest.resize(_f_rest->count * 45);
-    output.opacity.resize(_opacity->count);
-    output.scale.resize(_scale->count * 3);
-    output.rotation.resize(_rotation->count * 4);
-    std::memcpy(output.f_dc.data(), _f_dc->buffer.get(), numFDcBytes);
-    std::memcpy(output.f_rest.data(), _f_rest->buffer.get(), numFRestBytes);
-    std::memcpy(output.opacity.data(), _opacity->buffer.get(), numOpacityBytes);
-    std::memcpy(output.scale.data(), _scale->buffer.get(), numScaleBytes);
-    std::memcpy(output.rotation.data(), _rotation->buffer.get(), numRotationBytes);
-  }
-  else
-  {
-    std::cerr << "Error: missing 3DGS attributes. " << std::endl;
-    return false;
-  }
-
-  return true;
 }

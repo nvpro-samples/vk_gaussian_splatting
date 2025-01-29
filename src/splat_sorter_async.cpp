@@ -38,7 +38,7 @@ bool SplatSorterAsync::initialize()
     m_status = READY;
     lock.unlock();
     //
-    while(true)  //!isShutdown())
+    while(true) 
     {
       // wait to load new scene
       std::unique_lock<std::mutex> lock(m_mutex);
@@ -86,60 +86,50 @@ bool SplatSorterAsync::innerSort()
   // find plane passing through COP and with normal dir.
   // we use distance to plane instead of distance to COP as an approximation.
   // https://mathinsight.org/distance_point_plane
-  const glm::vec4 plane(sortDir[0], sortDir[1], sortDir[2],
-                        -sortDir[0] * sortCop[0] - sortDir[1] * sortCop[1] - sortDir[2] * sortCop[2]);
+  const glm::vec4 plane(m_sortDir[0], m_sortDir[1], m_sortDir[2],
+                        -m_sortDir[0] * m_sortCop[0] - m_sortDir[1] * m_sortCop[1] - m_sortDir[2] * m_sortCop[2]);
   const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
 
   const auto splatCount = m_positions->size() / 3;
 
-  // prepare an array of pair <distance, original index>
-  distArray.resize(splatCount);
+  // prepare the arrays (noop if already sized)
+  distances.resize(splatCount);
+  m_indices.resize(splatCount);
 
   // Sequential version of compute distances
 #if defined(SEQUENTIAL) || !defined(_WIN32)
   for(int i = 0; i < splatCount; ++i)
   {
-    const auto pos = &(m_splatSet.positions[i * 3]);
+    const auto pos = &((*m_positions)[i * 3]);
     // distance to plane
-    const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-    distArray[i].first  = dist;
-    distArray[i].second = i;
+    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+    distances[i]     = dist;
+    gsIndex[i]       = i;
   }
 #else
   // parallel for, compute distances
-  auto& tmpArray  = distArray;
-  auto& positions = *m_positions;
-  std::for_each(std::execution::par_unseq, tmpArray.begin(), tmpArray.end(),
-                //concurrency::parallel_for_each(distArray.begin(), distArray.end(),
-                [&tmpArray, &positions, &plane, &divider](std::pair<float, int> const& val) {
-                  size_t     i   = &val - &tmpArray[0];
-                  const auto pos = &(positions[i * 3]);
-                  // distance to plane
-                  const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-                  tmpArray[i].first  = dist;
-                  tmpArray[i].second = i;
-                });
+  std::for_each(std::execution::par_unseq, distances.begin(), distances.end(), [&](float const& val) {
+    size_t     i   = &val - &distances[0];
+    const auto pos = &((*m_positions)[i * 3]);
+    // distance to plane
+    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+    distances[i]     = dist;
+    m_indices[i]       = i;
+  });
 #endif
 
   auto time1 = std::chrono::high_resolution_clock::now();
   m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
 
   // comparison function working on the data <dist,idex>
-  auto compare = [](const std::pair<float, int>& a, const std::pair<float, int>& b) { return a.first > b.first; };
+  auto compare = [&](size_t i, size_t j) { return distances[i] > distances[j]; };
 
 // Sorting the array with respect to distance keys
 #if defined(SEQUENTIAL) || !defined(_WIN32)
   std::sort(distArray.begin(), distArray.end(), compare);
 #else
-  std::sort(std::execution::par_unseq, distArray.begin(), distArray.end(), compare);
+  std::sort(std::execution::par_unseq, m_indices.begin(), m_indices.end(), compare);
 #endif
-
-  // create the sorted index array
-  gsIndex.resize(splatCount);
-  for(int i = 0; i < splatCount; ++i)
-  {
-    gsIndex[i] = distArray[i].second;
-  }
 
   auto time2 = std::chrono::high_resolution_clock::now();
   m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();

@@ -34,15 +34,14 @@ class PlyAsyncLoader
 public:
   enum Status
   {
-    SHUTDOWN, // loader must be initialized (loading thread is not started)
-    READY,    // loader ready to load a new model
-    LOADING,  // loader is currently loading
-    LOADED,   // loader has finished loading, model is available. call reset before another load.
-    FAILURE   // an error eccured. call reset before another load.
+    SHUTDOWN,  // loader must be initialized (loading thread is not started)
+    READY,     // loader ready to load a new model
+    LOADING,   // loader is currently loading
+    LOADED,    // loader has finished loading, model is available. call reset before another load.
+    FAILURE    // an error eccured. call reset before another load.
   };
 
 public:
-
   // starts the loader thread
   bool initialize();
   // stops the loader thread, cannot be re-used afterward
@@ -70,13 +69,14 @@ public:
   // thread safe
   bool reset();
   // return the filename currently beeing loaded, "" otherwise
-  [[nodiscard]] inline std::string getFilename() { 
+  [[nodiscard]] inline std::string getFilename()
+  {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_filename;
   }
   // return percentage in {0,1} of progress
   // do not rely on progress to find loader status
-  // use getStatus(). progress is just an indication 
+  // use getStatus(). progress is just an indication
   // for UI display.
   [[nodiscard]] inline float getProgress()
   {
@@ -85,10 +85,21 @@ public:
   }
 
 private:
+  // actually loads the scene
+  bool innerLoad(std::string filename, SplatSet& output);
+
+  // in {0.0,1.0}
+  void setProgress(float progress)
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_progress = progress;
+  }
+
+private:
   // loading thread
   std::thread m_loader;
   // loader status
-  Status m_status=SHUTDOWN;
+  Status m_status = SHUTDOWN;
   // ask to cancel a load
   bool m_cancelRequested = false;
   // ask for loader shutdown before destruction
@@ -101,20 +112,9 @@ private:
   // the ply pathname
   std::string m_filename = "";
   // the output data storage
-  SplatSet* m_output=nullptr;
+  SplatSet* m_output = nullptr;
   // the loading percentage
   float m_progress = 0.0f;
-  
-  // actually loads the scene
-  bool innerLoadTinyPly(std::string filename, SplatSet& output);
-  bool innerLoadMiniPly(std::string filename, SplatSet& output);
-
-  // in {0.0,1.0}
-  void setProgress(float progress)
-  { 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_progress = progress;
-  }
 };
 
 #endif

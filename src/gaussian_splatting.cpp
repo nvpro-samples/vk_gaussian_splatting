@@ -157,20 +157,19 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       {
         // Splatting/blending is on, we check for a newly sorted index table
         auto status = m_cpuSplatSorter.getStatus();
-        if(status == SplatSorterAsync::SORTED || status != SplatSorterAsync::SORTING )
+        if(status != SplatSorterAsync::SORTING )
         {
           // sorter is sleeping, we can work on shared data
           // we take into account the result of the sort
           if(status == SplatSorterAsync::SORTED)
           {
-            gsIndex.swap(m_cpuSplatSorter.gsIndex);
+            m_cpuSplatSorter.consume(gsIndex,m_distTime, m_sortTime);
             newIndexAvailable = true;
-            m_cpuSplatSorter.reset();
-          }
-          // then if view point has changed we restart a sort
-          const auto nrmDir = glm::normalize(center - eye);
-          // let's wakeup the sorting thread to run a new sort
-          m_cpuSplatSorter.sortAsync(nrmDir, eye, m_splatSet.positions);
+          } 
+          
+          // let's wakeup the sorting thread to run a new sort if needed
+          // will start work only if ca mera direction or position has changed
+          m_cpuSplatSorter.sortAsync(glm::normalize(center - eye), eye, m_splatSet.positions);
         }
       }
       else
@@ -189,7 +188,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
           }
           newIndexAvailable = true;
         }
-        m_cpuSplatSorter.m_sortTime = 0;
+        m_distTime = 0;
+        m_sortTime = 0;
       }
 
       {  // upload to GPU is needed
@@ -223,6 +223,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     // when GPU sorting, we sort at each frame, all buffer in device memory, no copy
     if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
+      // reset cpu sorting stats
+      m_distTime = m_sortTime = 0;
+      //
       { // reset the draw indirect parameters and counters, will be updated by compute shader
         const IndirectParams drawIndexedIndirectParams;
         vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(IndirectParams), (void*)&drawIndexedIndirectParams);

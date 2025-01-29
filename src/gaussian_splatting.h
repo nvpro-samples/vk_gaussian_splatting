@@ -207,7 +207,6 @@ private:  // Attributes
 
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
-  std::string      m_cpuSortStatusUi = "Idled";  // 
 
   //
   nvvkhl::Application*                     m_app{nullptr};
@@ -378,6 +377,10 @@ private:
 
   // Rendering (sorting and splatting) related memory usage statistics
   RenderMemoryStats m_renderMemoryStats;
+
+  //
+  float m_distTime = 0.0f;
+  float m_sortTime = 0.0f;
 
 };
 #endif

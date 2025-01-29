@@ -263,7 +263,9 @@ void GaussianSplatting::onUIRender()
         }
       }
 
-      PE::Text("CPU sorting ", m_cpuSortStatusUi);
+      ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
+      PE::Text("CPU sorting ", m_cpuSplatSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
+      ImGui::EndDisabled();
 
       // Radio buttons for exclusive selection
       PE::entry("Frustum culling", [&]() {
@@ -338,10 +340,10 @@ void GaussianSplatting::onUIRender()
 
       PE::entry(
           "Distances  (ms)",
-          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_cpuSplatSorter.m_distTime), 0, 100000); }, "TODOC");
+          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_distTime), 0, 100000); }, "TODOC");
       PE::entry(
           "Sorting  (ms)",
-          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_cpuSplatSorter.m_sortTime), 0, 100000); }, "TODOC");
+          [&]() { return ImGui::InputFloat("##HiddenID", (float*)&(m_sortTime), 0, 100000); }, "TODOC");
       uint32_t totalSplatCount = (uint32_t)gsIndex.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
