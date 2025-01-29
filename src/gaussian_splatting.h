@@ -121,11 +121,6 @@ public:  // Methods specializing IAppElement
   void registerRecentFilesHandler();
 
 private:  // Methods
-  // main loop of the sorting thread for gaussians
-  // the thread is started by the class constructor
-  // then wait for triggers
-  void sortingThreadFunc(void);
-
   void reset();
 
   void destroyScene();
@@ -213,8 +208,8 @@ private:  // Attributes
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
   // cpu sorter feedback for ui
-  float m_distTime = 0.0f; // distance compute time
-  float m_sortTime = 0.0f; // sorting compute time
+  uint32_t m_distTime = 0; // distance compute time in ms
+  uint32_t m_sortTime = 0; // sorting compute time in ms
 
   //
   nvvkhl::Application*                     m_app{nullptr};

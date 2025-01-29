@@ -74,6 +74,8 @@ bool SplatSorterAsync::initialize()
       }
     }
   });
+
+  return true;
 }
 
 bool SplatSorterAsync::innerSort()
@@ -90,7 +92,7 @@ bool SplatSorterAsync::innerSort()
                         -m_sortDir[0] * m_sortCop[0] - m_sortDir[1] * m_sortCop[1] - m_sortDir[2] * m_sortCop[2]);
   const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
 
-  const auto splatCount = m_positions->size() / 3;
+  const auto splatCount = (uint32_t)m_positions->size() / 3;
 
   // prepare the arrays (noop if already sized)
   distances.resize(splatCount);
@@ -98,7 +100,7 @@ bool SplatSorterAsync::innerSort()
 
   // Sequential version of compute distances
 #if defined(SEQUENTIAL) || !defined(_WIN32)
-  for(int i = 0; i < splatCount; ++i)
+  for(uint32_t i = 0; i < splatCount; ++i)
   {
     const auto pos = &((*m_positions)[i * 3]);
     // distance to plane
@@ -109,12 +111,12 @@ bool SplatSorterAsync::innerSort()
 #else
   // parallel for, compute distances
   std::for_each(std::execution::par_unseq, distances.begin(), distances.end(), [&](float const& val) {
-    size_t     i   = &val - &distances[0];
+    size_t   i   = &val - &distances[0];
     const auto pos = &((*m_positions)[i * 3]);
     // distance to plane
     const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
     distances[i]     = dist;
-    m_indices[i]       = i;
+    m_indices[i]     = (uint32_t)i;
   });
 #endif
 

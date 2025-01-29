@@ -53,7 +53,7 @@ public:
   // starts the loader thread
   bool initialize();
   // stops the loader thread, cannot be re-used afterward
-  inline inline void shutdown()
+  inline void shutdown()
   {
     std::unique_lock<std::mutex> lock(m_mutex);
     m_shutdownRequested = true;
@@ -93,7 +93,7 @@ public:
     return true;
   }
   // Fill indices with sorted values (call std::swap) and stats
-  inline bool consume(std::vector<uint32_t>& indices, float& distTime, float& sortTime)
+  inline bool consume(std::vector<uint32_t>& indices, uint32_t& distTime, uint32_t& sortTime)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if(m_status == SORTED || m_status == FAILURE)
@@ -132,9 +132,9 @@ private:
 
   std::vector<float> distances;  // points distances, internal buffer
 
-  std::vector<uint32_t> m_indices;          // sorted indices result
-  float                 m_distTime = 0.0f;  // distance update timer
-  float                 m_sortTime = 0.0f;  // distance sorting timer
+  std::vector<uint32_t> m_indices;       // sorted indices result
+  uint32_t              m_distTime = 0;  // distance update timer
+  uint32_t              m_sortTime = 0;  // distance sorting timer
 };
 
 #endif
