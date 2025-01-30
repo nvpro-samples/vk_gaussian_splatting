@@ -95,7 +95,7 @@ void GaussianSplatting::onUIRender()
     const auto splatCount = m_splatSet.positions.size() / 3;
     if(splatCount)
     {
-      reset();
+      deinitAll();
     }
 
     m_loadedSceneFilename = m_sceneToLoadFilename;
@@ -145,37 +145,19 @@ void GaussianSplatting::onUIRender()
         if(ImGui::Button("Ok", ImVec2(120, 0)))
         {
           m_loadedSceneFilename = "";
-          destroyScene();
-          // TODO: use BBox of point cloud to set far plane
-          CameraManip.setClipPlanes({0.1F, 2000.0F});
-          // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-          CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-          // reset general parameters
-          resetFrameInfo();
-          //
-          m_plyLoader.reset();
-          //
+          // destroy scene just in case it was
+          // loaded but not properly since in error
+          deinitScene();
+          // set ready for next load
+          m_plyLoader.reset(); 
           ImGui::CloseCurrentPopup();
         }
       }
       break;
       case PlyAsyncLoader::Status::LOADED: {
-        // TODO: use BBox of point cloud to set far plane
-        CameraManip.setClipPlanes({0.1F, 2000.0F});
-        // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-        CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
-        // reset general parameters
-        resetFrameInfo();
-        //
-        initShaders();
-        createVkBuffers();
-        if(m_useDataTextures)
-          createDataTextures();
-        else
-          createDataBuffers();
-        createPipelines();
-        m_plyLoader.reset();  // change status to READY
-        //
+        initAll();
+        // set ready for next load
+        m_plyLoader.reset(); 
         ImGui::CloseCurrentPopup();
         addToRecentFiles(m_loadedSceneFilename);
       }
@@ -187,31 +169,11 @@ void GaussianSplatting::onUIRender()
     ImGui::EndPopup();
   }
 
+  // will rebuild data set according 
+  // to parameter change
   if(m_updateData)
   {
-    vkDeviceWaitIdle(m_device);
-    //
-    if(m_centersMap != nullptr)
-    {
-      destroyDataTextures();
-    }
-    else
-    {
-      destroyDataBuffers();
-    }
-    destroyPipelines();
-    //
-    if(m_useDataTextures)
-    {
-      createDataTextures();
-    }
-    else
-    {
-      createDataBuffers();
-    }
-    initShaders();
-    createPipelines();
-    // Done
+    reinitDataStorage();
     m_updateData = false;
   }
 
@@ -264,7 +226,7 @@ void GaussianSplatting::onUIRender()
       }
 
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
-      PE::Text("CPU sorting ", m_cpuSplatSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
+      PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 
       // Radio buttons for exclusive selection
@@ -342,7 +304,7 @@ void GaussianSplatting::onUIRender()
           "Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
       PE::entry(
           "Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
-      uint32_t totalSplatCount = (uint32_t)gsIndex.size();
+      uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
       uint32_t renderedSplatCount =
@@ -547,7 +509,7 @@ void GaussianSplatting::onUIMenu()
     ImGui::Separator();
     if(ImGui::MenuItem("Close", ""))
     {
-      reset();
+      deinitAll();
     }
     ImGui::Separator();
     if(ImGui::MenuItem("Exit", "Ctrl+Q"))

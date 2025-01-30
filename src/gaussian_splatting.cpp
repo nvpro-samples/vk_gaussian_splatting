@@ -29,7 +29,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 
   // starts the loader
   m_plyLoader.initialize();
-  m_cpuSplatSorter.initialize();
+  m_cpuSorter.initialize();
   
   // shortcuts
   m_app         = app;
@@ -71,16 +71,16 @@ void GaussianSplatting::onDetach()
 {
   // stops the threads
   m_plyLoader.shutdown();
-  m_cpuSplatSorter.shutdown();
+  m_cpuSorter.shutdown();
   // release resources
-  reset();
-  destroyGbuffers();
+  deinitAll();
   m_dset->deinit();
+  deinitGbuffers();
 }
 
 void GaussianSplatting::onResize(uint32_t width, uint32_t height)
 {
-  createGbuffers({width, height});
+  initGbuffers({width, height});
 }
 
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
@@ -156,20 +156,20 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       if(!m_frameInfo.opacityGaussianDisabled)
       {
         // Splatting/blending is on, we check for a newly sorted index table
-        auto status = m_cpuSplatSorter.getStatus();
+        auto status = m_cpuSorter.getStatus();
         if(status != SplatSorterAsync::SORTING )
         {
           // sorter is sleeping, we can work on shared data
           // we take into account the result of the sort
           if(status == SplatSorterAsync::SORTED)
           {
-            m_cpuSplatSorter.consume(gsIndex,m_distTime, m_sortTime);
+            m_cpuSorter.consume(m_splatIndices,m_distTime, m_sortTime);
             newIndexAvailable = true;
           } 
           
           // let's wakeup the sorting thread to run a new sort if needed
           // will start work only if ca mera direction or position has changed
-          m_cpuSplatSorter.sortAsync(glm::normalize(center - eye), eye, m_splatSet.positions);
+          m_cpuSorter.sortAsync(glm::normalize(center - eye), eye, m_splatSet.positions);
         }
       }
       else
@@ -178,13 +178,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         // indices would not be needed for non splatted points
         // however, using the same mechanism allows to use exactly the same shader
         // so if splatting/blending is off we provide an ordered table of indices
-        bool refill = (gsIndex.size() != splatCount);
+        bool refill = (m_splatIndices.size() != splatCount);
         if(refill)
         {
-          gsIndex.resize(splatCount);
+          m_splatIndices.resize(splatCount);
           for(uint32_t i = 0; i < splatCount; ++i)
           {
-            gsIndex[i] = i;
+            m_splatIndices[i] = i;
           }
           newIndexAvailable = true;
         }
@@ -199,7 +199,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
         { 
           // Prepare buffer on host using sorted indices
           uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-          memcpy(hostBuffer, gsIndex.data(), gsIndex.size() * sizeof(uint32_t));
+          memcpy(hostBuffer, m_splatIndices.data(), m_splatIndices.size() * sizeof(uint32_t));
           m_alloc->unmap(m_splatIndicesHost);
           // copy buffer to device
           VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
@@ -264,7 +264,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       {
         auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
-        vrdxCmdSortKeyValueIndirect(cmd, m_sorter, splatCount, 
+        vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, 
           m_indirect.buffer, sizeof(uint32_t), 
           m_splatDistancesDevice.buffer, 0,
           m_splatIndicesDevice.buffer, 0, m_vrdxStorageDevice.buffer, 0, 0, 0);
@@ -420,18 +420,67 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                                         + m_renderMemoryStats.usedUboFrameInfo;
 }
 
-
-void GaussianSplatting::reset()
+void GaussianSplatting::deinitAll()
 {
   vkDeviceWaitIdle(m_device);
-  destroyScene();
-  destroyDataTextures();
-  destroyDataBuffers();
-  destroyVkBuffers();
-  destroyPipelines();
+  deinitScene();
+  deinitDataTextures();
+  deinitDataBuffers();
+  deinitVkBuffers();
+  deinitShaders();
+  deinitPipelines();
+  resetFrameInfo();
+  // reset camera to default 
+  CameraManip.setClipPlanes({0.1F, 2000.0F});
+  CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, 1.0F, 0.0F});
 }
 
-void GaussianSplatting::destroyScene()
+void GaussianSplatting::initAll()
+{
+  // TODO: use BBox of point cloud to set far plane
+  CameraManip.setClipPlanes({0.1F, 2000.0F});
+  // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
+  CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+  // reset general parameters
+  resetFrameInfo();
+  //
+  initShaders();
+  initVkBuffers();
+  if(m_useDataTextures)
+    initDataTextures();
+  else
+    initDataBuffers();
+  initPipelines();
+}
+
+void GaussianSplatting::reinitDataStorage()
+{
+  vkDeviceWaitIdle(m_device);
+  //
+  if(m_centersMap != nullptr)
+  {
+    deinitDataTextures();
+  }
+  else
+  {
+    deinitDataBuffers();
+  }
+  deinitPipelines();
+  deinitShaders();
+  //
+  if(m_useDataTextures)
+  {
+    initDataTextures();
+  }
+  else
+  {
+    initDataBuffers();
+  }
+  initShaders();
+  initPipelines();
+}
+
+void GaussianSplatting::deinitScene()
 {
   m_splatSet = {};
   m_loadedSceneFilename = "";
@@ -471,7 +520,7 @@ void GaussianSplatting::deinitShaders(void)
   }
 }
 
-void GaussianSplatting::createPipelines()
+void GaussianSplatting::initPipelines()
 {
   // reset descriptor bindings
   std::vector<VkDescriptorSetLayoutBinding> empty;
@@ -619,7 +668,7 @@ void GaussianSplatting::createPipelines()
   }
 }
 
-void GaussianSplatting::destroyPipelines()
+void GaussianSplatting::deinitPipelines()
 {
 
   m_dset->deinitPool();
@@ -630,7 +679,7 @@ void GaussianSplatting::destroyPipelines()
   vkDestroyPipeline(m_device, m_computePipeline, nullptr);
 }
 
-void GaussianSplatting::createGbuffers(const glm::vec2& size)
+void GaussianSplatting::initGbuffers(const glm::vec2& size)
 {
   m_viewSize = size;
   m_gBuffers = std::make_unique<nvvkhl::GBuffer>(m_device, m_alloc.get(),
@@ -638,27 +687,27 @@ void GaussianSplatting::createGbuffers(const glm::vec2& size)
                                                  m_colorFormat, m_depthFormat);
 }
 
-void GaussianSplatting::destroyGbuffers()
+void GaussianSplatting::deinitGbuffers()
 {
 
   m_gBuffers.reset();
 }
 
-void GaussianSplatting::createVkBuffers()
+void GaussianSplatting::initVkBuffers()
 {
   const auto splatCount = (uint32_t)m_splatSet.size();
 
   // TODO: this has nothing to do here, check where to put this
-  gsIndex.resize(splatCount);
+  m_splatIndices.resize(splatCount);
 
   // All this block for the sorting
   {
     // Vrdx sorter
-    m_sorter                    = VK_NULL_HANDLE;
-    m_sorterInfo                = {};
-    m_sorterInfo.physicalDevice = m_app->getPhysicalDevice();
-    m_sorterInfo.device         = m_app->getDevice();
-    vrdxCreateSorter(&m_sorterInfo, &m_sorter);
+    VrdxSorterCreateInfo gpuSorterInfo{
+      .physicalDevice = m_app->getPhysicalDevice(),
+      .device         = m_app->getDevice()
+    };
+    vrdxCreateSorter(&gpuSorterInfo, &m_gpuSorter);
 
     {  // Create some buffer for GPU and/or CPU sorting
 
@@ -681,7 +730,7 @@ void GaussianSplatting::createVkBuffers()
                   
       VrdxSorterStorageRequirements requirements;
       // vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
-      vrdxGetSorterKeyValueStorageRequirements(m_sorter, splatCount, &requirements);
+      vrdxGetSorterKeyValueStorageRequirements(m_gpuSorter, splatCount, &requirements);
       m_vrdxStorageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
       m_renderMemoryStats.allocVdrxInternal = (uint32_t)requirements.size; // for stats reporting only
 
@@ -707,7 +756,7 @@ void GaussianSplatting::createVkBuffers()
   m_dutil->DBG_NAME(m_indirect.buffer);
   m_dutil->DBG_NAME(m_indirectHost.buffer);
 
-  //
+  // TODO: why do I need a command for those specific buffers and not for the others ?
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // The Quad 
@@ -734,10 +783,14 @@ void GaussianSplatting::createVkBuffers()
 
 }
 
-void GaussianSplatting::destroyVkBuffers()
+void GaussianSplatting::deinitVkBuffers()
 {
-  if(m_sorter != VK_NULL_HANDLE ) 
-    vrdxDestroySorter(m_sorter);
+  // TODO can we  rather move this to pipelines creation ?
+  if(m_gpuSorter != VK_NULL_HANDLE)
+  {
+    vrdxDestroySorter(m_gpuSorter);
+    m_gpuSorter = VK_NULL_HANDLE;
+  }
 
   // will delete at next frame
   nvvkhl::Application::submitResourceFree([this]() {
@@ -758,7 +811,7 @@ void GaussianSplatting::destroyVkBuffers()
   });
 }
 
-void GaussianSplatting::createDataTextures(void)
+void GaussianSplatting::initDataTextures(void)
 {
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
@@ -953,7 +1006,7 @@ void GaussianSplatting::createDataTextures(void)
 
 }
 
-void GaussianSplatting::destroyDataTextures()
+void GaussianSplatting::deinitDataTextures()
 {
   // destructors will invoke destroy on next frame
   m_centersMap.reset();
@@ -962,7 +1015,7 @@ void GaussianSplatting::destroyDataTextures()
   m_sphericalHarmonicsMap.reset();
 }
 
-void GaussianSplatting::createDataBuffers(void)
+void GaussianSplatting::initDataBuffers(void)
 {
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
   
@@ -1230,7 +1283,7 @@ void GaussianSplatting::createDataBuffers(void)
       m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
 }
 
-void GaussianSplatting::destroyDataBuffers()
+void GaussianSplatting::deinitDataBuffers()
 {
   // will delete at next frame
   nvvkhl::Application::submitResourceFree([this]() {

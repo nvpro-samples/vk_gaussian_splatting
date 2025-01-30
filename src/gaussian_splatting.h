@@ -98,7 +98,7 @@ public:  // Methods specializing IAppElement
   };
 
   ~GaussianSplatting() override{
-      // all threads must be stoped,
+      // all threads must be stopped,
       // work done in onDetach(),
       // could be done here, same result
   };
@@ -121,33 +121,52 @@ public:  // Methods specializing IAppElement
   void registerRecentFilesHandler();
 
 private:  // Methods
-  void reset();
 
-  void destroyScene();
+  void initGbuffers(const glm::vec2& size);
 
-  void createPipelines();
+  void deinitGbuffers();
 
-  void destroyPipelines();
+  // Initializes all that is related to the scene based
+  // on current parameters. VRAM Data, shaders, pipelines.
+  // Invoked on scene load success.
+  void initAll();
 
-  void createGbuffers(const glm::vec2& size);
+  // Denitializes all that is related to the scene.
+  // VRAM Data, shaders, pipelines.
+  // Invoked on scene close or on exit.
+  void deinitAll();
 
-  void destroyGbuffers();
+  // reinitializes the data related to the scene (the 
+  // splat set) in VRAM following a change of parameters 
+  // in the UI, to use data buffers or data textures.
+  // this requires to regenerate shaders and pipelines.
+  void reinitDataStorage();
 
-  void createVkBuffers();
-
-  void destroyVkBuffers();
-
-  // create the texture maps on the device and upload the splat set data from host to device
-  void createDataTextures(void);
-
-  void destroyDataTextures(void);
-
-  // create the buffers on the device and upload the splat set data from host to device
-  void createDataBuffers(void);
+  // free scene (splat set) from RAM
+  void deinitScene();
   
-  void destroyDataBuffers(void);
+  // create the buffers on the device and upload 
+  // the splat set data from host to device
+  void initDataBuffers(void);
+  
+  void deinitDataBuffers(void);
+
+  // create the texture maps on the device and upload 
+  // the splat set data from host to device
+  void initDataTextures(void);
+
+  void deinitDataTextures(void);
+
+  void initPipelines();
+
+  void deinitPipelines();
+
+  void initVkBuffers();
+
+  void deinitVkBuffers();
 
   bool initShaders(void);
+
   void deinitShaders(void);
 
   // Utility function to compute the texture size according to the size of the data to be stored
@@ -229,6 +248,9 @@ private:  // Attributes
   //
   nvvk::Buffer m_pixelBuffer;
 
+  // TODO Find a better name, add this to devicehost he ader
+  // and use named fields in shaders
+  // 
   // indirect parameters for
   // - vkCmdDrawIndexedIndirect (first 6 attr)
   // - vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
@@ -257,7 +279,7 @@ private:  // Attributes
   // trigger a rebuild of the shaders and pipelines at next frame
   bool m_updateShaders = false;
 
-  // trigger a rebuild of the data in vram (textures or buffers) at next frame
+  // trigger a rebuild of the data in VRAM (textures or buffers) at next frame
   // also triggers shaders and pipeline rebuild
   bool m_updateData = false;
 
@@ -281,12 +303,10 @@ private:  // Attributes
   uint32_t m_selectedPipeline = PIPELINE_MESH;
 
   // CPU async sorting
-  SplatSorterAsync m_cpuSplatSorter;
-  std::vector<uint32_t> gsIndex;      // the array of cpu sorted indices to use for rendering
-
+  SplatSorterAsync      m_cpuSorter;
+  std::vector<uint32_t> m_splatIndices;  // the array of cpu sorted indices to use for rendering
   // GPU radix sort
-  VrdxSorter           m_sorter = VK_NULL_HANDLE;
-  VrdxSorterCreateInfo m_sorterInfo;
+  VrdxSorter m_gpuSorter = VK_NULL_HANDLE;
 
   // buffers used by GPU and/or CPU sort
   nvvk::Buffer m_splatIndicesHost;      // Buffer of splat indices on host for transfers (used by CPU sort)

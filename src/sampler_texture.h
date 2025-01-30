@@ -30,6 +30,7 @@
 #include "nvvkhl/application.hpp"
 
 // Utility class to manage texture creation and destruction
+// TODO: remove this class and just add methods to main class. Will be nought for our needs.
 struct SampleTexture
 {
 private:
