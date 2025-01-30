@@ -811,224 +811,8 @@ void GaussianSplatting::deinitVkBuffers()
   });
 }
 
-void GaussianSplatting::initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Texture& texture)
-{
-  const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-  const VkExtent2D          size = {width, height};
-  const VkImageCreateInfo   create_info = nvvk::makeImage2DCreateInfo(size, format, VK_IMAGE_USAGE_SAMPLED_BIT, false);
-
-  nvvk::CommandPool cpool(m_device, m_app->getQueue(0).familyIndex);
-  VkCommandBuffer   cmd = cpool.createCommandBuffer();
-
-  texture = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
-  cpool.submitAndWait(cmd);
-
-  texture.descriptor.sampler = sampler;
-}
-
-void GaussianSplatting::deinitTexture(nvvk::Texture& texture)
-{
-  m_alloc->destroy(texture);
-}
-
-void GaussianSplatting::initDataTextures(void)
-{
-  const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
-
-  // create a texture sampler using nearest filtering mode.
-  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-  sampler_info.magFilter  = VK_FILTER_NEAREST;
-  sampler_info.minFilter  = VK_FILTER_NEAREST;
-  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-
-  {
-    // centers (3 components but texture map is only allowed with 4 components)
-    // TODO: May pack as done for covariances not to waste alpha chanel ? but must
-    // compare performance (1 lookup vs 2 lookups due to packing)
-    glm::ivec2         mapSize = computeDataTextureSize(3, 3, splatCount);
-    std::vector<float> centers(mapSize.x * mapSize.y * 4);  // includes some padding and unused w channel
-    for(uint32_t i = 0; i < splatCount; ++i)
-    {
-      // we skip the alpha channel that is left undefined and not used in the shader
-      for(uint32_t cmp = 0; cmp < 3; ++cmp)
-      {
-        centers[i * 4 + cmp] = m_splatSet.positions[i * 3 + cmp];
-      }
-    }
-    // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)centers.size() * sizeof(float), (void*)centers.data(),
-                VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_centersMap);
-    // memory statistics
-    m_modelMemoryStats.srcCenters  = splatCount * 3 * sizeof(float);
-    m_modelMemoryStats.odevCenters = splatCount * 3 * sizeof(float);  // no compression or quantization yet
-    m_modelMemoryStats.devCenters  = mapSize.x * mapSize.y * 4 * sizeof(float);
-  }
-  {
-    // covariances
-    glm::ivec2         mapSize = computeDataTextureSize(4, 6, splatCount);
-    std::vector<float> covariances(mapSize.x * mapSize.y * 4, 0.0f);
-    glm::vec3          scale;
-    glm::quat          rotation;
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
-    {
-      const auto stride3 = splatIdx * 3;
-      const auto stride4 = splatIdx * 4;
-      const auto stride6 = splatIdx * 6;
-      scale.x            = std::exp(m_splatSet.scale[stride3 + 0]);
-      scale.y            = std::exp(m_splatSet.scale[stride3 + 1]);
-      scale.z            = std::exp(m_splatSet.scale[stride3 + 2]);
-
-      rotation.x = m_splatSet.rotation[stride4 + 1];
-      rotation.y = m_splatSet.rotation[stride4 + 2];
-      rotation.z = m_splatSet.rotation[stride4 + 3];
-      rotation.w = m_splatSet.rotation[stride4 + 0];
-      rotation   = glm::normalize(rotation);
-
-      // computes the covariance
-      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
-      const glm::mat3 rotationMatrix        = glm::mat3_cast(rotation);  // where rotation is a quaternion
-      const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
-      glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
-
-      covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
-      covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
-      covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
-
-      covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
-      covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
-      covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
-    }
-
-    // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)covariances.size() * sizeof(float),
-                (void*)covariances.data(), VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_covariancesMap);
-    // memory statistics
-    m_modelMemoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
-    m_modelMemoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
-    m_modelMemoryStats.devCov  = mapSize.x * mapSize.y * 4 * sizeof(float);
-  }
-  {
-    // SH degree 0 is not view dependent, so we directly transform to base color
-    // this will make some economy of processing in the shader at each frame
-    glm::ivec2           mapSize = computeDataTextureSize(4, 4, splatCount);
-    std::vector<uint8_t> colors(mapSize.x * mapSize.y * 4);  // includes some padding
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
-    {
-      const auto  stride3 = splatIdx * 3;
-      const auto  stride4 = splatIdx * 4;
-      const float SH_C0   = 0.28209479177387814f;
-      colors[stride4 + 0] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 1] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 2] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 3] =
-          (uint8_t)glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
-    }
-    // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)colors.size(), (void*)colors.data(),
-                VK_FORMAT_R8G8B8A8_UNORM, m_alloc->acquireSampler(sampler_info), m_colorsMap);
-    // memory statistics
-    m_modelMemoryStats.srcSh0  = splatCount * 4 * sizeof(float);    // original sh0 and opacity are floats
-    m_modelMemoryStats.odevSh0 = splatCount * 4 * sizeof(uint8_t);  
-    m_modelMemoryStats.devSh0  = mapSize.x * mapSize.y * 4 * sizeof(uint8_t);
-  }
-  {
-    // Prepare the spherical harmonics of degree 1 to 3
-    const uint32_t sphericalHarmonicsElementsPerTexel       = 4;
-    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)m_splatSet.f_rest.size() / splatCount;
-    const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
-    // find the maximum SH degree stored in the file
-    int sphericalHarmonicsDegree = 0;
-    if(sphericalHarmonicsCoefficientsPerChannel >= 3)
-      sphericalHarmonicsDegree = 1;
-    if(sphericalHarmonicsCoefficientsPerChannel >= 8)
-      sphericalHarmonicsDegree = 2;
-
-    // add some padding at each splat if needed for easy texture lookups
-    const int sphericalHarmonicsComponentCount =
-        (sphericalHarmonicsDegree == 1) ? 9 : ((sphericalHarmonicsDegree == 2) ? 24 : 0);
-    int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
-    if(paddedSphericalHarmonicsComponentCount % 2 != 0)
-      paddedSphericalHarmonicsComponentCount++;
-
-    //
-    glm::ivec2 mapSize =
-        computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
-
-    std::vector<float> paddedSHArray(mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel, 0.0f);
-
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
-    {
-      const auto srcBase   = totalSphericalHarmonicsComponentCount * splatIdx;
-      const auto destBase  = paddedSphericalHarmonicsComponentCount * splatIdx;
-      int        dstOffset = 0;
-      // degree 1, three coefs per component
-      for(auto i = 0; i < 3; i++)
-      {
-        for(auto rgb = 0; rgb < 3; rgb++)
-        {
-          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
-          const auto dstIndex = destBase + dstOffset++;  // inc after add
-
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
-        }
-      }
-
-      // degree 2, five coefs per component
-      for(auto i = 0; i < 5; i++)
-      {
-        for(auto rgb = 0; rgb < 3; rgb++)
-        {
-          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
-          const auto dstIndex = destBase + dstOffset++;  // inc after add
-
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
-        }
-      }
-      /*
-      // degree 3 TODO
-      for(auto i = 0; i < 7; i++)
-      {
-        for(auto rgb = 0; rgb < 3; rgb++)
-        {
-          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 8 + i);
-          const auto dstIndex = destBase + 24 + (i * 3 + rgb);
-        
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
-        }
-      }
-      */
-    }
-
-    // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)paddedSHArray.size() * sizeof(float), (void*)paddedSHArray.data(),
-                VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
-    // memory statistics
-    m_modelMemoryStats.srcShOther  = (uint32_t)m_splatSet.f_rest.size() * sizeof(float);
-    m_modelMemoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
-    m_modelMemoryStats.devShOther  = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
-  }
-
-  // update statistics totals
-  m_modelMemoryStats.srcShAll = m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
-  m_modelMemoryStats.odevShAll = m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
-  m_modelMemoryStats.devShAll  = m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
-
-  m_modelMemoryStats.srcAll = m_modelMemoryStats.srcCenters + m_modelMemoryStats.srcCov + m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
-  m_modelMemoryStats.odevAll = m_modelMemoryStats.odevCenters + m_modelMemoryStats.odevCov + m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
-  m_modelMemoryStats.devAll = m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
-
-}
-
-void GaussianSplatting::deinitDataTextures()
-{
-  // will delete at next frame
-  nvvkhl::Application::submitResourceFree([this]() {
-    deinitTexture(m_centersMap);
-    deinitTexture(m_colorsMap);
-    deinitTexture(m_covariancesMap);
-    deinitTexture(m_sphericalHarmonicsMap);
-  });
-}
+///////////////////
+// using data buffers to store splatset in VRAM
 
 void GaussianSplatting::initDataBuffers(void)
 {
@@ -1305,5 +1089,227 @@ void GaussianSplatting::deinitDataBuffers()
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_sphericalHarmonicsDevice));
+  });
+}
+
+///////////////////
+// using texture maps to store splatset in VRAM
+
+void GaussianSplatting::initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Texture& texture)
+{
+  const VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  const VkExtent2D          size = {width, height};
+  const VkImageCreateInfo   create_info = nvvk::makeImage2DCreateInfo(size, format, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+  nvvk::CommandPool cpool(m_device, m_app->getQueue(0).familyIndex);
+  VkCommandBuffer   cmd = cpool.createCommandBuffer();
+
+  texture = m_alloc->createTexture(cmd, bufsize, data, create_info, sampler_info);
+  cpool.submitAndWait(cmd);
+
+  texture.descriptor.sampler = sampler;
+}
+
+void GaussianSplatting::deinitTexture(nvvk::Texture& texture)
+{
+  m_alloc->destroy(texture);
+}
+
+void GaussianSplatting::initDataTextures(void)
+{
+  const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
+
+  // create a texture sampler using nearest filtering mode.
+  VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  sampler_info.magFilter  = VK_FILTER_NEAREST;
+  sampler_info.minFilter  = VK_FILTER_NEAREST;
+  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+  // centers (3 components but texture map is only allowed with 4 components)
+  // TODO: May pack as done for covariances not to waste alpha chanel ? but must
+  // compare performance (1 lookup vs 2 lookups due to packing)
+  {
+    glm::ivec2         mapSize = computeDataTextureSize(3, 3, splatCount);
+    std::vector<float> centers(mapSize.x * mapSize.y * 4);  // includes some padding and unused w channel
+    for(uint32_t i = 0; i < splatCount; ++i)
+    {
+      // we skip the alpha channel that is left undefined and not used in the shader
+      for(uint32_t cmp = 0; cmp < 3; ++cmp)
+      {
+        centers[i * 4 + cmp] = m_splatSet.positions[i * 3 + cmp];
+      }
+    }
+    // place the result in the dedicated texture map
+    initTexture(mapSize.x, mapSize.y, (uint32_t)centers.size() * sizeof(float), (void*)centers.data(),
+                VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_centersMap);
+    // memory statistics
+    m_modelMemoryStats.srcCenters  = splatCount * 3 * sizeof(float);
+    m_modelMemoryStats.odevCenters = splatCount * 3 * sizeof(float);  // no compression or quantization yet
+    m_modelMemoryStats.devCenters  = mapSize.x * mapSize.y * 4 * sizeof(float);
+  }
+  // covariances
+  {
+    glm::ivec2         mapSize = computeDataTextureSize(4, 6, splatCount);
+    std::vector<float> covariances(mapSize.x * mapSize.y * 4, 0.0f);
+    glm::vec3          scale;
+    glm::quat          rotation;
+    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto stride3 = splatIdx * 3;
+      const auto stride4 = splatIdx * 4;
+      const auto stride6 = splatIdx * 6;
+      scale.x            = std::exp(m_splatSet.scale[stride3 + 0]);
+      scale.y            = std::exp(m_splatSet.scale[stride3 + 1]);
+      scale.z            = std::exp(m_splatSet.scale[stride3 + 2]);
+
+      rotation.x = m_splatSet.rotation[stride4 + 1];
+      rotation.y = m_splatSet.rotation[stride4 + 2];
+      rotation.z = m_splatSet.rotation[stride4 + 3];
+      rotation.w = m_splatSet.rotation[stride4 + 0];
+      rotation   = glm::normalize(rotation);
+
+      // computes the covariance
+      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
+      const glm::mat3 rotationMatrix        = glm::mat3_cast(rotation);  // where rotation is a quaternion
+      const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
+      glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
+
+      covariances[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
+      covariances[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
+      covariances[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
+
+      covariances[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
+      covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
+      covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
+    }
+
+    // place the result in the dedicated texture map
+    initTexture(mapSize.x, mapSize.y, (uint32_t)covariances.size() * sizeof(float),
+                (void*)covariances.data(), VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_covariancesMap);
+    // memory statistics
+    m_modelMemoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
+    m_modelMemoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
+    m_modelMemoryStats.devCov  = mapSize.x * mapSize.y * 4 * sizeof(float);
+  }
+  // SH degree 0 is not view dependent, so we directly transform to base color
+  // this will make some economy of processing in the shader at each frame
+  {
+    glm::ivec2           mapSize = computeDataTextureSize(4, 4, splatCount);
+    std::vector<uint8_t> colors(mapSize.x * mapSize.y * 4);  // includes some padding
+    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto  stride3 = splatIdx * 3;
+      const auto  stride4 = splatIdx * 4;
+      const float SH_C0   = 0.28209479177387814f;
+      colors[stride4 + 0] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
+      colors[stride4 + 1] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
+      colors[stride4 + 2] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
+      colors[stride4 + 3] =
+          (uint8_t)glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
+    }
+    // place the result in the dedicated texture map
+    initTexture(mapSize.x, mapSize.y, (uint32_t)colors.size(), (void*)colors.data(),
+                VK_FORMAT_R8G8B8A8_UNORM, m_alloc->acquireSampler(sampler_info), m_colorsMap);
+    // memory statistics
+    m_modelMemoryStats.srcSh0  = splatCount * 4 * sizeof(float);    // original sh0 and opacity are floats
+    m_modelMemoryStats.odevSh0 = splatCount * 4 * sizeof(uint8_t);  
+    m_modelMemoryStats.devSh0  = mapSize.x * mapSize.y * 4 * sizeof(uint8_t);
+  }
+  // Prepare the spherical harmonics of degree 1 to 3
+  {
+    const uint32_t sphericalHarmonicsElementsPerTexel       = 4;
+    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)m_splatSet.f_rest.size() / splatCount;
+    const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
+    // find the maximum SH degree stored in the file
+    int sphericalHarmonicsDegree = 0;
+    if(sphericalHarmonicsCoefficientsPerChannel >= 3)
+      sphericalHarmonicsDegree = 1;
+    if(sphericalHarmonicsCoefficientsPerChannel >= 8)
+      sphericalHarmonicsDegree = 2;
+
+    // add some padding at each splat if needed for easy texture lookups
+    const int sphericalHarmonicsComponentCount =
+        (sphericalHarmonicsDegree == 1) ? 9 : ((sphericalHarmonicsDegree == 2) ? 24 : 0);
+    int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
+    if(paddedSphericalHarmonicsComponentCount % 2 != 0)
+      paddedSphericalHarmonicsComponentCount++;
+
+    //
+    glm::ivec2 mapSize =
+        computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
+
+    std::vector<float> paddedSHArray(mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel, 0.0f);
+
+    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    {
+      const auto srcBase   = totalSphericalHarmonicsComponentCount * splatIdx;
+      const auto destBase  = paddedSphericalHarmonicsComponentCount * splatIdx;
+      int        dstOffset = 0;
+      // degree 1, three coefs per component
+      for(auto i = 0; i < 3; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+
+      // degree 2, five coefs per component
+      for(auto i = 0; i < 5; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+      /*
+      // degree 3 TODO
+      for(auto i = 0; i < 7; i++)
+      {
+        for(auto rgb = 0; rgb < 3; rgb++)
+        {
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 8 + i);
+          const auto dstIndex = destBase + 24 + (i * 3 + rgb);
+        
+          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+        }
+      }
+      */
+    }
+
+    // place the result in the dedicated texture map
+    initTexture(mapSize.x, mapSize.y, (uint32_t)paddedSHArray.size() * sizeof(float), (void*)paddedSHArray.data(),
+                VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+    // memory statistics
+    m_modelMemoryStats.srcShOther  = (uint32_t)m_splatSet.f_rest.size() * sizeof(float);
+    m_modelMemoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
+    m_modelMemoryStats.devShOther  = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
+  }
+
+  // update statistics totals
+  m_modelMemoryStats.srcShAll = m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevShAll = m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devShAll  = m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+
+  m_modelMemoryStats.srcAll = m_modelMemoryStats.srcCenters + m_modelMemoryStats.srcCov + m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
+  m_modelMemoryStats.odevAll = m_modelMemoryStats.odevCenters + m_modelMemoryStats.odevCov + m_modelMemoryStats.odevSh0 + m_modelMemoryStats.odevShOther;
+  m_modelMemoryStats.devAll = m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+
+}
+
+void GaussianSplatting::deinitDataTextures()
+{
+  // will delete at next frame
+  nvvkhl::Application::submitResourceFree([this]() {
+    deinitTexture(m_centersMap);
+    deinitTexture(m_colorsMap);
+    deinitTexture(m_covariancesMap);
+    deinitTexture(m_sphericalHarmonicsMap);
   });
 }
