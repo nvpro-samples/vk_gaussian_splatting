@@ -61,6 +61,8 @@
 #include <nvvk/pipeline_vk.hpp>
 #include <nvvk/shaders_vk.hpp>
 #include <nvvk/shadermodulemanager_vk.hpp>
+#include "nvvk/commands_vk.hpp"
+#include "nvvk/images_vk.hpp"
 #include <nvvkhl/alloc_vma.hpp>
 #include <nvvkhl/application.hpp>
 #include <nvvkhl/element_benchmark_parameters.hpp>
@@ -80,7 +82,6 @@ using namespace glm;
 #include "splat_set.h"
 #include "ply_async_loader.h"
 #include "splat_sorter_async.h"
-#include "sampler_texture.h"
 
 //
 class GaussianSplatting : public nvvkhl::IAppElement
@@ -149,12 +150,14 @@ private:  // Methods
   // the splat set data from host to device
   void initDataBuffers(void);
   
+  // release buffers at next frame
   void deinitDataBuffers(void);
 
   // create the texture maps on the device and upload 
   // the splat set data from host to device
   void initDataTextures(void);
 
+  // release textures at next frame
   void deinitDataTextures(void);
 
   void initPipelines();
@@ -168,6 +171,13 @@ private:  // Methods
   bool initShaders(void);
 
   void deinitShaders(void);
+
+  // Create texture, upload data and assign sampler
+  // sampler will be released by deinitTexture
+  void initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Texture& texture);
+
+  // Destroy texture at once, texture must not be in use
+  void deinitTexture(nvvk::Texture& texture);
 
   // Utility function to compute the texture size according to the size of the data to be stored
   // By default use map of 4K Width and 1K heightn then adjust the height according to the data size
@@ -287,11 +297,11 @@ private:  // Attributes
   bool m_useDataTextures = false;
 
   // Data textures
-  VkSampler                      m_sampler;  // texture sampler
-  std::shared_ptr<SampleTexture> m_centersMap;
-  std::shared_ptr<SampleTexture> m_colorsMap;
-  std::shared_ptr<SampleTexture> m_covariancesMap;
-  std::shared_ptr<SampleTexture> m_sphericalHarmonicsMap;
+  VkSampler     m_sampler;  // texture sampler
+  nvvk::Texture m_centersMap;
+  nvvk::Texture m_colorsMap;
+  nvvk::Texture m_covariancesMap;
+  nvvk::Texture m_sphericalHarmonicsMap;
 
   // Data buffers
   nvvk::Buffer m_centersDevice;    
