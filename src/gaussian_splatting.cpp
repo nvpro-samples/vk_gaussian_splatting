@@ -27,7 +27,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
   initGui();
 
-  // starts the loader
+  // starts the asynchronous services
   m_plyLoader.initialize();
   m_cpuSorter.initialize();
   
@@ -64,7 +64,6 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   {
     m_shaderManager.addDirectory(path);
   }
-
 };
 
 void GaussianSplatting::onDetach()

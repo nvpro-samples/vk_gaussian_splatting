@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 
   // Application setup
   nvvkhl::ApplicationCreateInfo appSetup;
-  appSetup.name           = fmt::format("{} ({})", PROJECT_NAME, SHADER_LANGUAGE_STR);
+  appSetup.name           = fmt::format("{}", PROJECT_NAME);
   appSetup.vSync          = true;
   appSetup.instance       = vkContext.m_instance;
   appSetup.device         = vkContext.m_device;
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
   app->addElement(gaussianSplatting);
   app->addElement(benchmark);
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());
-  app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", SHADER_LANGUAGE_STR)));  // Window title info
+  app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", "GLSL")));  // Window title info
   app->addElement(profiler);
   app->addElement(std::make_shared<nvvkhl::ElementNvml>());
   //
