@@ -267,8 +267,8 @@ create_sample(gaussian_splatting
     src/splat_sorter_async.h
     src/splat_sorter_async.cpp
     src/splat_set.h
-    src/miniply.h
-    src/miniply.cpp
+    3rdparty/miniply.h
+    3rdparty/miniply.cpp
   SHADER_SOURCES
     ${SHD_DIR}/rank.comp.glsl
     ${SHD_DIR}/raster.vert.glsl
