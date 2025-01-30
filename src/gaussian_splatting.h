@@ -255,9 +255,6 @@ private:  // Attributes
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
-  //
-  nvvk::Buffer m_pixelBuffer;
-
   // TODO Find a better name, add this to devicehost he ader
   // and use named fields in shaders
   // 

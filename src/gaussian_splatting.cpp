@@ -83,6 +83,19 @@ void GaussianSplatting::onResize(uint32_t width, uint32_t height)
   initGbuffers({width, height});
 }
 
+void GaussianSplatting::initGbuffers(const glm::vec2& size)
+{
+  m_viewSize = size;
+  m_gBuffers = std::make_unique<nvvkhl::GBuffer>(m_device, m_alloc.get(),
+                                                 VkExtent2D{static_cast<uint32_t>(size.x), static_cast<uint32_t>(size.y)},
+                                                 m_colorFormat, m_depthFormat);
+}
+
+void GaussianSplatting::deinitGbuffers()
+{
+  m_gBuffers.reset();
+}
+
 void GaussianSplatting::onRender(VkCommandBuffer cmd)
 {
 
@@ -168,7 +181,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
           } 
           
           // let's wakeup the sorting thread to run a new sort if needed
-          // will start work only if ca mera direction or position has changed
+          // will start work only if camera direction or position has changed
           m_cpuSorter.sortAsync(glm::normalize(center - eye), eye, m_splatSet.positions);
         }
       }
@@ -679,20 +692,6 @@ void GaussianSplatting::deinitPipelines()
   vkDestroyPipeline(m_device, m_computePipeline, nullptr);
 }
 
-void GaussianSplatting::initGbuffers(const glm::vec2& size)
-{
-  m_viewSize = size;
-  m_gBuffers = std::make_unique<nvvkhl::GBuffer>(m_device, m_alloc.get(),
-                                                 VkExtent2D{static_cast<uint32_t>(size.x), static_cast<uint32_t>(size.y)},
-                                                 m_colorFormat, m_depthFormat);
-}
-
-void GaussianSplatting::deinitGbuffers()
-{
-
-  m_gBuffers.reset();
-}
-
 void GaussianSplatting::initVkBuffers()
 {
   const auto splatCount = (uint32_t)m_splatSet.size();
@@ -729,7 +728,6 @@ void GaussianSplatting::initVkBuffers()
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
                   
       VrdxSorterStorageRequirements requirements;
-      // vrdxGetSorterKeyValueStorageRequirements(m_sorter, MAX_ELEMENT_COUNT, &requirements);
       vrdxGetSorterKeyValueStorageRequirements(m_gpuSorter, splatCount, &requirements);
       m_vrdxStorageDevice = m_alloc->createBuffer(requirements.size, requirements.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
       m_renderMemoryStats.allocVdrxInternal = (uint32_t)requirements.size; // for stats reporting only
@@ -777,10 +775,6 @@ void GaussianSplatting::initVkBuffers()
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   m_dutil->DBG_NAME(m_frameInfoBuffer.buffer);
 
-  // Frame buffer
-  m_pixelBuffer = m_alloc->createBuffer(sizeof(float) * 4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
 }
 
 void GaussianSplatting::deinitVkBuffers()
@@ -806,7 +800,6 @@ void GaussianSplatting::deinitVkBuffers()
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_vrdxStorageDevice));
 
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_frameInfoBuffer));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_pixelBuffer));
 
   });
 }

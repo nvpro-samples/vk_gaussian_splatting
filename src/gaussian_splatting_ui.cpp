@@ -66,12 +66,6 @@ void GaussianSplatting::onUIRender()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0F, 0.0F));
     ImGui::Begin("Viewport");
 
-    // Deal with mouse interaction only if the window has focus
-    //if(ImGui::IsWindowHovered(ImGuiFocusedFlags_RootWindow) && ImGui::IsMouseDoubleClicked(0))
-    //{
-    //  rasterPicking();
-    //}
-
     // Display the G-Buffer image
     ImGui::Image(m_gBuffers->getDescriptorSet(), ImGui::GetContentRegionAvail());
 
