@@ -21,6 +21,15 @@ cd _benchmark
 
 ```
 
+## The pipelines
+
+![image showing gaussian splatting rasterization pipelines](doc/pipelines.png)
+
+## Sorting methods
+
+![image showing gaussian splatting sorting methods](doc/sorting.png)
+
+
 ## License
 Apache-2.0
 
