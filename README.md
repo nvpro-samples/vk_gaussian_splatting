@@ -41,16 +41,18 @@ Compatibility
 
 ## User interface
 
+![image showing the user interface viewing the bicycle 3DGS model](doc/user_interface.png)
+
 ### Rendering Panel
 
 The Rendering Panel provides controls to fine-tune the rendering process. Users can adjust the following parameters:
 *	**V-Sync** – Toggles vertical synchronization on or off. Disabling V-Sync is recommended when benchmarking to obtain accurate performance measurements in the Profiler Panel.
 *	**Pipeline** – Selects the rendering pipeline, either Mesh Shader or Vertex Shader.
 *	**Sorting Method** – Chooses between GPU-based radix sort or CPU-based asynchronous sorting.
-*	**Frustum Culling** – Defines where frustum culling is performed: in the distance shader (GPU), vertex shader, or mesh shader. Culling can also be disabled for performance comparisons.
+*	**Frustum Culling** – Defines where frustum culling is performed: in the distance compute shader, vertex shader, or mesh shader. Culling can also be disabled for performance comparisons.
 *	**Splat Scale** – Adjusts the size of the splats for visualization purposes.
 *	**Spherical Harmonics Degree** – Sets the degree of Spherical Harmonics (SH) used for view-dependent effects:
-    *	0: Disables view dependence.
+    *	0: Disables per splat view dependence of color. Uses SH of degree 0 only.
     *	1 to 3: Enables SH of increasing degrees for improved view-dependent rendering.
 *	**Show SH Only** – Removes the base color from SH degree 0, applying only color deduced from higher-degree SH to a neutral gray. This helps visualize their contribution.
 *	**Disable Splatting** – Switches to point cloud mode, displaying only the splat centers. Other parameters still apply in this mode.
@@ -65,9 +67,7 @@ The Data Format and Storage Panel allows users to configure how the model's data
     *	Covariance Matrix
     *	Spherical Harmonics (SH) Coefficients (for degrees higher than 0)
 
-This option impacts memory access patterns and performance, allowing comparisons between different storage strategies.
-
-The Data Format and Storage Panel allows users to configure how the model's attributes are stored in VRAM, either using Uniform Data Buffers or Textures. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
+This option impacts memory access patterns and performance, allowing comparisons between different storage strategies. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
 *	**Data Buffer Mode** – Uses a separate buffer for each attribute type.
     *	This layout improves memory lookups during shader execution, as threads access attributes in sequential stages (e.g., first positions, then colors, etc.).
     *  	Buffers are allocated and initialized by the [initDataBuffers](src/gaussian_splatting.cpp#L809) method.
