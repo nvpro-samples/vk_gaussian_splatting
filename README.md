@@ -97,7 +97,23 @@ The Rendering Panel provides controls to fine-tune the rendering process. Users 
 
 ![image showing gaussian splatting sorting methods](doc/sorting.png)
 
-## The pipelines
+### Synchronous sorting on the GPU
+
+Two steps, one compute shader computes distances as integers and performs culling (optional at this stage - default mode), use of VRDX third party library to sort the indices using integer distances as key.
+
+Notes on dist quantization compare with Vkgs.
+
+### Asynchronous sorting on the CPU
+
+Use of parallel for loop to compute floating point distances.
+Use of c++ STL multi-core sort to sort the indices according to the distances.
+Attention only works on Windows, fall back to  mono-core on Linux and other.
+
+Processing slow in comparison to GPU sort, hence the need for asynchronous processing. Leads to visible popping artefacts but tolerable for lower end devices where full CPU and GPU workload can be leveraged.
+
+No possible culling at this stage since sorting is asynchronous. Would lead to very strong visual artifacts (missing splats) on camera movement since sorting spans over several frames.
+
+## The rendering pipelines
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
 
@@ -115,10 +131,13 @@ cd _benchmark
 
 ```
 
-## Refrences
+## profiling with NSight
+
+## References
 
 ## 3rd party licences
 
 ## License
+
 Apache-2.0
 
