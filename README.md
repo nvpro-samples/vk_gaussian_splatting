@@ -1,6 +1,8 @@
 # Vulkan Gaussian Splatting
 
-This repository provides an implementation of **3D Gaussian Splatting (3DGS) rasterization** using the **Vulkan 1.3 API**. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sort function from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing **modern shader techniques** and **optimized sorting strategies**.
+![image showing the rendering modes on the train 3DGS model](doc/rendering_modes.jpg)
+
+This repository provides an implementation of **3D Gaussian Splatting (3DGS) rasterization** using the **Vulkan 1.3 API** for the purpose of real-time visualization. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sort function from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing **modern shader techniques** and **optimized sorting strategies**.
 
 We envision this project as a laboratory for exploring and comparing different approaches to 3D Gaussian Splatting. By evaluating various techniques and optimizations, we aim to provide valuable insights into performance, quality, and implementation trade-offs. Future work includes, for instance, the implementation of ray tracing for 3DGS using the Vulkan Ray Tracing API.
 
