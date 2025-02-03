@@ -179,6 +179,23 @@ void GaussianSplatting::onUIRender()
     {
       ImGuiH::CameraWidget();
     }
+    if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      if(ImGui::Button("Reset TODO"))
+      {
+        //resetFrameInfo();
+      }
+
+      PE::begin("##3DGS format");
+      if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
+      {
+        if(m_splatSet.size())
+        {
+          m_updateData = true;
+        }
+      }
+      PE::end();
+    }
     if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
       if(ImGui::Button("Reset"))
@@ -191,18 +208,6 @@ void GaussianSplatting::onUIRender()
       bool vsync = m_app->isVsync();
       PE::entry("V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); });
       m_app->setVsync(vsync);
-
-      if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
-      {
-        if(m_selectedPipeline == PIPELINE_MESH && m_frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
-        {
-          m_frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
-        }
-        else if(m_selectedPipeline == PIPELINE_VERT && m_frameInfo.frustumCulling == FRUSTUM_CULLING_MESH)
-        {
-          m_frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
-        }
-      }
 
       if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
       {
@@ -222,6 +227,18 @@ void GaussianSplatting::onUIRender()
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
       PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
+
+      if(PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
+      {
+        if(m_selectedPipeline == PIPELINE_MESH && m_frameInfo.frustumCulling == FRUSTUM_CULLING_VERT)
+        {
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_MESH;
+        }
+        else if(m_selectedPipeline == PIPELINE_VERT && m_frameInfo.frustumCulling == FRUSTUM_CULLING_MESH)
+        {
+          m_frameInfo.frustumCulling = FRUSTUM_CULLING_VERT;
+        }
+      }
 
       // Radio buttons for exclusive selection
       PE::entry("Frustum culling", [&]() {
@@ -271,33 +288,13 @@ void GaussianSplatting::onUIRender()
 
       PE::end();
     }
-    if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-      if(ImGui::Button("Reset TODO"))
-      {
-        //resetFrameInfo();
-      }
-
-      PE::begin("##3DGS format");
-      if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
-      {
-        if(m_splatSet.size())
-        {
-          m_updateData = true;
-        }
-      }
-      PE::end();
-    }
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
       // TODO: do not use disabled input object to display statistics
       PE::begin("##3DGS statistics");
       ImGui::BeginDisabled();
 
-      PE::entry(
-          "Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
-      PE::entry(
-          "Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
+
       uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
       PE::entry(
           "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
@@ -311,6 +308,10 @@ void GaussianSplatting::onUIRender()
                         0;
       PE::entry(
           "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
+      PE::entry(
+          "CPU Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
+      PE::entry(
+          "CPU Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
       ImGui::EndDisabled();
 
       PE::end();

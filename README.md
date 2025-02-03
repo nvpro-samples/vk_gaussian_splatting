@@ -1,6 +1,8 @@
 # Vulkan Gaussian Splatting
 
-This repository provides an implementation of **3D Gaussian Splat rasterization** using the **Vulkan 1.3 API**. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based approach** using a **Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sorting from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing modern shader techniques and optimized sorting strategies.
+This repository provides an implementation of **3D Gaussian Splatting (3DGS) rasterization** using the **Vulkan 1.3 API**. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sort function from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing **modern shader techniques** and **optimized sorting strategies**.
+
+We envision this project as a laboratory for exploring and comparing different approaches to 3D Gaussian Splatting. By evaluating various techniques and optimizations, we aim to provide valuable insights into performance, quality, and implementation trade-offs. Future work includes, for instance, the implementation of ray tracing for 3DGS using the Vulkan Ray Tracing API.
 
 ## Building and Running
 
@@ -39,29 +41,26 @@ Compatibility
 *	Jawset Postshot ([link]) output files are compatible with the INRIA format and can be opened directly.
 *	Other reconstruction softwares may work but have not been tested.
 
-## User interface
+## Sample usage
+
+The visualization workflow follows these main steps:
+
+1. Loading the 3DGS Model into RAM.
+2. Data Transformation & Upload – The splat attributes (positions, opacity, Spherical Harmonic (SH) coefficients from degree 0 to 3, and rotation scale) are transformed if necessary and uploaded into VRAM. The data storage and format can be updated during the course of the visualization, tha data in VRAM and the pipelines are then regenerated.
+3. Sorting –
+    *    At every frame or whenever the viewpoint changes (depending on user settings and sorting method), the splats are sorted back-to-front for correct alpha compositing.
+    *    The resulting sorted indices are passed to the rasterization stage.
+4. Rasterization –
+    *    For each new frame, the sorted splats are rasterized using either the Mesh Shader Pipeline or the Vertex Shader Pipeline, depending on the selected rasterization mode.
+
+This structured workflow ensures efficient rendering while allowing different sorting and rasterization strategies to be compared.
 
 ![image showing the user interface viewing the bicycle 3DGS model](doc/user_interface.jpg)
 
-### Rendering Panel
-
-The Rendering Panel provides controls to fine-tune the rendering process. Users can adjust the following parameters:
-*	**V-Sync** – Toggles vertical synchronization on or off. Disabling V-Sync is recommended when benchmarking to obtain accurate performance measurements in the Profiler Panel.
-*	**Pipeline** – Selects the rendering pipeline, either Mesh Shader or Vertex Shader.
-*	**Sorting Method** – Chooses between GPU-based radix sort or CPU-based asynchronous sorting.
-*	**Frustum Culling** – Defines where frustum culling is performed: in the distance compute shader, vertex shader, or mesh shader. Culling can also be disabled for performance comparisons.
-*	**Splat Scale** – Adjusts the size of the splats for visualization purposes.
-*	**Spherical Harmonics Degree** – Sets the degree of Spherical Harmonics (SH) used for view-dependent effects:
-    *	0: Disables per splat view dependence of color. Uses SH of degree 0 only.
-    *	1 to 3: Enables SH of increasing degrees for improved view-dependent rendering.
-*	**Show SH Only** – Removes the base color from SH degree 0, applying only color deduced from higher-degree SH to a neutral gray. This helps visualize their contribution.
-*	**Disable Splatting** – Switches to point cloud mode, displaying only the splat centers. Other parameters still apply in this mode.
-*	**Disable Opacity Gaussian** – Disables the alpha component of the Gaussians, making their full range visible. This helps analyze splat distribution and scales, especially when combined with Splat Scale adjustments.
-
-### Data Format and Storage Panel
+### Data Format and Storage 
 
 The Data Format and Storage Panel allows users to configure how the model's data is stored in VRAM.
-*	Data Storage – Selects between **Uniform Data Buffers** and **Textures** for storing model attributes, including:
+*	Data Storage – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
     *	Position
     *	Color and Opacity (deduced from SH degree 0 at construction)
     *	Covariance Matrix
@@ -78,6 +77,21 @@ This option impacts memory access patterns and performance, allowing comparisons
     *   Textures are allocated and initialized by the [initDataTextures](src/gaussian_splatting.cpp#L1110) method.
 
 This flexibility enables performance comparisons between buffer-based and texture-based data storage, each with trade-offs in memory access efficiency and potential optimization opportunities.
+
+### Sorting and Rendering 
+
+The Rendering Panel provides controls to fine-tune the rendering process. Users can adjust the following parameters:
+*	**V-Sync** – Toggles vertical synchronization on or off. Disabling V-Sync is recommended when benchmarking to obtain accurate performance measurements in the Profiler Panel.
+*	**Sorting Method** – Chooses between GPU-based radix sort or CPU-based asynchronous sorting.
+*	**Pipeline** – Selects the rendering pipeline, either Mesh Shader or Vertex Shader.
+*	**Frustum Culling** – Defines where frustum culling is performed: in the distance compute shader, vertex shader, or mesh shader. Culling can also be disabled for performance comparisons.
+*	**Splat Scale** – Adjusts the size of the splats for visualization purposes.
+*	**Spherical Harmonics Degree** – Sets the degree of Spherical Harmonics (SH) used for view-dependent effects:
+    *	0: Disables per splat view dependence of color. Uses SH of degree 0 only.
+    *	1 to 3: Enables SH of increasing degrees for improved view-dependent rendering.
+*	**Show SH Only** – Removes the base color from SH degree 0, applying only color deduced from higher-degree SH to a neutral gray. This helps visualize their contribution.
+*	**Disable Splatting** – Switches to point cloud mode, displaying only the splat centers. Other parameters still apply in this mode.
+*	**Disable Opacity Gaussian** – Disables the alpha component of the Gaussians, making their full range visible. This helps analyze splat distribution and scales, especially when combined with Splat Scale adjustments.
 
 ## Sorting methods
 
