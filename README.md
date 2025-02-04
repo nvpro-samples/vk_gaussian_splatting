@@ -6,6 +6,12 @@ This repository provides an implementation of **3D Gaussian Splatting (3DGS) [[K
 
 We envision this project as a laboratory for exploring and comparing different approaches to 3D Gaussian Splatting. By evaluating various techniques and optimizations, we aim to provide valuable insights into performance, quality, and implementation trade-offs. Future work includes, for instance, the implementation of ray tracing for 3DGS [Moënne-Loccoz2024] using the Vulkan Ray Tracing API, or other rasterizations approaches such as Stop The Pop [Radl2024] and  Sort-free 3DGS [Hou2024].
 
+## Requirements
+
+Vullkan
+
+[Cuda]
+
 ## Building and Running
 
 ``` sh
@@ -48,7 +54,7 @@ Compatibility
 The visualization workflow follows these main steps:
 
 1. Loading the 3DGS Model into RAM.
-2. Data Transformation & Upload – The splat attributes (positions, opacity, Spherical Harmonic (SH) coefficients from degree 0 to 3, and rotation scale) are transformed if necessary and uploaded into VRAM. The data storage and format can be updated during the course of the visualization, tha data in VRAM and the pipelines are then regenerated.
+2. Data Transformation & Upload – The splat attributes (positions, opacity, Spherical Harmonic (SH) coefficients from degree 0 to 3, and rotation scale) are transformed if necessary and uploaded into VRAM. The data storage and format can be updated during the course of the visualization, the data in VRAM and the pipelines are then regenerated.
 3. Sorting –
     *    At every frame or whenever the viewpoint changes (depending on user settings and sorting method), the splats are sorted back-to-front for correct alpha compositing.
     *    The resulting sorted indices are passed to the rasterization stage.
@@ -108,7 +114,7 @@ The GPU-based sorting process consists of two main steps:
 
 This fully GPU-based approach leverages parallel compute capabilities for efficient sorting, minimizing CPU-GPU synchronization overhead.
 
-TODO Add notes on dist quantization compare with Vkgs.
+TODO Add notes on dist quantization compare with Vkgs. Here or later ?
 
 ### Asynchronous sorting on the CPU
 
@@ -125,14 +131,15 @@ Performance Considerations
 
 This approach provides a viable fallback for low-end systems, albeit with some trade-offs in responsiveness and visual stability.
 
-Note: With current implementaiton, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
+> Note: With current implementation, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
 
-## The rendering pipelines
+## Data flow and rendering pipelines
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
 
-![image showing gaussian splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)
+For the case of GPU sorting, the compute shader that computes distances and culling (see file [dist.comp.glsl](shaders/dist.comp.glsl) ), is 
 
+![image showing gaussian splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)
 
 ## Benchmarking
 
@@ -146,7 +153,7 @@ cd _benchmark
 
 ## Profiling with NSight
 
-Note for me: Would be interesting with screen shots. But can we compare two pipeline isnce it deos use sample timeline and not time based ?
+> Note for self: Would be interesting with screen shots. But can we compare two pipeline isnce it does use sample timeline and not time based ?
 
 ## References
 

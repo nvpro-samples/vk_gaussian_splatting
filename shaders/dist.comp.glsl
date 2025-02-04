@@ -45,7 +45,6 @@ void main()
     return;
 
   vec4 pos = vec4(fetchCenter(id), 1.0);
-  //pos = projection * view * model * pos;
   pos      = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
   pos      = pos / pos.w;
   const float depth = pos.z;

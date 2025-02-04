@@ -511,7 +511,7 @@ bool GaussianSplatting::initShaders(void)
   }
   
   // generate the shader modules
-  m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "rank.comp.glsl", prepends);
+  m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "dist.comp.glsl", prepends);
   m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
   m_shaders.meshShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_EXT, "raster.mesh.glsl", prepends);
   m_shaders.fragmentShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "raster.frag.glsl");
@@ -753,7 +753,7 @@ void GaussianSplatting::initVkBuffers()
   m_dutil->DBG_NAME(m_indirect.buffer);
   m_dutil->DBG_NAME(m_indirectHost.buffer);
 
-  // TODO: why do I need a command for those specific buffers and not for the others ?
+  // We create a command buffer in order to perform the copy to VRAM 
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
 
   // The Quad 
