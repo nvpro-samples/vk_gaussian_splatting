@@ -133,11 +133,52 @@ This approach provides a viable fallback for low-end systems, albeit with some t
 
 > Note: With current implementation, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
 
-## Data flow and rendering pipelines
+## Data flow using GPU based sorting
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
 
-For the case of GPU sorting, the compute shader that computes distances and culling (see file [dist.comp.glsl](shaders/dist.comp.glsl) ), is 
+### Distances and culling
+
+When GPU-based sorting is enabled, the compute shader responsible for distance computation and culling (see [dist.comp.glsl](shaders/dist.comp.glsl)) is executed first. This shader stage processes the splat positions buffer or texture as input and writes to three write-only data buffers:
+* Distances Buffer – Stores unsigned integer-encoded distances from the center of projection.
+* Indices Buffer – Stores indices referencing sorted splats.
+* Indirect Parameters Buffer – Used for issuing indirect draw calls.
+
+Distance Computation & Culling
+
+* For each splat, the shader computes the distance to the center of projection in view space.
+* If culling is enabled, the splat center is tested against the NDC (Normalized Device Coordinates) using a dilation threshold.
+    * This provides an approximate and efficient culling method.
+    * However, large splats near the viewport edges may cause popping artifacts due to this approximation.
+
+Instance Index Assignment
+
+* If the splat passes the culling test, the **instanceCount** field in the indirect parameter buffer is incremented atomically. The previous value of this field is used as an instance index.
+* The distances and indices buffers are then updated for this instance index:
+    * Distances Buffer → Stores the encoded distance to the viewpoint.
+    * Indices Buffer → Stores the GlobalInvocationID.x as the index.
+* For the Mesh Shader Pipeline, an additional step is performed, 
+    * the **groupCountX** field in the indirect parameters buffer is incremented for every 32 visible splats, using an atomic add.
+
+At the end of this process:
+
+* Both buffers are filled from 0 to the number of visible splats.
+* The index buffer will later be used to dereference splat attributes for rendering.
+
+The splat distances and indices are then passed to the Radix Sort compute pipeline from the VRDX library.
+
+### Sorting
+
+The pipeline is invoked using the instanceCount value stored in the indirect parameters buffer, which was previously incremented during the distance computation stage. The sorting operation is performed in-place, meaning the indices buffer is directly reordered based on the computed distances. Once sorting is complete, the sorted indices buffer is ready to be used for rendering, ensuring that splats are processed in a back-to-front order for correct alpha compositing.
+
+### Indirect Draw Calls
+
+When do I talk about geometry instancing ? here or before ? 
+
+* For the Vertex Shader Pipeline, the **instanceCount** field of the indirect parameter buffer enables **vkCmdDrawIndexedIndirect** to run the correct number of instances.
+* For the Mesh Shader Pipeline, the **groupCountX** field of the indirect parameter buffer enables **drawMeshTaskIndirect** to run the correct number of groups.
+
+## Data flow using CPU based sorting
 
 ![image showing gaussian splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)
 

@@ -239,8 +239,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       m_distTime = m_sortTime = 0;
       //
       { // reset the draw indirect parameters and counters, will be updated by compute shader
-        const IndirectParams drawIndexedIndirectParams;
-        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(IndirectParams), (void*)&drawIndexedIndirectParams);
+        const DH::IndirectParams drawIndexedIndirectParams{6,0,0,0,0,0,1,1};
+        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(DH::IndirectParams), (void*)&drawIndexedIndirectParams);
 
         VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT ;
@@ -368,7 +368,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     auto timerSection = m_profiler->timeRecurring("Indirect readback", cmd);
 
     // copy from device to host buffer
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(IndirectParams)};
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(DH::IndirectParams)};
     vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
 
     // sync with end of copy to host, GPU timeline, 
@@ -385,7 +385,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     // copy to main memory (this copy the value from last frame, CPU timeline)
     uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
-    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(IndirectParams));
+    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(DH::IndirectParams));
     m_alloc->unmap(m_indirectHost);
   }
   
@@ -414,7 +414,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     }
     else
     {
-      m_renderMemoryStats.usedIndirect = sizeof(IndirectParams);
+      m_renderMemoryStats.usedIndirect = sizeof(DH::IndirectParams);
     }
   }
   m_renderMemoryStats.usedUboFrameInfo = sizeof(DH::FrameInfo);
@@ -740,13 +740,13 @@ void GaussianSplatting::initVkBuffers()
   }
 
   // create the buffer for indirect parameters
-  m_indirect = m_alloc->createBuffer(sizeof(IndirectParams),
+  m_indirect = m_alloc->createBuffer(sizeof(DH::IndirectParams),
                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                          | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
   // for statistics readback
-  m_indirectHost = m_alloc->createBuffer(sizeof(IndirectParams),
+  m_indirectHost = m_alloc->createBuffer(sizeof(DH::IndirectParams),
                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 

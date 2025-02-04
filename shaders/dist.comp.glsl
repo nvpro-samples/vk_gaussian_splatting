@@ -17,7 +17,7 @@ layout(set = 0, binding = 0) uniform FrameInfo_
 
 layout(local_size_x = 256) in;
 
-layout(set = 0, binding = 5, scalar) buffer _distances
+layout(set = 0, binding = 5, scalar) writeonly buffer _distances
 {
   uint32_t distances[];
 };
@@ -27,7 +27,7 @@ layout(std430, set = 0, binding = 6, scalar) writeonly buffer _indices
 };
 layout(std430, set = 0, binding = 7, scalar) writeonly buffer _indirect
 {
-  uint32_t indirect[];
+  IndirectParams indirect;
 };
 
 // encodes an fp32 into a uint32 that can be ordered
@@ -59,7 +59,7 @@ void main()
      || (frameInfo.frustumCulling == FRUSTUM_CULLING_DIST && abs(pos.x) <= 1.2f && abs(pos.y) <= 1.2f && pos.z >= 0.f && pos.z <= 1.f))
   {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
-    const uint instance_index = atomicAdd(indirect[1], 1);
+    const uint instance_index = atomicAdd(indirect.instanceCount, 1);
     // stores the distance
     distances[instance_index] = encodeMinMaxFp32(-depth);
     // stores the base index
@@ -67,7 +67,7 @@ void main()
     // set the workgroup count for the mesh shading pipeline
     if(instance_index % 32 == 0)
     {
-      atomicAdd(indirect[5], 1);
+      atomicAdd(indirect.groupCountX, 1);
     }
   }
 }

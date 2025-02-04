@@ -255,29 +255,10 @@ private:  // Attributes
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
-  // TODO Find a better name, add this to devicehost he ader
-  // and use named fields in shaders
-  // 
-  // indirect parameters for
-  // - vkCmdDrawIndexedIndirect (first 6 attr)
-  // - vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
-  struct IndirectParams
-  {
-    // for vkCmdDrawIndexedIndirect
-    uint32_t indexCount    = 6; // 6 indices for the quad (2 triangles)
-    uint32_t instanceCount = 0; // will be incremented by the distance compute shader
-    uint32_t firstIndex    = 0; 
-    uint32_t vertexOffset  = 0;
-    uint32_t firstInstance = 0;
-    // for vkCmdDrawMeshTasksIndirectEXT
-    uint32_t groupCountX = 0; // Will be incremented by distance the compute shader
-    uint32_t groupCountY = 1; // Allways one workgroup on Y
-    uint32_t groupCountZ = 1; // Allways one workgroup on Z
-  };
-
+  // IndirectParams structure defined in device_host.h
   nvvk::Buffer   m_indirect;          // indirect parameter buffer
   nvvk::Buffer   m_indirectHost;      // buffer for readback
-  IndirectParams m_indirectReadback;  // readback values
+  DH::IndirectParams m_indirectReadback;  // readback values
 
   //
   nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad

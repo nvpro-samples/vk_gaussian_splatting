@@ -84,3 +84,20 @@ struct PushConstant
   mat4 transfo;
   vec4 color;
 };
+
+// indirect parameters for
+// - vkCmdDrawIndexedIndirect (first 6 attr)
+// - vkCmdDrawMeshTasksIndirectEXT (last 3 attr)
+struct IndirectParams
+{
+  // for vkCmdDrawIndexedIndirect
+  uint32_t indexCount;     //= 6;  // allways = 6 indices for the quad (2 triangles)
+  uint32_t instanceCount;  //= 0;  // will be incremented by the distance compute shader
+  uint32_t firstIndex;     //= 0;  // allways zero
+  uint32_t vertexOffset;   //= 0;  // allways zero
+  uint32_t firstInstance;  //= 0;  // allways zero
+  // for vkCmdDrawMeshTasksIndirectEXT
+  uint32_t groupCountX;  //=0;  // Will be incremented by distance the compute shader
+  uint32_t groupCountY;  //=1;  // Allways one workgroup on Y
+  uint32_t groupCountZ;  //=1;  // Allways one workgroup on Z
+};
