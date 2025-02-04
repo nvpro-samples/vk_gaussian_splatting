@@ -62,7 +62,7 @@ This structured workflow ensures efficient rendering while allowing different so
 ### Data Format and Storage 
 
 The Data Format and Storage Panel allows users to configure how the model's data is stored in VRAM.
-*	Data Storage – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
+*	**Data Storage** – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
     *	Position
     *	Color and Opacity (deduced from SH degree 0 at construction)
     *	Covariance Matrix
@@ -101,23 +101,31 @@ The Rendering Panel provides controls to fine-tune the rendering process. Users 
 
 ### Synchronous sorting on the GPU
 
-WIP
+The GPU-based sorting process consists of two main steps:
 
-Two steps, one compute shader computes distances as integers and performs culling (optional at this stage - default mode), use of VRDX third party library to sort the indices using integer distances as key.
+1. **Distance Computation & Culling** – A compute shader calculates the view-space depth of each splat, converting it into an integer distance. At this stage, frustum culling can be optionally performed (enabled by default) to discard out-of-view splats early.
+2. **Sorting with VRDX** – The [VRDX third-party Vulkan radix sort library](https://github.com/jaesung-cs/vulkan_radix_sort) is used to sort the splat indices based on the computed integer distances. This efficiently arranges the splats in a back-to-front order, ensuring correct alpha compositing during rendering.
 
-Notes on dist quantization compare with Vkgs.
+This fully GPU-based approach leverages parallel compute capabilities for efficient sorting, minimizing CPU-GPU synchronization overhead.
+
+TODO Add notes on dist quantization compare with Vkgs.
 
 ### Asynchronous sorting on the CPU
 
-WIP
+The CPU-based sorting operates asynchronously in two steps:
 
-Use of parallel for loop to compute floating point distances.
-Use of c++ STL multi-core sort to sort the indices according to the distances.
-Attention only works on Windows, fall back to  mono-core on Linux and other.
+1. **Distance Computation** – A parallel for loop computes the floating-point view-space depth of each splat.
+2. **Multi-Core Sorting** – The C++ STL multi-threaded sort is used to efficiently sort the splat indices based on their computed distances.
 
-Processing slow in comparison to GPU sort, hence the need for asynchronous processing. Leads to visible popping artefacts but tolerable for lower end devices where full CPU and GPU workload can be leveraged.
+Performance Considerations
 
-No possible culling at this stage since sorting is asynchronous. Would lead to very strong visual artifacts (missing splats) on camera movement since sorting spans over several frames.
+* Slower than GPU sorting, making asynchronous execution necessary to avoid major framerate drops.
+* Can introduce visible popping artifacts, but these are generally tolerable on lower-end devices, where leveraging both CPU and GPU workloads is beneficial.
+* No culling is performed, as asynchronous sorting spans multiple frames. Performing culling would result in severe visual artifacts (missing splats) during camera movement.
+
+This approach provides a viable fallback for low-end systems, albeit with some trade-offs in responsiveness and visual stability.
+
+Note: With current implementaiton, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
 
 ## The rendering pipelines
 
@@ -129,7 +137,6 @@ No possible culling at this stage since sorting is asynchronous. Would lead to v
 ## Benchmarking
 
 ``` sh
-
 # Running the benchmark defined in benchmark.txt 
 mkdir _benchmark
 cd _benchmark
@@ -145,7 +152,7 @@ Note for me: Would be interesting with screen shots. But can we compare two pipe
 
 [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] 3D Gaussian Splatting for Real-Time Radiance Field Rendering. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
 
-[[Radl2024](https://r4dl.github.io/StopThePop/)] Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering. ACM Trans. Graph., 43, 64:1-64:17.
+[[Radl2024](https://r4dl.github.io/StopThePop/)] StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering. Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). ACM Trans. Graph., 43, 64:1-64:17.
 
 [[Moënne-Loccoz2024](https://gaussiantracer.github.io/)] 3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes. Moënne-Loccoz, N., Mirzaei, A., Perel, O., Lutio, R.D., Esturo, J.M., State, G., Fidler, S., Sharp, N., & Gojcic, Z. (2024).  ACM Trans. Graph., 43, 232:1-232:19.
 
