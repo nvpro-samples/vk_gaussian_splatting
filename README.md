@@ -110,11 +110,9 @@ The Rendering Panel provides controls to fine-tune the rendering process. Users 
 The GPU-based sorting process consists of two main steps:
 
 1. **Distance Computation & Culling** – A compute shader calculates the view-space depth of each splat, converting it into an integer distance. At this stage, frustum culling can be optionally performed (enabled by default) to discard out-of-view splats early.
-2. **Sorting with VRDX** – The [VRDX third-party Vulkan radix sort library](https://github.com/jaesung-cs/vulkan_radix_sort) is used to sort the splat indices based on the computed integer distances. This efficiently arranges the splats in a back-to-front order, ensuring correct alpha compositing during rendering.
+2. **Sorting with VRDX** – The [third-party Vulkan radix sort library (VRDX)](https://github.com/jaesung-cs/vulkan_radix_sort) is used to sort the splat indices based on the computed integer distances. This efficiently arranges the splats in a back-to-front order, ensuring correct alpha compositing during rendering.
 
 This fully GPU-based approach leverages parallel compute capabilities for efficient sorting, minimizing CPU-GPU synchronization overhead.
-
-TODO Add notes on dist quantization compare with Vkgs. Here or later ?
 
 ### Asynchronous sorting on the CPU
 
@@ -147,7 +145,7 @@ When GPU-based sorting is enabled, the compute shader responsible for distance c
 Distance Computation & Culling
 
 * For each splat, the shader computes the distance to the center of projection in view space.
-* If culling is enabled, the splat center is tested against the NDC (Normalized Device Coordinates) using a dilation threshold.
+* If culling is enabled, the splat center is tested against the frustum volume in normalized device coordinates (NDC)) using a dilation threshold.
     * This provides an approximate and efficient culling method.
     * However, large splats near the viewport edges may cause popping artifacts due to this approximation.
 
@@ -162,8 +160,9 @@ Instance Index Assignment
 
 At the end of this process:
 
-* Both buffers are filled from 0 to the number of visible splats.
+* Both buffers are filled from index 0 to number of visible splats.
 * The index buffer will later be used to dereference splat attributes for rendering.
+* The indirect parameter buffer contains updated instanceCount and groupCountX=(instanceCount + 31) / 32
 
 The splat distances and indices are then passed to the Radix Sort compute pipeline from the VRDX library.
 
