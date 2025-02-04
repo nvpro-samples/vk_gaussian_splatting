@@ -2,9 +2,9 @@
 
 ![image showing the rendering modes on the train 3DGS model](doc/rendering_modes.jpg)
 
-This repository provides an implementation of **3D Gaussian Splatting (3DGS) rasterization** using the **Vulkan 1.3 API** for the purpose of real-time visualization. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sort function from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing **modern shader techniques** and **optimized sorting strategies**.
+This repository provides an implementation of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] rasterization** using the **Vulkan 1.3 API** for the purpose of real-time visualization. It demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since Gaussian splats require back-to-front sorting for correct alpha compositing, we present two alternative sorting methods: a **GPU-based Radix Sort** implemented in a compute pipeline, and a **CPU-based asynchronous sorting** strategy using multi threaded sort function from the c++ STL. This project serves as a reference for efficient 3D Gaussian rendering with Vulkan, showcasing **modern shader techniques** and **optimized sorting strategies**.
 
-We envision this project as a laboratory for exploring and comparing different approaches to 3D Gaussian Splatting. By evaluating various techniques and optimizations, we aim to provide valuable insights into performance, quality, and implementation trade-offs. Future work includes, for instance, the implementation of ray tracing for 3DGS using the Vulkan Ray Tracing API.
+We envision this project as a laboratory for exploring and comparing different approaches to 3D Gaussian Splatting. By evaluating various techniques and optimizations, we aim to provide valuable insights into performance, quality, and implementation trade-offs. Future work includes, for instance, the implementation of ray tracing for 3DGS [Moënne-Loccoz2024] using the Vulkan Ray Tracing API, or other rasterizations approaches such as Stop The Pop [Radl2024] and  Sort-free 3DGS [Hou2024].
 
 ## Building and Running
 
@@ -28,7 +28,7 @@ cmake --build build --config Release
 
 ## Opening 3DGS Files
 
-The sample application supports PLY files in the format defined by INRIA ([Citation]). The INRIA dataset can be downloaded at [URL].
+The sample application supports PLY files in the format defined by INRIA [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]. The INRIA dataset of pre-trained models can be downloaded [here](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip).
 
 Supported Files
 *	To visualize 3DGS reconstruction output, open PLY files located in the point_cloud subfolders, corresponding to 7,000 or 30,000 iterations.
@@ -40,8 +40,8 @@ Files can be opened using any of the following methods:
 *	**Drag and Drop** – Simply drag the PLY file into the viewport.
 
 Compatibility
-*	Jawset Postshot ([link]) output files are compatible with the INRIA format and can be opened directly.
-*	Other reconstruction softwares may work but have not been tested.
+*	[Jawset Postshot](https://www.jawset.com/) output files are compatible with the INRIA format and can be opened directly.
+*	Other reconstruction softwares outputs may work but have not been tested.
 
 ## Sample usage
 
@@ -101,11 +101,15 @@ The Rendering Panel provides controls to fine-tune the rendering process. Users 
 
 ### Synchronous sorting on the GPU
 
+WIP
+
 Two steps, one compute shader computes distances as integers and performs culling (optional at this stage - default mode), use of VRDX third party library to sort the indices using integer distances as key.
 
 Notes on dist quantization compare with Vkgs.
 
 ### Asynchronous sorting on the CPU
+
+WIP
 
 Use of parallel for loop to compute floating point distances.
 Use of c++ STL multi-core sort to sort the indices according to the distances.
@@ -133,9 +137,19 @@ cd _benchmark
 
 ```
 
-## profiling with NSight
+## Profiling with NSight
+
+Note for me: Would be interesting with screen shots. But can we compare two pipeline isnce it deos use sample timeline and not time based ?
 
 ## References
+
+[[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] 3D Gaussian Splatting for Real-Time Radiance Field Rendering. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
+
+[[Radl2024](https://r4dl.github.io/StopThePop/)] Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering. ACM Trans. Graph., 43, 64:1-64:17.
+
+[[Moënne-Loccoz2024](https://gaussiantracer.github.io/)] 3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes. Moënne-Loccoz, N., Mirzaei, A., Perel, O., Lutio, R.D., Esturo, J.M., State, G., Fidler, S., Sharp, N., & Gojcic, Z. (2024).  ACM Trans. Graph., 43, 232:1-232:19.
+
+[[Hou2024](https://arxiv.org/abs/2410.18931)] Sort-free Gaussian Splatting via Weighted Sum Rendering. Hou, Q., Rauwendaal, R., Li, Z., Le, H., Farhadzadeh, F., Porikli, F.M., Bourd, A., & Said, A. (2024). ArXiv, abs/2410.18931.
 
 ## 3rd party licences
 
