@@ -147,7 +147,9 @@ When GPU-based sorting is enabled, the [processSortingOnGPU](src/gaussian_splatt
 
 ### Resetting the Indirect Parameters Buffer
 
-In a first step, the indirect parameters buffer is reset to its default values. In particular, **instanceCount** and **groupCountX** are both set to zero. These values are initialized in a data structure, which is then copied into the buffer. To ensure that the indirect parameters are fully available for the next stages, a memory barrier is set at the end of this copy operation.
+In a first step, the indirect parameters buffer is reset to its default values. In particular, **instanceCount** and **groupCountX** are both set to zero. These values are initialized in a data structure, which is then copied into the buffer. 
+
+To ensure that the indirect parameters are fully available for the next stages, a memory barrier is set at the end of this copy operation.
 
 ### Distances computation and culling
 
@@ -170,13 +172,13 @@ Instance Index Assignment
     * **Distances Buffer** → Stores the encoded distance to the viewpoint.
     * **Indices Buffer** → Stores the GlobalInvocationID.x as the index.
 * For the Mesh Shader Pipeline, an additional step is performed, 
-    * the **groupCountX** field in the indirect parameters buffer is incremented for every 32 visible splats, using an atomic add.
+    * the **groupCountX** field in the indirect parameters buffer is incremented for every WORK_GROUP_SIZE visible splats, using an atomic add. This parameters will be devised in section Mesh shader.
 
 At the end of this process:
 
 * Both buffers are filled from index 0 to number of visible splats.
 * The index buffer will later be used to dereference splat attributes for rendering.
-* The indirect parameter buffer contains updated instanceCount and groupCountX=(instanceCount + 31) / 32
+* The indirect parameter buffer contains updated instanceCount and groupCountX=(instanceCount + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE
 
 A memory barrier is set at the end of this process to ensure that the splat distances and indices are fully available to the Radix Sort compute pipeline before execution.
 
@@ -184,20 +186,11 @@ A memory barrier is set at the end of this process to ensure that the splat dist
 
 The pipeline is invoked using the **instanceCount** value stored in the **indirect parameters buffer**, which was previously incremented during the **distance computation stage**. The process remains fully **GPU-driven**, as the **indirect buffer eliminates the need for CPU readback or control**. The sorting operation is performed **in-place**, meaning the **indices buffer is directly reordered** based on the computed distances. Once sorting is complete, the **sorted indices buffer** is ready for rendering, ensuring that splats are processed **back-to-front** for correct **alpha compositing**.
 
-Since we use the valuable third-party Vulkan Radix Sort library from [jaesung-cs/vulkan_radix_sort](https://github.com/jaesung-cs/vulkan_radix_sort), we will not go into detail describing the radix sort pipeline. However, those interested can refer to the github project, where the implementation resides.
+Since we use the third-party Vulkan Radix Sort library from [jaesung-cs/vulkan_radix_sort](https://github.com/jaesung-cs/vulkan_radix_sort), we will not go into detail describing the radix sort pipeline. However, those interested can refer to the github project, where the implementation resides.
 
 Finally, a last memory barrier is added to ensure the availability of the sorted indices buffer for the stages of the graphics pipeline.
 
-> Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix. otherwise would use a single compute pipeline with semaphores ?
-
-### Indirect Draw Calls
-
-Since both distance computation and sorting are performed entirely on the GPU, we use **indirect draw calls** to invoke the graphics pipeline, ensuring that the entire process remains **GPU-driven** without requiring CPU intervention. The **indirect parameters buffer** acts as the bridge, providing the necessary parameters to drive the selected graphics pipeline.
-
-* Vertex Shader Pipeline → The **instanceCount** field in the indirect parameters buffer determines the number of instances to be processed by **vkCmdDrawIndexedIndirect**.
-* Mesh Shader Pipeline → The **groupCountX** field in the indirect parameters buffer specifies the number of groups to be processed by **drawMeshTaskIndirect**.
-
-This approach ensures that the rendering process is fully dynamic and efficient, with the number of instances or groups automatically adapting to the number of visible splats after sorting.
+> TODO: Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix prevents this. 
 
 ## Data Flow Using CPU-Based Sorting  
 
@@ -212,17 +205,41 @@ Within this method, executed by the main thread (rendering loop):
 - The **previously sorted buffer** is then **copied to VRAM**.  
 - A **memory barrier** is set at the end of this process to ensure that the **splat indices are fully available** for the **graphics pipeline stages**.
 
-## Rendering pipelines
+## Rendering Pipelines  
 
-One quad per splat. The quad is screen aligned and scaled using the covariance matrix.
+The rasterization of the splats is performed using geometry instancing of a simple quad (one quad instance per splat). Geometry instancing enables a compact geometry description in VRAM. Each quad instance is screen-aligned and scaled using its associated covariance matrix, which is applied inside either the mesh shader or the vertex shader, depending on the selected pipeline.  
 
-Geometry instancing, allows for compact geometry description (only ne quad).
+We implement geometry instancing in two ways:  
 
-Writing output data as soon as possible in the shader leads to better performances.
+1. **Vertex Shader Pipeline** → Uses traditional instanced rendering, triggered by a call to `vkCmdDrawIndexed` or `vkCmdDrawIndexedIndirect`, with the number of instances passed as a parameter.  
+2. **Mesh Shader Pipeline** → Uses mesh shaders to generate and render quads dynamically. The mesh shaders are trigerred by a call to, `vkCmdDrawMeshTask` or `vkCmdDrawMeshTaskIndirect`, with the number of **workgroups** to use for the generation.
 
-### Using vertex shaders
+> **Note**: Geometry instancing could also be implemented using **Geometry Shaders** to generate the quads, but this would not be as performant as with **Mesh Shaders**.  
 
-### Using mesh shaders
+### Indirect Draw Calls  
+
+When **sorting is performed on the GPU**, both distance computation and sorting remain entirely on the GPU. Therefore, indirect draw calls are used to invoke the graphics pipeline, ensuring that the entire process is GPU-driven without requiring CPU intervention. The **indirect parameters buffer** acts as the bridge, providing the necessary parameters to drive the selected graphics pipeline.  
+
+- **Vertex Shader Pipeline** → The `instanceCount` field in the indirect parameters buffer determines the number of instances to be processed by `vkCmdDrawIndexedIndirect`.  
+- **Mesh Shader Pipeline** → The `groupCountX` field in the indirect parameters buffer specifies the number of groups to be processed by `vkCmdDrawMeshTaskIndirect`.  
+
+This approach ensures that the rendering process is fully dynamic and efficient, with the number of instances or groups automatically adapting to the number of visible splats after sorting.  
+
+### Direct Draw Calls  
+
+When **sorting is performed on the CPU**, the instance or group count is passed as a parameter to direct draw calls to drive the selected graphics pipeline. Since there is no culling during the sort process, the total number of splats is always rendered.  
+
+- **Vertex Shader Pipeline** → The `instanceCount`, which is always set to the total number of splats, is passed as a parameter of `vkCmdDrawIndexed`.  
+- **Mesh Shader Pipeline** → The `groupCountX` parameter of `vkCmdDrawMeshTaskIndirect` is set to `(total number of splats + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE`, with `Y` and `Z` set to `1`.  
+
+The `WORK_GROUP_SIZE` value will be discussed in the **Mesh Shader** section.
+
+
+### Vertex shader
+
+### Mesh shader
+
+For the time beeing WORK_GROUP_SIZE = 32, recommended for NVidia hardware.
 
 ## Benchmarking
 
