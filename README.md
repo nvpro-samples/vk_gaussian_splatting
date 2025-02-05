@@ -168,18 +168,46 @@ The splat distances and indices are then passed to the Radix Sort compute pipeli
 
 ### Sorting
 
-The pipeline is invoked using the instanceCount value stored in the indirect parameters buffer, which was previously incremented during the distance computation stage. The sorting operation is performed in-place, meaning the indices buffer is directly reordered based on the computed distances. Once sorting is complete, the sorted indices buffer is ready to be used for rendering, ensuring that splats are processed in a back-to-front order for correct alpha compositing.
+The pipeline is invoked using the **instanceCount** value stored in the **indirect parameters buffer**, which was previously incremented during the **distance computation stage**. The process remains fully **GPU-driven**, as the **indirect buffer eliminates the need for CPU readback or control**. The sorting operation is performed **in-place**, meaning the **indices buffer is directly reordered** based on the computed distances. Once sorting is complete, the **sorted indices buffer** is ready for rendering, ensuring that splats are processed **back-to-front** for correct **alpha compositing**.
+
+Since we use the valuable third-party Vulkan Radix Sort (VRDX) library from [jaesung-cs/vulkan_radix_sort](https://github.com/jaesung-cs/vulkan_radix_sort), we will not go into detail describing the radix sort pipeline. However, those interested can refer to the github project, where the implementation resides.
+
+### Synchronization and Memory barriers
+
+TODO
+
+One before the distance and culling to sync the reseted **indirect parameters buffer**.
+
+One after the distance and culling to sync ... (some other inside the sorting pipeline)
+
+One after the sorting ...
+
+Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix. otherwise would use a single compute pipeline with semaphores ?
 
 ### Indirect Draw Calls
 
-When do I talk about geometry instancing ? here or before ? 
+Since both distance computation and sorting are performed entirely on the GPU, we use **indirect draw calls** to invoke the graphics pipeline, ensuring that the entire process remains **GPU-driven** without requiring CPU intervention. The **indirect parameters buffer** acts as the bridge, providing the necessary parameters to drive the selected graphics pipeline.
 
-* For the Vertex Shader Pipeline, the **instanceCount** field of the indirect parameter buffer enables **vkCmdDrawIndexedIndirect** to run the correct number of instances.
-* For the Mesh Shader Pipeline, the **groupCountX** field of the indirect parameter buffer enables **drawMeshTaskIndirect** to run the correct number of groups.
+* Vertex Shader Pipeline → The **instanceCount** field in the indirect parameters buffer determines the number of instances to be processed by **vkCmdDrawIndexedIndirect**.
+* Mesh Shader Pipeline → The **groupCountX** field in the indirect parameters buffer specifies the number of groups to be processed by **drawMeshTaskIndirect**.
+
+This approach ensures that the rendering process is fully dynamic and efficient, with the number of instances or groups automatically adapting to the number of visible splats after sorting.
 
 ## Data flow using CPU based sorting
 
 ![image showing gaussian splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)
+
+## Rendering pipelines
+
+One quad per splat. The quad is screen aligned and scaled using the covariance matrix.
+
+Geometry instancing, allows for compact geometry description (only ne quad).
+
+Writing output data as soon as possible in the shader leads to better performances.
+
+### Using vertex shaders
+
+### Using mesh shaders
 
 ## Benchmarking
 

@@ -207,6 +207,30 @@ private:  // Methods
   // reset the memory usage stats
   inline void resetModelMemoryStats() { memset((void*)&m_modelMemoryStats, 0, sizeof(ModelMemoryStats)); }
 
+  /////////////
+  // Rendering submethods
+
+  // Updates frame information uniform buffer and frame camera info 
+  void updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const uint32_t splatCount);
+
+  // TODO API doc
+  void tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount);
+
+  // TODO API doc
+  void processSortingOnGPU(VkCommandBuffer cmd, const uint32_t splatCount);
+
+  // TODO API doc
+  void drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t splatCount);
+
+  // TODO API doc (for statistics display in the UI)
+  void readBackIndirectParameters(VkCommandBuffer cmd);
+
+  // TODO API doc
+  void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
+  
+  ////////
+  // UI
+
   // for multiple choice selectors in the UI
   enum GuiEnums
   {
@@ -254,6 +278,11 @@ private:  // Attributes
   VkDevice                         m_device      = VK_NULL_HANDLE;                 // Convenient sortcut to device
   std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
   std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
+
+  // camera info for current frame, updated by onRender
+  glm::vec3 m_eye;
+  glm::vec3 m_center;
+  glm::vec3 m_up;
 
   // IndirectParams structure defined in device_host.h
   nvvk::Buffer   m_indirect;          // indirect parameter buffer

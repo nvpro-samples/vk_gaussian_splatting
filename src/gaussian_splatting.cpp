@@ -111,183 +111,25 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   {
     splatCount = (uint32_t)m_splatSet.size();
   }
-  
-  const float aspect_ratio = m_viewSize.x / m_viewSize.y;
-  glm::vec3   eye;
-  glm::vec3   center;
-  glm::vec3   up;
-  CameraManip.getLookat(eye, center, up);
 
+  // Handle device-host data update and sorting if a scene exist
   if(splatCount)
   {
-    {
-      auto timerSection = m_profiler->timeRecurring("UBO update", cmd);
+    updateAndUploadFrameInfoUBO(cmd, splatCount);
+    
+    // resets CPU sorting time info
+    m_distTime = m_sortTime = 0;
 
-      // Update frame parameters uniform buffer
-      // some attributes of frameInfo were set by the user interface
-      const glm::vec2& clip  = CameraManip.getClipPlanes();
-      m_frameInfo.splatCount = splatCount;
-      m_frameInfo.viewMatrix = CameraManip.getMatrix();
-      m_frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspect_ratio, clip.x, clip.y);
-      // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
-      m_frameInfo.projectionMatrix[1][1] *= -1;
-      m_frameInfo.cameraPosition         = eye;
-      float       devicePixelRatio       = 1.0;
-      const float focalLengthX           = m_frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-      const float focalLengthY           = m_frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
-      const bool  isOrthographicCamera   = false;
-      const float focalMultiplier        = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
-      const float focalAdjustment        = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
-      m_frameInfo.orthoZoom              = 1.0f;
-      m_frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
-      m_frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
-      m_frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-      m_frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
-      m_frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
-
-      vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(DH::FrameInfo), &m_frameInfo);
-
-      // sync with end of copy to device
-      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.buffer              = m_frameInfoBuffer.buffer;
-      bmb.size                = VK_WHOLE_SIZE;
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
-                           | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
-                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-    }
-    if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
-    {
-      // upload CPU sorted indices to the GPU if needed
-      bool newIndexAvailable = false;
-
-      if(!m_frameInfo.opacityGaussianDisabled)
-      {
-        // Splatting/blending is on, we check for a newly sorted index table
-        auto status = m_cpuSorter.getStatus();
-        if(status != SplatSorterAsync::SORTING )
-        {
-          // sorter is sleeping, we can work on shared data
-          // we take into account the result of the sort
-          if(status == SplatSorterAsync::SORTED)
-          {
-            m_cpuSorter.consume(m_splatIndices,m_distTime, m_sortTime);
-            newIndexAvailable = true;
-          } 
-          
-          // let's wakeup the sorting thread to run a new sort if needed
-          // will start work only if camera direction or position has changed
-          m_cpuSorter.sortAsync(glm::normalize(center - eye), eye, m_splatSet.positions);
-        }
-      }
-      else
-      {
-        // splatting off, we disable the sorting
-        // indices would not be needed for non splatted points
-        // however, using the same mechanism allows to use exactly the same shader
-        // so if splatting/blending is off we provide an ordered table of indices
-        bool refill = (m_splatIndices.size() != splatCount);
-        if(refill)
-        {
-          m_splatIndices.resize(splatCount);
-          for(uint32_t i = 0; i < splatCount; ++i)
-          {
-            m_splatIndices[i] = i;
-          }
-          newIndexAvailable = true;
-        }
-        m_distTime = 0;
-        m_sortTime = 0;
-      }
-
-      {  // upload to GPU is needed
-        auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
-
-        if(newIndexAvailable)
-        { 
-          // Prepare buffer on host using sorted indices
-          uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
-          memcpy(hostBuffer, m_splatIndices.data(), m_splatIndices.size() * sizeof(uint32_t));
-          m_alloc->unmap(m_splatIndicesHost);
-          // copy buffer to device
-          VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
-          vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
-          // sync with end of copy to device
-          VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-          bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-          bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-          bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-          bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-          bmb.buffer              = m_splatIndicesDevice.buffer;
-          bmb.size                = VK_WHOLE_SIZE;
-          vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                               VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT 
-                                | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
-                               VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-        }
-      }
-    }
-
-    // when GPU sorting, we sort at each frame, all buffer in device memory, no copy from RAM
     if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
-      // reset cpu sorting stats
-      m_distTime = m_sortTime = 0;
-      //
-      { // reset the draw indirect parameters and counters, will be updated by compute shader
-        const DH::IndirectParams drawIndexedIndirectParams{6,0,0,0,0,0,1,1};
-        vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(DH::IndirectParams), (void*)&drawIndexedIndirectParams);
-
-        VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-        barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT ;
-        barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                             0, 1,
-                             &barrier,
-                             0, NULL, 0, NULL);
-      }
-
-      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-      barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
-      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
-
-      // invoke the distance compute shader
-      {
-        auto timerSection = m_profiler->timeRecurring("GPU Dist", cmd);
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-
-        constexpr uint32_t local_size = 256;
-        vkCmdDispatch(cmd, (splatCount + local_size - 1) / local_size, 1, 1);
-
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT 
-                             ,0, 1, &barrier, 0, NULL, 0, NULL);
-      }
-
-      // invoke the radix sort from vrdx lib
-      {
-        auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
-
-        vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, 
-          m_indirect.buffer, sizeof(uint32_t), 
-          m_splatDistancesDevice.buffer, 0,
-          m_splatIndicesDevice.buffer, 0, m_vrdxStorageDevice.buffer, 0, 0, 0);
-
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1,
-                             &barrier, 0, NULL, 0, NULL);
-      }
+      processSortingOnGPU(cmd, splatCount);
+    }
+    else
+    {
+      tryConsumeAndUploadCpuSortingResult(cmd, splatCount);
     }
   }
-  // Drawing the primitives in the G-Buffer
+  // Drawing the primitives in the G-Buffer if any
   {
     auto timerSection = m_profiler->timeRecurring("Rendering", cmd);
 
@@ -298,20 +140,202 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-    // let's throw some pixels !!
     vkCmdBeginRendering(cmd, &r_info);
     m_app->setViewport(cmd);
     if(splatCount)
     {
-      if(m_selectedPipeline == PIPELINE_VERT)
-      { // Pipeline using vertex shader
+      // let's throw some pixels !!
+      drawSplatPrimitives(cmd, splatCount);
+    }
+    
+    vkCmdEndRendering(cmd);
+    nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+  }
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-        // overrides the pipeline setup for depth test/write
-        vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+  // read back to m_indirect for statistics display in the UI
+  readBackIndirectParameters(cmd);
+  
+  updateRenderingMemoryStatistics(cmd, splatCount);
+}
 
-        /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
+void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const uint32_t splatCount)
+{
+  auto timerSection = m_profiler->timeRecurring("UBO update", cmd);
+  
+  CameraManip.getLookat(m_eye, m_center, m_up);
+
+  // Update frame parameters uniform buffer
+  // some attributes of frameInfo were set by the user interface
+  const float      aspectRatio = m_viewSize.x / m_viewSize.y;
+  const glm::vec2& clip        = CameraManip.getClipPlanes();
+  m_frameInfo.splatCount       = splatCount;
+  m_frameInfo.viewMatrix       = CameraManip.getMatrix();
+  m_frameInfo.projectionMatrix = glm::perspectiveRH_ZO(glm::radians(CameraManip.getFov()), aspectRatio, clip.x, clip.y);
+  // OpenGL (0,0) is bottom left, Vulkan (0,0) is top left, and glm::perspectiveRH_ZO is for OpenGL so we mirror on y
+  m_frameInfo.projectionMatrix[1][1] *= -1;
+  m_frameInfo.cameraPosition         = m_eye;
+  float       devicePixelRatio       = 1.0;
+  const float focalLengthX           = m_frameInfo.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+  const float focalLengthY           = m_frameInfo.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+  const bool  isOrthographicCamera   = false;
+  const float focalMultiplier        = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
+  const float focalAdjustment        = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
+  m_frameInfo.orthoZoom              = 1.0f;
+  m_frameInfo.orthographicMode       = 0;  // disabled (uses perspective) TODO: activate support for orthographic
+  m_frameInfo.viewport               = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.x * devicePixelRatio);
+  m_frameInfo.basisViewport          = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
+  m_frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
+  m_frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
+
+  vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(DH::FrameInfo), &m_frameInfo);
+
+  // sync with end of copy to device
+  VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+  bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+  bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+  bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  bmb.buffer              = m_frameInfoBuffer.buffer;
+  bmb.size                = VK_WHOLE_SIZE;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+                           | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
+                       VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+}
+
+void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount)
+{
+  // upload CPU sorted indices to the GPU if needed
+  bool newIndexAvailable = false;
+
+  if(!m_frameInfo.opacityGaussianDisabled)
+  {
+    // 1. Splatting/blending is on, we check for a newly sorted index table
+    auto status = m_cpuSorter.getStatus();
+    if(status != SplatSorterAsync::SORTING)
+    {
+      // sorter is sleeping, we can work on shared data
+      // we take into account the result of the sort
+      if(status == SplatSorterAsync::SORTED)
+      {
+        m_cpuSorter.consume(m_splatIndices, m_distTime, m_sortTime);
+        newIndexAvailable = true;
+      }
+
+      // let's wakeup the sorting thread to run a new sort if needed
+      // will start work only if camera direction or position has changed
+      m_cpuSorter.sortAsync(glm::normalize(m_center - m_eye), m_eye, m_splatSet.positions);
+    }
+  }
+  else
+  {
+    // splatting off, we disable the sorting
+    // indices would not be needed for non splatted points
+    // however, using the same mechanism allows to use exactly the same shader
+    // so if splatting/blending is off we provide an ordered table of indices 
+    // if not already filled by any other previous frames (sorted or not)
+    bool refill = (m_splatIndices.size() != splatCount);
+    if(refill)
+    {
+      m_splatIndices.resize(splatCount);
+      for(uint32_t i = 0; i < splatCount; ++i)
+      {
+        m_splatIndices[i] = i;
+      }
+      newIndexAvailable = true;
+    }
+  }
+
+  // 2. upload to GPU is needed
+  {  
+    auto timerSection = m_profiler->timeRecurring("Copy indices to GPU", cmd);
+
+    if(newIndexAvailable)
+    {
+      // Prepare buffer on host using sorted indices
+      uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_splatIndicesHost));
+      memcpy(hostBuffer, m_splatIndices.data(), m_splatIndices.size() * sizeof(uint32_t));
+      m_alloc->unmap(m_splatIndicesHost);
+      // copy buffer to device
+      VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
+      vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
+      // sync with end of copy to device
+      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      bmb.buffer              = m_splatIndicesDevice.buffer;
+      bmb.size                = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
+                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+    }
+  }
+}
+
+//
+void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t splatCount)
+{
+  // when GPU sorting, we sort at each frame, all buffer in device memory, no copy from RAM
+  
+  // 1. reset the draw indirect parameters and counters, will be updated by compute shader
+  {  
+    const DH::IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
+    vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(DH::IndirectParams), (void*)&drawIndexedIndirectParams);
+
+    VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                         0, 1, &barrier, 0, NULL, 0, NULL);
+  }
+
+  VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+  barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+  barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
+  // 2. invoke the distance compute shader
+  {
+    auto timerSection = m_profiler->timeRecurring("GPU Dist", cmd);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+
+    constexpr uint32_t localSize = 256;
+    vkCmdDispatch(cmd, (splatCount + localSize - 1) / localSize, 1, 1);
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                         &barrier, 0, NULL, 0, NULL);
+  }
+
+  // 3. invoke the radix sort from vrdx lib
+  {
+    auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
+
+    vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, m_indirect.buffer, sizeof(uint32_t),
+                                m_splatDistancesDevice.buffer, 0, m_splatIndicesDevice.buffer, 0,
+                                m_vrdxStorageDevice.buffer, 0, 0, 0);
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1, &barrier, 0,
+                         NULL, 0, NULL);
+  }
+}
+
+void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t splatCount)
+{
+  if(m_selectedPipeline == PIPELINE_VERT)
+  {  // Pipeline using vertex shader
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+    // overrides the pipeline setup for depth test/write
+    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+
+    /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
           // transfo/color unused for the time beeing, could transform the whole 3DGS model
           // if used, could also be placed in the FrameInfo or all the frameInfo placed in push_constant
           m_pushConst.transfo = glm::mat4(1.0);                 // identity
@@ -320,49 +344,44 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                              sizeof(DH::PushConstant), &m_pushConst);
           */
 
-        // display the quad as many times as we have visible splats
+    // display the quad as many times as we have visible splats
 
-        const VkDeviceSize offsets{0};
-        vkCmdBindIndexBuffer(cmd, m_quadIndices.buffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &m_quadVertices.buffer, &offsets);
-        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
-        {
-          vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-          vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
-        }
-        else
-        {
-          vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
-          vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
-        }
-       
-      }
-      else
-      { // Pipeline using mesh shader
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
-        // overrides the pipeline setup for depth test/write
-        vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
-        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
-        {
-          // run the workgroups
-          vkCmdDrawMeshTasksEXT(cmd, (m_frameInfo.splatCount + 31) / 32, 1, 1);
-        }
-        else
-        {
-          // run the workgroups
-          vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, 5 * sizeof(uint32_t), 1, sizeof(VkDrawIndexedIndirectCommand));
-        }
-        
-      }
+    const VkDeviceSize offsets{0};
+    vkCmdBindIndexBuffer(cmd, m_quadIndices.buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &m_quadVertices.buffer, &offsets);
+    if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+    {
+      vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+      vkCmdDrawIndexed(cmd, 6, (uint32_t)splatCount, 0, 0, 0);
     }
-    
-    vkCmdEndRendering(cmd);
-    nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+    else
+    {
+      vkCmdBindVertexBuffers(cmd, 1, 1, &m_splatIndicesDevice.buffer, &offsets);
+      vkCmdDrawIndexedIndirect(cmd, m_indirect.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    }
   }
+  else
+  {  // Pipeline using mesh shader
 
-  // read back m_indirect for statistics display in the UI
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
+    // overrides the pipeline setup for depth test/write
+    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+    if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
+    {
+      // run the workgroups
+      vkCmdDrawMeshTasksEXT(cmd, (m_frameInfo.splatCount + 31) / 32, 1, 1);
+    }
+    else
+    {
+      // run the workgroups
+      vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, 5 * sizeof(uint32_t), 1, sizeof(VkDrawIndexedIndirectCommand));
+    }
+  }
+}
+
+void GaussianSplatting::readBackIndirectParameters(VkCommandBuffer cmd)
+{
   if(m_indirectHost.buffer != VK_NULL_HANDLE)
   {
     auto timerSection = m_profiler->timeRecurring("Indirect readback", cmd);
@@ -371,7 +390,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(DH::IndirectParams)};
     vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
 
-    // sync with end of copy to host, GPU timeline, 
+    // sync with end of copy to host, GPU timeline,
     // value will be available between now and next frame
     VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
     bmb.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
@@ -388,26 +407,29 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(DH::IndirectParams));
     m_alloc->unmap(m_indirectHost);
   }
-  
+}
+
+void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount) 
+{
   // update rendering memory statistics
   if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
   {
-    m_renderMemoryStats.hostAllocIndices = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.hostAllocIndices   = splatCount * sizeof(uint32_t);
     m_renderMemoryStats.hostAllocDistances = splatCount * sizeof(uint32_t);
-    m_renderMemoryStats.allocIndices   = splatCount * sizeof(uint32_t);
-    m_renderMemoryStats.usedIndices    = splatCount * sizeof(uint32_t);
-    m_renderMemoryStats.allocDistances = 0;
-    m_renderMemoryStats.usedDistances  = 0;
-    m_renderMemoryStats.usedIndirect   = 0;
+    m_renderMemoryStats.allocIndices       = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedIndices        = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocDistances     = 0;
+    m_renderMemoryStats.usedDistances      = 0;
+    m_renderMemoryStats.usedIndirect       = 0;
   }
   else
   {
     m_renderMemoryStats.hostAllocDistances = 0;
     m_renderMemoryStats.hostAllocIndices   = 0;
-    m_renderMemoryStats.allocDistances = splatCount * sizeof(uint32_t);
-    m_renderMemoryStats.usedDistances  = m_indirectReadback.instanceCount * sizeof(uint32_t);
-    m_renderMemoryStats.allocIndices   = splatCount * sizeof(uint32_t);
-    m_renderMemoryStats.usedIndices    = m_indirectReadback.instanceCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocDistances     = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedDistances      = m_indirectReadback.instanceCount * sizeof(uint32_t);
+    m_renderMemoryStats.allocIndices       = splatCount * sizeof(uint32_t);
+    m_renderMemoryStats.usedIndices        = m_indirectReadback.instanceCount * sizeof(uint32_t);
     if(m_selectedPipeline == PIPELINE_VERT)
     {
       m_renderMemoryStats.usedIndirect = 5 * sizeof(uint32_t);
@@ -419,8 +441,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   }
   m_renderMemoryStats.usedUboFrameInfo = sizeof(DH::FrameInfo);
 
-  m_renderMemoryStats.hostTotal = m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances
-       + m_renderMemoryStats.usedUboFrameInfo;
+  m_renderMemoryStats.hostTotal =
+      m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances + m_renderMemoryStats.usedUboFrameInfo;
 
   uint32_t vrdxSize = m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
 
@@ -428,8 +450,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
                                         + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
 
   m_renderMemoryStats.deviceAllocTotal = m_renderMemoryStats.allocIndices + m_renderMemoryStats.allocDistances + vrdxSize
-                                         + m_renderMemoryStats.usedIndirect
-                                        + m_renderMemoryStats.usedUboFrameInfo;
+                                         + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
 }
 
 void GaussianSplatting::deinitAll()
