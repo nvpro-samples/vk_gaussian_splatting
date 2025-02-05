@@ -135,7 +135,13 @@ This approach provides a viable fallback for low-end systems, albeit with some t
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
 
-### Distances and culling
+When GPU-based sorting is enabled, the [processSortingOnGPU](src/gaussian_splatting.cpp#L125) method is invoked. This method adds the processings to the command buffer in three steps.
+
+### Resetting the Indirect Parameters Buffer
+
+In a first step, the indirect parameters buffer is reset to its default values. In particular, **instanceCount** and **groupCountX** are both set to zero. These values are initialized in a data structure, which is then copied into the buffer. To ensure that the indirect parameters are fully available for the next stages, a memory barrier is set at the end of this copy operation.
+
+### Distances computation and culling
 
 When GPU-based sorting is enabled, the compute shader responsible for distance computation and culling (see [dist.comp.glsl](shaders/dist.comp.glsl)) is executed first. This shader stage processes the splat positions buffer or texture as input and writes to three write-only data buffers:
 * Distances Buffer – Stores unsigned integer-encoded distances from the center of projection.
@@ -145,7 +151,7 @@ When GPU-based sorting is enabled, the compute shader responsible for distance c
 Distance Computation & Culling
 
 * For each splat, the shader computes the distance to the center of projection in view space.
-* If culling is enabled, the splat center is tested against the frustum volume in normalized device coordinates (NDC)) using a dilation threshold.
+* If culling is enabled, the splat center is tested against the frustum volume in normalized device coordinates (NDC) using a dilation threshold.
     * This provides an approximate and efficient culling method.
     * However, large splats near the viewport edges may cause popping artifacts due to this approximation.
 
@@ -164,25 +170,17 @@ At the end of this process:
 * The index buffer will later be used to dereference splat attributes for rendering.
 * The indirect parameter buffer contains updated instanceCount and groupCountX=(instanceCount + 31) / 32
 
-The splat distances and indices are then passed to the Radix Sort compute pipeline from the VRDX library.
+A memory barrier is set at the end of this process to ensure that the splat distances and indices are fully available to the Radix Sort compute pipeline before execution.
 
-### Sorting
+### Sorting via Radix Sort
 
 The pipeline is invoked using the **instanceCount** value stored in the **indirect parameters buffer**, which was previously incremented during the **distance computation stage**. The process remains fully **GPU-driven**, as the **indirect buffer eliminates the need for CPU readback or control**. The sorting operation is performed **in-place**, meaning the **indices buffer is directly reordered** based on the computed distances. Once sorting is complete, the **sorted indices buffer** is ready for rendering, ensuring that splats are processed **back-to-front** for correct **alpha compositing**.
 
-Since we use the valuable third-party Vulkan Radix Sort (VRDX) library from [jaesung-cs/vulkan_radix_sort](https://github.com/jaesung-cs/vulkan_radix_sort), we will not go into detail describing the radix sort pipeline. However, those interested can refer to the github project, where the implementation resides.
+Since we use the valuable third-party Vulkan Radix Sort library from [jaesung-cs/vulkan_radix_sort](https://github.com/jaesung-cs/vulkan_radix_sort), we will not go into detail describing the radix sort pipeline. However, those interested can refer to the github project, where the implementation resides.
 
-### Synchronization and Memory barriers
+Finally, a last memory barrier is added to ensure the availability of the sorted indices buffer for the stages of the graphics pipeline.
 
-TODO
-
-One before the distance and culling to sync the reseted **indirect parameters buffer**.
-
-One after the distance and culling to sync ... (some other inside the sorting pipeline)
-
-One after the sorting ...
-
-Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix. otherwise would use a single compute pipeline with semaphores ?
+> Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix. otherwise would use a single compute pipeline with semaphores ?
 
 ### Indirect Draw Calls
 
