@@ -175,10 +175,6 @@ void GaussianSplatting::onUIRender()
   namespace PE = ImGuiH::PropertyEditor;
   {  // Setting menu
     ImGui::Begin("Settings");
-    if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-      ImGuiH::CameraWidget();
-    }
     if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
     {
       if(ImGui::Button("Reset TODO"))
@@ -317,6 +313,14 @@ void GaussianSplatting::onUIRender()
       PE::end();
     }
     ImGui::End();
+    
+    ImGui::Begin("Misc");
+    if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      ImGuiH::CameraWidget();
+    }
+    ImGui::End();
+    
     ImGui::Begin("Memory Statistics");
 
     //if(ImGui::CollapsingHeader("Memory Statistics", ImGuiTreeNodeFlags_DefaultOpen))

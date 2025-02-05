@@ -65,7 +65,15 @@ This structured workflow ensures efficient rendering while allowing different so
 
 ![image showing the user interface viewing the bicycle 3DGS model](doc/user_interface.jpg)
 
-### Data Format and Storage 
+### Memory Statistics Panel
+
+TODO
+
+### Profiling Panel and Statistics Panel
+
+TODO
+
+### Data Format and Storage Panel
 
 The Data Format and Storage Panel allows users to configure how the model's data is stored in VRAM.
 *	**Data Storage** – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
@@ -86,7 +94,7 @@ This option impacts memory access patterns and performance, allowing comparisons
 
 This flexibility enables performance comparisons between buffer-based and texture-based data storage, each with trade-offs in memory access efficiency and potential optimization opportunities.
 
-### Sorting and Rendering 
+### Rendering Panel
 
 The Rendering Panel provides controls to fine-tune the rendering process. Users can adjust the following parameters:
 *	**V-Sync** – Toggles vertical synchronization on or off. Disabling V-Sync is recommended when benchmarking to obtain accurate performance measurements in the Profiler Panel.
@@ -159,8 +167,8 @@ Instance Index Assignment
 
 * If the splat passes the culling test, the **instanceCount** field in the indirect parameter buffer is incremented atomically. The previous value of this field is used as an instance index.
 * The distances and indices buffers are then updated for this instance index:
-    * Distances Buffer → Stores the encoded distance to the viewpoint.
-    * Indices Buffer → Stores the GlobalInvocationID.x as the index.
+    * **Distances Buffer** → Stores the encoded distance to the viewpoint.
+    * **Indices Buffer** → Stores the GlobalInvocationID.x as the index.
 * For the Mesh Shader Pipeline, an additional step is performed, 
     * the **groupCountX** field in the indirect parameters buffer is incremented for every 32 visible splats, using an atomic add.
 
@@ -191,9 +199,18 @@ Since both distance computation and sorting are performed entirely on the GPU, w
 
 This approach ensures that the rendering process is fully dynamic and efficient, with the number of instances or groups automatically adapting to the number of visible splats after sorting.
 
-## Data flow using CPU based sorting
+## Data Flow Using CPU-Based Sorting  
 
-![image showing gaussian splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)
+![Image showing Gaussian Splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)  
+
+The **CPU-based sorting** is executed in a **separate thread**, with its implementation residing in the **`innerSort`** method (see [`splat_sorter_async.cpp`](src/splat_sorter_async.cpp#L81)). The **rendering loop** controls both the **start of a new sort** (triggered when sorting is idle and the camera changes) and the **consumption of sorted indices**. This logic is implemented in the **`tryConsumeAndUploadCpuSortingResult`** method (see [`gaussian_splatting.cpp`](src/gaussian_splatting.cpp#L206)).
+
+Within this method, executed by the main thread (rendering loop):
+
+- If a **sorted indices buffer** is available, the **double buffer** is swapped via **pointer interchange**.  
+- If the **viewpoint has changed** since the last frame, a **new sort is immediately restarted** to run in parallel, minimizing latency and ensuring the next sorting process starts as soon as possible.  
+- The **previously sorted buffer** is then **copied to VRAM**.  
+- A **memory barrier** is set at the end of this process to ensure that the **splat indices are fully available** for the **graphics pipeline stages**.
 
 ## Rendering pipelines
 
