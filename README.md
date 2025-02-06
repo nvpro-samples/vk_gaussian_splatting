@@ -141,7 +141,7 @@ Performance Considerations
 
 This approach provides a viable fallback for low-end systems, albeit with some trade-offs in responsiveness and visual stability.
 
-> Note: With current implementation, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
+> **Note**: With current implementation, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
 
 ## Data flow using GPU based sorting
 
@@ -238,8 +238,35 @@ When **sorting is performed on the CPU**, the instance or group count is passed 
 
 The `WORK_GROUP_SIZE` value will be discussed in the **Mesh Shader** section.
 
+### Vertex Shader  
 
-### Vertex shader
+The vertex shader is implemented in [raster.vert.glsl](shaders/raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). The mathematical formulations and comments have been directly retained from this source.  
+
+The vertex shader operates on each of the **four vertices** of each quad. Since the input quad has **normalized 2D positions** in the range **[-1,1]**, the shader does not need to distinguish between individual vertices. Instead, the transformation—derived from the **splat position** and **covariance matrix**—determines the final scale and placement of the splat.  
+
+The **same color and opacity** (computed from **Spherical Harmonics (SH) coefficients** and the viewpoint position) are assigned to all four vertices of the quad. The shader outputs:  
+- The **final vertex position** in `gl_Position`.  
+- The **normalized vertex position** in `outFragPos` (the original normalized 2D position).  
+- The **splat color and opacity** for the given view direction in `outFragCol`.  
+
+#### **Vertex Shader Processing Steps**  
+
+1. **Transform the splat position** into view space.  
+2. **Perform culling** (if enabled at this stage) against the **Normalized Device Coordinates (NDC)**.  
+   - If the splat is culled, it is discarded by generating **degenerate triangles** (all vertices receive the same `gl_Position`), followed by an **early return**.  
+3. **Set `fragPos`** as early as possible to optimize parallel output writes.  
+4. **Compute the splat color and opacity** using **viewpoint position** and **SH attributes**.  
+5. **Perform opacity-based culling**:  
+   - If the computed opacity is below a threshold, the splat is discarded via an **early return**.  
+6. **Set `fragCol`** as early as possible to optimize parallel output writes.  
+7. **Transform the 3D covariance matrix**:  
+   - Convert the **3D covariance matrix** into **2D** using the **model-view matrix**.  
+   - Use teh eigen vectors of this transformed **2D covariance matrix** to compute the final **vertex position**.  
+8. **Write the final vertex position** to `gl_Position`.
+
+### Fragment Shader
+
+
 
 ### Mesh shader
 

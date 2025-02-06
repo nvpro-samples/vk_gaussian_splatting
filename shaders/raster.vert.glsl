@@ -60,6 +60,7 @@ void main()
   if(frameInfo.frustumCulling == FRUSTUM_CULLING_VERT
      && (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
   {
+    // emit same vertex to get degenerate triangle
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -157,7 +158,7 @@ void main()
   // alpha based culling
   if(splatColor.a < minAlpha)
   {
-    // JEM added gl_position set for proper discard
+    // emit same vertex to get degenerate triangle
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
@@ -198,10 +199,9 @@ void main()
     eigenValue1 = eigenValue2 = 0.2;
   }
 
-  // from original code
   if(eigenValue2 <= 0.0)
   {
-    // JEM added gl_position set for proper discard
+    // emit same vertex to get degenerate triangle
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
