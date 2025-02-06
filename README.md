@@ -292,7 +292,7 @@ The covariance matrix **Σ** of a Gaussian describes its shape in 3D. When proje
 
     Σ' = J * Σ * transpose(J)
 
-This operation preserves the anisotropic shape of the Gaussian in screen space. Without it, Gaussians would appear incorrectly shaped after projection.
+This operation preserves the anisotropic shape of the Gaussian in screen space. Without it, Gaussians would appear incorrectly shaped after projection. This step is not needed with an orthographic camera. For a complete mathematical explanation, refer to [Zwicker2002].
 
 ## Benchmarking
 
@@ -310,13 +310,15 @@ cd _benchmark
 
 ## References
 
-[[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] 3D Gaussian Splatting for Real-Time Radiance Field Rendering. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
+[[Zwicker2002](https://www.cs.umd.edu/~zwicker/publications/EWASplatting-TVCG02.pdf)]. **EWA Splatting**. E., Zwicker, M., Pfister, H., Van Baar, J., Gross, M.H., Zwicker, M., Pfister, H., Van Baar, J., & Gross, M.H. (2002). IEEE Transactions on Visualization and Computer Graphics .
 
-[[Radl2024](https://r4dl.github.io/StopThePop/)] StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering. Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). ACM Trans. Graph., 43, 64:1-64:17.
+[[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] **3D Gaussian Splatting for Real-Time Radiance Field Rendering**. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
 
-[[Moënne-Loccoz2024](https://gaussiantracer.github.io/)] 3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes. Moënne-Loccoz, N., Mirzaei, A., Perel, O., Lutio, R.D., Esturo, J.M., State, G., Fidler, S., Sharp, N., & Gojcic, Z. (2024).  ACM Trans. Graph., 43, 232:1-232:19.
+[[Radl2024](https://r4dl.github.io/StopThePop/)] **StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering**. Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). ACM Trans. Graph., 43, 64:1-64:17.
 
-[[Hou2024](https://arxiv.org/abs/2410.18931)] Sort-free Gaussian Splatting via Weighted Sum Rendering. Hou, Q., Rauwendaal, R., Li, Z., Le, H., Farhadzadeh, F., Porikli, F.M., Bourd, A., & Said, A. (2024). ArXiv, abs/2410.18931.
+[[Moënne-Loccoz2024](https://gaussiantracer.github.io/)] **3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes**. Moënne-Loccoz, N., Mirzaei, A., Perel, O., Lutio, R.D., Esturo, J.M., State, G., Fidler, S., Sharp, N., & Gojcic, Z. (2024).  ACM Trans. Graph., 43, 232:1-232:19.
+
+[[Hou2024](https://arxiv.org/abs/2410.18931)] **Sort-free Gaussian Splatting via Weighted Sum Rendering**. Hou, Q., Rauwendaal, R., Li, Z., Le, H., Farhadzadeh, F., Porikli, F.M., Bourd, A., & Said, A. (2024). ArXiv, abs/2410.18931.
 
 ## 3rd party licences
 
