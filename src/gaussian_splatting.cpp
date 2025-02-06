@@ -807,7 +807,7 @@ void GaussianSplatting::deinitVkBuffers()
   }
 
   // will delete at next frame
-  nvvkhl::Application::submitResourceFree([this]() {
+  m_app->submitResourceFree([this]() {
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadVertices));
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadIndices));
 
@@ -862,7 +862,7 @@ void GaussianSplatting::initDataBuffers(void)
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_centersDevice.buffer, 1, &bc);
 
     // free host buffer (at next frame)
-    nvvkhl::Application::submitResourceFree(
+    m_app->submitResourceFree(
         [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
 
     // memory statistics
@@ -924,7 +924,7 @@ void GaussianSplatting::initDataBuffers(void)
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_covariancesDevice.buffer, 1, &bc);
 
     // free host buffer (at next frame)
-    nvvkhl::Application::submitResourceFree(
+    m_app->submitResourceFree(
         [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
 
     // memory statistics
@@ -966,7 +966,7 @@ void GaussianSplatting::initDataBuffers(void)
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_colorsDevice.buffer, 1, &bc);
 
     // free host buffer (at next frame)
-    nvvkhl::Application::submitResourceFree(
+    m_app->submitResourceFree(
         [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
 
     // memory statistics
@@ -1060,7 +1060,7 @@ void GaussianSplatting::initDataBuffers(void)
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_sphericalHarmonicsDevice.buffer, 1, &bc);
 
     // free host buffer (at next frame)
-    nvvkhl::Application::submitResourceFree(
+    m_app->submitResourceFree(
         [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
 
     // memory statistics
@@ -1097,7 +1097,7 @@ void GaussianSplatting::initDataBuffers(void)
 void GaussianSplatting::deinitDataBuffers()
 {
   // will delete at next frame
-  nvvkhl::Application::submitResourceFree([this]() {
+  m_app->submitResourceFree([this]() {
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_centersDevice));
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
     m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
@@ -1319,7 +1319,7 @@ void GaussianSplatting::initDataTextures(void)
 void GaussianSplatting::deinitDataTextures()
 {
   // will delete at next frame
-  nvvkhl::Application::submitResourceFree([this]() {
+  m_app->submitResourceFree([this]() {
     deinitTexture(m_centersMap);
     deinitTexture(m_colorsMap);
     deinitTexture(m_covariancesMap);
