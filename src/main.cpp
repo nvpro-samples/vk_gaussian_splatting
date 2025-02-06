@@ -60,6 +60,20 @@ int main(int argc, char** argv)
   appSetup.physicalDevice = vkContext.m_physicalDevice;
   appSetup.queues.push_back({vkContext.m_queueGCT.familyIndex, vkContext.m_queueGCT.queueIndex, vkContext.m_queueGCT.queue});
 
+  // Setting up the layout of the application
+  appSetup.dockSetup = [](ImGuiID viewportID) {
+    // right side panel container
+    ImGuiID settingID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Right, 0.25F, nullptr, &viewportID);
+    ImGui::DockBuilderDockWindow("Settings", settingID);
+    ImGui::DockBuilderDockWindow("Misc", settingID);
+
+    // bottom panel container
+    ImGuiID memoryID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Down, 0.35F, nullptr, &viewportID);
+    ImGui::DockBuilderDockWindow("Memory Statistics", memoryID);
+    ImGuiID profilerID = ImGui::DockBuilderSplitNode(memoryID, ImGuiDir_Right, 0.33F, nullptr, &memoryID);
+    ImGui::DockBuilderDockWindow("Profiler", profilerID);
+  };
+
   // Create the application
   auto app = std::make_unique<nvvkhl::Application>(appSetup);
   // create the profiler element
