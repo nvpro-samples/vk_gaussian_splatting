@@ -240,7 +240,7 @@ The `WORK_GROUP_SIZE` value will be discussed in the **Mesh Shader** section.
 
 ### Vertex Shader  
 
-The vertex shader is implemented in [raster.vert.glsl](shaders/raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). The mathematical formulations and comments have been directly retained from this source.  
+The vertex shader is implemented in [raster.vert.glsl](shaders/raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). The mathematical formulations and comments have been directly retained from this source.
 
 The vertex shader operates on each of the **four vertices** of each quad. Since the input quad has **normalized 2D positions** in the range **[-1,1]**, the shader does not need to distinguish between individual vertices. Instead, the transformation—derived from the **splat position** and **covariance matrix**—determines the final scale and placement of the splat.  
 
@@ -264,9 +264,20 @@ The **same color and opacity** (computed from **Spherical Harmonics (SH) coeffic
    - Use the eigen vectors of this transformed **2D covariance matrix** to compute the final **vertex position**.  
 8. **Write the final vertex position** to `gl_Position`.
 
-### Fragment Shader
+### Fragment Shader  
+
+The fragment shader is implemented in **[raster.frag.glsl](shaders/raster.frag.glsl)**.  
+
+It is designed to be extremely **lightweight**, as most computations are already handled in the **vertex shader**. Since **Gaussian Splatting** is inherently **fragment-intensive**, minimizing the workload in this stage is crucial for performance.  
+
+The fragment shader operates as follows:  
+1. It uses the interpolated value of **`inFragPos`** to compute the **positional squared distance `A`** from the center of the splat to the current fragment.  
+2. If the fragment lies **outside the ellipse** defined by the **rectangle formed by `inFragPos`**, it is **discarded**.  
+3. The **opacity is updated** based on `A` using the **Gaussian formula**.  
+4. The **final color** (including the updated opacity) is written to `outColor`, using the splat color from **`inSplatCol`**.  
 
 
+> **Note:** that one might use barycentric coordinates to remove the need from passing fragPos, to be verified and potentially implemented.
 
 ### Mesh shader
 
