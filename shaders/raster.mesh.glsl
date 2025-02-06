@@ -105,12 +105,12 @@ void main()
 
     const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
+    const vec4 clipCenter  = frameInfo.projectionMatrix * viewCenter; 
 
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_MESH
     // culling
-    const vec4  clipCenter = frameInfo.projectionMatrix * viewCenter;
-    const float clip       = 1.2 * clipCenter.w;
-    if(frameInfo.frustumCulling == FRUSTUM_CULLING_MESH
-       && (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip))
+    const float clip = 1.2 * clipCenter.w;
+    if (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip)
     {
       // Early return to discard splat
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -119,6 +119,7 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       return;
     }
+#endif
 
     // the vertices of the quad
     const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};

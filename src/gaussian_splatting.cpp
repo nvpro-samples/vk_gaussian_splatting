@@ -21,6 +21,7 @@
 #define VMA_IMPLEMENTATION
 
 #include <gaussian_splatting.h>
+#include <nvh/misc.hpp>
 
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
@@ -208,7 +209,7 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
   // upload CPU sorted indices to the GPU if needed
   bool newIndexAvailable = false;
 
-  if(!m_frameInfo.opacityGaussianDisabled)
+  if(!m_defines.opacityGaussianDisabled)
   {
     // 1. Splatting/blending is on, we check for a newly sorted index table
     auto status = m_cpuSorter.getStatus();
@@ -333,7 +334,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
     // overrides the pipeline setup for depth test/write
-    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_defines.opacityGaussianDisabled);
 
     /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
           // transfo/color unused for the time beeing, could transform the whole 3DGS model
@@ -366,7 +367,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineMesh);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
     // overrides the pipeline setup for depth test/write
-    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_frameInfo.opacityGaussianDisabled);
+    vkCmdSetDepthTestEnable(cmd, (VkBool32)m_defines.opacityGaussianDisabled);
     if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
     {
       // run the workgroups
@@ -462,7 +463,7 @@ void GaussianSplatting::deinitAll()
   deinitVkBuffers();
   deinitShaders();
   deinitPipelines();
-  resetFrameInfo();
+  resetRenderSettings();
   // reset camera to default 
   CameraManip.setClipPlanes({0.1F, 2000.0F});
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, 1.0F, 0.0F});
@@ -475,7 +476,7 @@ void GaussianSplatting::initAll()
   // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
   // reset general parameters
-  resetFrameInfo();
+  resetRenderSettings();
   //
   initShaders();
   initVkBuffers();
@@ -513,6 +514,18 @@ void GaussianSplatting::reinitDataStorage()
   initPipelines();
 }
 
+void GaussianSplatting::reinitShaders()
+{
+  vkDeviceWaitIdle(m_device);
+  
+  deinitPipelines();
+  deinitShaders();
+  
+  initShaders();
+  initPipelines();
+}
+
+
 void GaussianSplatting::deinitScene()
 {
   m_splatSet = {};
@@ -526,16 +539,17 @@ bool GaussianSplatting::initShaders(void)
 
   // prepare definitions prepend
   std::string prepends;
-  if(m_useDataTextures)
-  {
+  if(m_useDataTextures) 
     prepends += "#define USE_DATA_TEXTURES\n";
-  }
-  
+  if(m_defines.opacityGaussianDisabled)
+    prepends += "#define DISABLE_OPACITY_GAUSSIAN\n";
+  prepends += nvh::stringFormat("#define FRUSTUM_CULLING_MODE %d\n", m_defines.frustumCulling);
+
   // generate the shader modules
   m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "dist.comp.glsl", prepends);
   m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
   m_shaders.meshShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_EXT, "raster.mesh.glsl", prepends);
-  m_shaders.fragmentShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "raster.frag.glsl");
+  m_shaders.fragmentShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "raster.frag.glsl", prepends);
 
   if(!m_shaderManager.areShaderModulesValid())
   {

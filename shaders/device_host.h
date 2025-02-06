@@ -71,11 +71,9 @@ struct FrameInfo
   float splatScale;
 
   int showShOnly;
-  int opacityGaussianDisabled;
   int splatCount;
   int sortingMethod;
 
-  int frustumCulling;
 };
 
 // not used

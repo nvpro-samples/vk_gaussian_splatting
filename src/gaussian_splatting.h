@@ -143,6 +143,10 @@ private:  // Methods
   // this requires to regenerate shaders and pipelines.
   void reinitDataStorage();
 
+  // reinitializes the shaders following a change of parameters
+  // in the UI, this also requires to regenerate the pipelines.
+  void reinitShaders();
+
   // free scene (splat set) from RAM
   void deinitScene();
   
@@ -188,9 +192,9 @@ private:  // Methods
     return texSize;
   };
 
-  // reset the attributes of the frameInformation that can
+  // reset the redering settings that can
   // be modified by the user interface
-  inline void resetFrameInfo()
+  inline void resetRenderSettings()
   {
     m_frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
     m_frameInfo.orthoZoom                  = 1.0f;  // in ?
@@ -199,9 +203,10 @@ private:  // Methods
     m_frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
     m_frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     m_frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
-    m_frameInfo.opacityGaussianDisabled    = 0;     // disabled, in {0,1}
     m_frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
-    m_frameInfo.frustumCulling             = FRUSTUM_CULLING_DIST;
+    //
+    m_defines.frustumCulling          = FRUSTUM_CULLING_DIST;
+    m_defines.opacityGaussianDisabled = false;
   }
 
   // reset the memory usage stats
@@ -342,6 +347,14 @@ private:  // Attributes
     nvvk::ShaderModuleID vertexShader;
     nvvk::ShaderModuleID fragmentShader;
   } m_shaders;
+
+  // This fields will be transformed to compilation definitions
+  // and prepend to the shader code by initShaders
+  struct ShaderDefines
+  {
+    int  frustumCulling          = FRUSTUM_CULLING_DIST;
+    bool opacityGaussianDisabled = false;
+  } m_defines;
 
   // Pipelines
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
