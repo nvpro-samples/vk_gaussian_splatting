@@ -84,7 +84,7 @@ void main()
   // Since the rendered splat is scaled by sqrt(8), the inverse covariance matrix that is part of
   // the gaussian formula becomes the identity matrix. We're then left with (X - mean) * (X - mean),
   // and since 'mean' is zero, we have X * X, which is the same as A:
-  // disableAlphaGaussian flag is used to enable/disable the guassian on opacity 
+  // disableAlphaGaussian flag is used to enable/disable the gaussian on opacity 
   const float opacity = float(frameInfo.opacityGaussianDisabled) 
                         + float(1 - frameInfo.opacityGaussianDisabled) * exp(-0.5 * A) * inSplatCol.a;
 

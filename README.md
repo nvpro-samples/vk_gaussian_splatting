@@ -276,12 +276,23 @@ The fragment shader operates as follows:
 3. The **opacity is updated** based on `A` using the **Gaussian formula**.  
 4. The **final color** (including the updated opacity) is written to `outColor`, using the splat color from **`inSplatCol`**.  
 
-
 > **Note:** that one might use barycentric coordinates to remove the need from passing fragPos, to be verified and potentially implemented.
 
 ### Mesh shader
 
 For the time beeing WORK_GROUP_SIZE = 32, recommended for NVidia hardware.
+
+### On Using a Jacobian When Rasterizing 3D Gaussian Splatting with a Perspective Camera
+
+When rasterizing 3D Gaussian splatting with a perspective camera, the Jacobian matrix is used to correctly account for how the 3D Gaussian transforms when projected onto the 2D image plane. This ensures accurate splat shape, size, and intensity in screen space.
+
+In 3D space, Gaussians are typically represented as ellipsoids with a mean position **μ** and a covariance matrix **Σ**. When projecting to 2D, the shape of these Gaussians warps non-linearly due to perspective effects. The Jacobian matrix **J** of the projection function encodes how infinitesimal changes in 3D coordinates affect the 2D screen-space coordinates.
+
+The covariance matrix **Σ** of a Gaussian describes its shape in 3D. When projected onto the image plane, we need to compute the new 2D covariance **Σ'**, which is given by:
+
+    Σ' = J * Σ * transpose(J)
+
+This operation preserves the anisotropic shape of the Gaussian in screen space. Without it, Gaussians would appear incorrectly shaped after projection.
 
 ## Benchmarking
 
