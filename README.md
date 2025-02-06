@@ -231,7 +231,7 @@ This approach ensures that the rendering process is fully dynamic and efficient,
 
 ### Direct Draw Calls  
 
-When **sorting is performed on the CPU**, the instance or group count is passed as a parameter to direct draw calls to drive the selected graphics pipeline. Since there is no culling during the sort process, the total number of splats is always rendered.  
+When **sorting is performed on the CPU**, the instance or group count is passed as a parameter to **direct draw calls** to drive the selected graphics pipeline. Since **no culling** is applied during the sorting process, **all splats** are always instantiated. However, culling can still be applied during the rasterization stage.
 
 - **Vertex Shader Pipeline** → The `instanceCount`, which is always set to the total number of splats, is passed as a parameter of `vkCmdDrawIndexed`.  
 - **Mesh Shader Pipeline** → The `groupCountX` parameter of `vkCmdDrawMeshTaskIndirect` is set to `(total number of splats + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE`, with `Y` and `Z` set to `1`.  
@@ -261,7 +261,7 @@ The **same color and opacity** (computed from **Spherical Harmonics (SH) coeffic
 6. **Set `fragCol`** as early as possible to optimize parallel output writes.  
 7. **Transform the 3D covariance matrix**:  
    - Convert the **3D covariance matrix** into **2D** using the **model-view matrix**.  
-   - Use teh eigen vectors of this transformed **2D covariance matrix** to compute the final **vertex position**.  
+   - Use the eigen vectors of this transformed **2D covariance matrix** to compute the final **vertex position**.  
 8. **Write the final vertex position** to `gl_Position`.
 
 ### Fragment Shader
