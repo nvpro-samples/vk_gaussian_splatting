@@ -278,7 +278,10 @@ void GaussianSplatting::onUIRender()
 
           ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
           if(ImGui::RadioButton("In mesh shader", m_defines.frustumCulling == FRUSTUM_CULLING_MESH))
+          {
             m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
+            m_updateShaders          = true;
+          }
           ImGui::EndDisabled();
           return true;
         });

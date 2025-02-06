@@ -87,14 +87,14 @@ void main()
   const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
 
   const float clip = 1.2 * clipCenter.w;
-  #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_MESH
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_MESH
   if (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip)
   {
     // emit same vertex to get degenerate triangle
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
-  #endif
+#endif
 
   const vec2 fragPos = inPosition.xy;
   // emit as early as possible

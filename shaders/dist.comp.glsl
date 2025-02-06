@@ -55,9 +55,9 @@ void main()
   // the center of each splat instead of its extent.
   // for the time being we just add 0.2 to the NDC as a margin which
   // make the job with most models
-//#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_DIST
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_DIST
   if( abs(pos.x) <= 1.2f && abs(pos.y) <= 1.2f && pos.z >= 0.f && pos.z <= 1.f)
-//#endif
+#endif
   {
     // increments the visible splat counter in the indirect buffer (second entry of the array)
     const uint instance_index = atomicAdd(indirect.instanceCount, 1);
