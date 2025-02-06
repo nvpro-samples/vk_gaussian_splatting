@@ -55,6 +55,7 @@ int main(int argc, char** argv)
   nvvkhl::ApplicationCreateInfo appSetup;
   appSetup.name           = fmt::format("{}", PROJECT_NAME);
   appSetup.vSync          = true;
+  appSetup.hasUndockableViewport          = true;
   appSetup.instance       = vkContext.m_instance;
   appSetup.device         = vkContext.m_device;
   appSetup.physicalDevice = vkContext.m_physicalDevice;
@@ -76,6 +77,7 @@ int main(int argc, char** argv)
 
   // Create the application
   auto app = std::make_unique<nvvkhl::Application>(appSetup);
+  
   // create the profiler element
   auto profiler = std::make_shared<nvvkhl::ElementProfiler>(true);
   // Create the benchmarking framework
@@ -88,7 +90,7 @@ int main(int argc, char** argv)
   app->addElement(gaussianSplatting);
   app->addElement(benchmark);
   app->addElement(std::make_shared<nvvkhl::ElementCamera>());
-  app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", "GLSL")));  // Window title info
+  app->addElement(std::make_shared<nvvkhl::ElementDefaultWindowTitle>("", fmt::format("({})", "GLSL")));  // Window title info//
   app->addElement(profiler);
   app->addElement(std::make_shared<nvvkhl::ElementNvml>());
   //

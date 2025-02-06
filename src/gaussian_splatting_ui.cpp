@@ -59,6 +59,7 @@ void GaussianSplatting::initGui()
 
 void GaussianSplatting::onUIRender()
 {
+
   if(!m_gBuffers)
     return;
 
@@ -143,7 +144,7 @@ void GaussianSplatting::onUIRender()
           // loaded but not properly since in error
           deinitScene();
           // set ready for next load
-          m_plyLoader.reset(); 
+          m_plyLoader.reset();
           ImGui::CloseCurrentPopup();
         }
       }
@@ -151,7 +152,7 @@ void GaussianSplatting::onUIRender()
       case PlyAsyncLoader::Status::LOADED: {
         initAll();
         // set ready for next load
-        m_plyLoader.reset(); 
+        m_plyLoader.reset();
         ImGui::CloseCurrentPopup();
         addToRecentFiles(m_loadedSceneFilename);
       }
@@ -163,7 +164,7 @@ void GaussianSplatting::onUIRender()
     ImGui::EndPopup();
   }
 
-  // will rebuild data set according 
+  // will rebuild data set according
   // to parameter change
   if(m_updateData && m_splatSet.size())
   {
@@ -182,164 +183,171 @@ void GaussianSplatting::onUIRender()
   //
   namespace PE = ImGuiH::PropertyEditor;
   {  // Setting menu
-    ImGui::Begin("Settings");
-    if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
+    if(ImGui::Begin("Settings"))
     {
-      if(ImGui::Button("Reset TODO"))
-      {
-        //resetFrameInfo();
-      }
 
-      PE::begin("##3DGS format");
-      if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
+      if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
       {
-        m_updateData = true;
-      }
-      PE::end();
-    }
-    if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-      if(ImGui::Button("Reset"))
-      {
-        resetRenderSettings();
-      }
-
-      PE::begin("##3DGS rendering");
-
-      bool vsync = m_app->isVsync();
-      PE::entry("V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); });
-      m_app->setVsync(vsync);
-
-      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
-      {
-        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_DIST)
+        if(ImGui::Button("Reset TODO"))
         {
-          if(m_selectedPipeline == PIPELINE_MESH)
+          //resetFrameInfo();
+        }
+
+        PE::begin("##3DGS format");
+        if(PE::entry("Use data textures", [&]() { return ImGui::Checkbox("##ID", &m_useDataTextures); }))
+        {
+          m_updateData = true;
+        }
+        PE::end();
+      }
+      
+
+      if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+      {
+        if(ImGui::Button("Reset"))
+        {
+          resetRenderSettings();
+        }
+
+        PE::begin("##3DGS rendering");
+
+        bool vsync = m_app->isVsync();
+        if(PE::entry("V-sync", [&]() { return ImGui::Checkbox("##ID", &vsync); }))
+        {
+          m_app->setVsync(vsync);
+        }
+        if(PE::entry("Sorting method",
+                     [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
+        {
+          if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_DIST)
+          {
+            if(m_selectedPipeline == PIPELINE_MESH)
+            {
+              m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
+              m_updateShaders          = true;
+            }
+            else if(m_selectedPipeline == PIPELINE_VERT)
+            {
+              m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
+              m_updateShaders          = true;
+            }
+          }
+        }
+
+        ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
+        PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
+        ImGui::EndDisabled();
+
+        if(PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
+        {
+          if(m_selectedPipeline == PIPELINE_MESH && m_defines.frustumCulling == FRUSTUM_CULLING_VERT)
           {
             m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
             m_updateShaders          = true;
           }
-          else if(m_selectedPipeline == PIPELINE_VERT)
+          else if(m_selectedPipeline == PIPELINE_VERT && m_defines.frustumCulling == FRUSTUM_CULLING_MESH)
           {
             m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
             m_updateShaders          = true;
           }
         }
+
+        // Radio buttons for exclusive selection
+        PE::entry("Frustum culling", [&]() {
+          if(ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
+          {
+            m_defines.frustumCulling = FRUSTUM_CULLING_NONE;
+            m_updateShaders          = true;
+          }
+
+          ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
+          if(ImGui::RadioButton("In distance shader", m_defines.frustumCulling == FRUSTUM_CULLING_DIST))
+          {
+            m_defines.frustumCulling = FRUSTUM_CULLING_DIST;
+            m_updateShaders          = true;
+          }
+          ImGui::EndDisabled();
+
+          ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_VERT);
+          if(ImGui::RadioButton("In vertex shader", m_defines.frustumCulling == FRUSTUM_CULLING_VERT))
+          {
+            m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
+            m_updateShaders          = true;
+          }
+          ImGui::EndDisabled();
+
+          ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
+          if(ImGui::RadioButton("In mesh shader", m_defines.frustumCulling == FRUSTUM_CULLING_MESH))
+            m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
+          ImGui::EndDisabled();
+          return true;
+        });
+
+        PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f,
+                        m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
+        );
+
+        PE::entry(
+            "Spherical Harmonic degree",
+            [&]() { return ImGui::SliderInt("##ShDegree", (int*)&m_frameInfo.sphericalHarmonicsDegree, 0, 2); }, "TODOC");
+
+        bool showShOnly = m_frameInfo.showShOnly != 0;
+        PE::entry(
+            "Show SH only", [&]() { return ImGui::Checkbox("##ShowSHOnly", &showShOnly); }, "TODOC");
+        m_frameInfo.showShOnly = showShOnly ? 1 : 0;
+
+        bool disableSplatting = m_frameInfo.pointCloudModeEnabled != 0;
+        PE::entry(
+            "Disable splatting", [&]() { return ImGui::Checkbox("##DisableSplatting", &disableSplatting); }, "TODOC");
+        m_frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
+
+        if(PE::entry(
+               "Disable opacity gaussian",
+               [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &m_defines.opacityGaussianDisabled); }, "TODOC"))
+        {
+          m_updateShaders = true;
+        }
+        PE::end();
       }
-
-      ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
-      PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
-      ImGui::EndDisabled();
-
-      if(PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
+      if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
       {
-        if(m_selectedPipeline == PIPELINE_MESH && m_defines.frustumCulling == FRUSTUM_CULLING_VERT)
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
-          m_updateShaders          = true;
-        }
-        else if(m_selectedPipeline == PIPELINE_VERT && m_defines.frustumCulling == FRUSTUM_CULLING_MESH)
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
-          m_updateShaders          = true;
-        }
+        // TODO: do not use disabled input object to display statistics
+        PE::begin("##3DGS statistics");
+        ImGui::BeginDisabled();
+
+
+        uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
+        PE::entry(
+            "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
+        uint32_t renderedSplatCount =
+            (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
+        PE::entry(
+            "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
+        uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
+                          ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                                                                                   (m_frameInfo.splatCount + 31) / 32) :
+                          0;
+        PE::entry(
+            "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
+        PE::entry(
+            "CPU Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
+        PE::entry(
+            "CPU Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
+        ImGui::EndDisabled();
+
+        PE::end();
       }
 
-      // Radio buttons for exclusive selection
-      PE::entry("Frustum culling", [&]() {
-        if(ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_NONE;
-          m_updateShaders          = true;
-        }
-
-        ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
-        if(ImGui::RadioButton("In distance shader", m_defines.frustumCulling == FRUSTUM_CULLING_DIST))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_DIST;
-          m_updateShaders          = true;
-        }
-        ImGui::EndDisabled();
-
-        ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_VERT);
-        if(ImGui::RadioButton("In vertex shader", m_defines.frustumCulling == FRUSTUM_CULLING_VERT))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
-          m_updateShaders          = true;
-        }
-        ImGui::EndDisabled();
-
-        ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
-        if(ImGui::RadioButton("In mesh shader", m_defines.frustumCulling == FRUSTUM_CULLING_MESH))
-          m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
-        ImGui::EndDisabled();
-        return true;
-      });
-
-      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f,
-                      m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
-      );
-
-      PE::entry(
-          "Spherical Harmonic degree",
-          [&]() { return ImGui::SliderInt("##ShDegree", (int*)&m_frameInfo.sphericalHarmonicsDegree, 0, 2); }, "TODOC");
-
-      bool showShOnly = m_frameInfo.showShOnly != 0;
-      PE::entry(
-          "Show SH only", [&]() { return ImGui::Checkbox("##ShowSHOnly", &showShOnly); }, "TODOC");
-      m_frameInfo.showShOnly = showShOnly ? 1 : 0;
-
-      bool disableSplatting = m_frameInfo.pointCloudModeEnabled != 0;
-      PE::entry(
-          "Disable splatting", [&]() { return ImGui::Checkbox("##DisableSplatting", &disableSplatting); }, "TODOC");
-      m_frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
-
-      if(PE::entry(
-             "Disable opacity gaussian",
-             [&]() { return ImGui::Checkbox("##opacityGaussianDisabled", &m_defines.opacityGaussianDisabled); }, "TODOC"))
-      {
-        m_updateShaders = true;
-      }
-
-      PE::end();
+      ImGui::End();
     }
-    if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-      // TODO: do not use disabled input object to display statistics
-      PE::begin("##3DGS statistics");
-      ImGui::BeginDisabled();
 
-
-      uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
-      PE::entry(
-          "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
-      uint32_t renderedSplatCount =
-          (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
-      PE::entry(
-          "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
-      uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
-                        ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
-                                                                                 (m_frameInfo.splatCount + 31) / 32) :
-                        0;
-      PE::entry(
-          "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
-      PE::entry(
-          "CPU Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
-      PE::entry(
-          "CPU Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
-      ImGui::EndDisabled();
-
-      PE::end();
-    }
-    ImGui::End();
-    
     ImGui::Begin("Misc");
     if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
     {
       ImGuiH::CameraWidget();
     }
     ImGui::End();
-    
+
     ImGui::Begin("Memory Statistics");
 
     //if(ImGui::CollapsingHeader("Memory Statistics", ImGuiTreeNodeFlags_DefaultOpen))
