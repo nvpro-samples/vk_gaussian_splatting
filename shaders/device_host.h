@@ -50,12 +50,15 @@
 #define BINDING_COVARIANCES_BUFFER 10
 #define BINDING_SH_BUFFER 11
 
+#ifndef __cplusplus
+#define CHECK_STRUCT_ALIGNMENT(_s)
 // used to skip fields init
 // when included in glsl
 #define DEFAULT(val)
-
-#ifdef __cplusplus
+#else
 #include <glm/glm.hpp>
+#define CHECK_STRUCT_ALIGNMENT(_s) static_assert(sizeof(_s) % 16 == 0)
+// used to assign fields defaults
 #define DEFAULT(val) = val
 namespace DH {
 using namespace glm;
@@ -83,11 +86,9 @@ struct FrameInfo
   int sphericalHarmonics8BitMode DEFAULT(0);     // disabled, in [0,1]
   float splatScale               DEFAULT(1.0f);  // in {0.1, 2.0}
 
-  int showShOnly        DEFAULT(0);  // disabled, in {0,1}
   int splatCount        DEFAULT(0);  // 
   int sortingMethod     DEFAULT(SORTING_GPU_SYNC_RADIX);
   float frustumDilation DEFAULT(0.2f);  // for frustum culling, 2% scale
-
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 

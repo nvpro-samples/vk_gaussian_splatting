@@ -78,7 +78,7 @@ void main()
 {
   const uint splatIndex = inSplatIndex;
 
-  //
+  // Work on splat position
   const vec3 splatCenter = fetchCenter(splatIndex);
 
   const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
@@ -105,12 +105,11 @@ void main()
 
   vec4 splatColor = fetchColor(splatIndex);
 
-  if(frameInfo.showShOnly == 1)
-  {
-    splatColor.r = 0.5;
-    splatColor.g = 0.5;
-    splatColor.b = 0.5;
-  }
+#if SHOW_SH_ONLY == 1
+  splatColor.r = 0.5;
+  splatColor.g = 0.5;
+  splatColor.b = 0.5;
+#endif
 
   if(frameInfo.sphericalHarmonicsDegree >= 1)
   {
@@ -155,21 +154,17 @@ void main()
   // Fetch and construct the 3D covariance matrix
   const mat3 Vrk = fetchCovariance(splatIndex);
 
-  mat3 J;
-  if(frameInfo.orthographicMode == 1)
-  {
-    // Since the projection is linear, we don't need an approximation
-    J = transpose(mat3(frameInfo.orthoZoom, 0.0, 0.0, 0.0, frameInfo.orthoZoom, 0.0, 0.0, 0.0, 0.0));
-  }
-  else
-  {
-    // Construct the Jacobian of the affine approximation of the projection matrix. It will be used to transform the
-    // 3D covariance matrix instead of using the actual projection matrix because that transformation would
-    // require a non-linear component (perspective division) which would yield a non-gaussian result.
-    float s = 1.0 / (viewCenter.z * viewCenter.z);
-    J       = mat3(frameInfo.focal.x / viewCenter.z, 0., -(frameInfo.focal.x * viewCenter.x) * s, 0.,
-                   frameInfo.focal.y / viewCenter.z, -(frameInfo.focal.y * viewCenter.y) * s, 0., 0., 0.);
-  }
+#if ORTHOGRAPHIC_MODE == 1
+  // Since the projection is linear, we don't need an approximation
+  const mat3 J = transpose(mat3(frameInfo.orthoZoom, 0.0, 0.0, 0.0, frameInfo.orthoZoom, 0.0, 0.0, 0.0, 0.0));
+#else
+  // Construct the Jacobian of the affine approximation of the projection matrix. It will be used to transform the
+  // 3D covariance matrix instead of using the actual projection matrix because that transformation would
+  // require a non-linear component (perspective division) which would yield a non-gaussian result.
+  const float s = 1.0 / (viewCenter.z * viewCenter.z);
+  const mat3  J = mat3(frameInfo.focal.x / viewCenter.z, 0., -(frameInfo.focal.x * viewCenter.x) * s, 0.,
+                       frameInfo.focal.y / viewCenter.z, -(frameInfo.focal.y * viewCenter.y) * s, 0., 0., 0.);
+#endif
 
   // Concatenate the projection approximation with the model-view transformation
   const mat3 W = transpose(mat3(transformModelViewMatrix));

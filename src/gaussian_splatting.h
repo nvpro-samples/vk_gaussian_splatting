@@ -340,8 +340,9 @@ private:  // Attributes
   // and prepend to the shader code by initShaders
   struct ShaderDefines
   {
-    int   frustumCulling          = FRUSTUM_CULLING_DIST;
-    bool  opacityGaussianDisabled = false;
+    int  frustumCulling          = FRUSTUM_CULLING_DIST;
+    bool opacityGaussianDisabled = false;
+    bool showShOnly              = false;
   } m_defines;
 
   // Pipelines
