@@ -340,7 +340,7 @@ private:  // Attributes
   // and prepend to the shader code by initShaders
   struct ShaderDefines
   {
-    int  frustumCulling          = FRUSTUM_CULLING_DIST;
+    int  frustumCulling          = FRUSTUM_CULLING_AT_DIST;
     bool opacityGaussianDisabled = false;
     bool showShOnly              = false;
     int  maxShDegree             = 2;  // in[0,1,2]

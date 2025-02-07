@@ -32,9 +32,8 @@
 
 // type of frustum culling
 #define FRUSTUM_CULLING_NONE 0
-#define FRUSTUM_CULLING_DIST 1
-#define FRUSTUM_CULLING_VERT 2
-#define FRUSTUM_CULLING_MESH 3
+#define FRUSTUM_CULLING_AT_DIST 1
+#define FRUSTUM_CULLING_AT_RASTER 2
 
 // bindings for set 0
 #define BINDING_FRAME_INFO_UBO 0

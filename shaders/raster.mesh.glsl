@@ -107,7 +107,7 @@ void main()
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
     const vec4 clipCenter  = frameInfo.projectionMatrix * viewCenter; 
 
-#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_MESH
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
     const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
     if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
        || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w

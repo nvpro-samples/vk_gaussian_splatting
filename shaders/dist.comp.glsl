@@ -53,7 +53,7 @@ void main()
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
   // the culling is not good since we only take into account
   // the center of each splat instead of its extent.
-#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_DIST
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
   const float clip = 1.0f + frameInfo.frustumDilation;
   if(abs(pos.x) > clip || abs(pos.y) > clip || pos.z < 0.f - frameInfo.frustumDilation || pos.z > 1.0)
     return;

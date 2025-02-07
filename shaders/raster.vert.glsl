@@ -86,7 +86,7 @@ void main()
 
   const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
 
-#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_VERT
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
   const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
   if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
      || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w
