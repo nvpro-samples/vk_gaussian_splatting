@@ -282,7 +282,7 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
 
   // 1. reset the draw indirect parameters and counters, will be updated by compute shader
   {
-    const DH::IndirectParams drawIndexedIndirectParams{6, 0, 0, 0, 0, 0, 1, 1};
+    const DH::IndirectParams drawIndexedIndirectParams;
     vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(DH::IndirectParams), (void*)&drawIndexedIndirectParams);
 
     VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};

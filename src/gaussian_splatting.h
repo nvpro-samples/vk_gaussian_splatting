@@ -73,11 +73,8 @@
 #include <nvvkhl/gbuffer.hpp>
 #include <nvvkhl/pipeline_container.hpp>
 
-namespace DH {
-using namespace glm;
 // Shared between host and device
 #include "shaders/device_host.h" 
-}
 
 #include "splat_set.h"
 #include "ply_async_loader.h"
@@ -196,17 +193,7 @@ private:  // Methods
   // be modified by the user interface
   inline void resetRenderSettings()
   {
-    m_frameInfo.splatScale                 = 1.0f;  // in [0.1,2.0]
-    m_frameInfo.orthoZoom                  = 1.0f;  // in ?
-    m_frameInfo.orthographicMode           = 0;     // disabled, in {0,1}
-    m_frameInfo.pointCloudModeEnabled      = 0;     // disabled, in {0,1}
-    m_frameInfo.sphericalHarmonicsDegree   = 2;     // in {0,1,2}
-    m_frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
-    m_frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
-    m_frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
-    m_frameInfo.frustumDilation            = 0.2f;  // 2% scale
-    m_frameInfo.alphaCullThreshold         = 1.0f / 255.0f; //
-    //
+    m_frameInfo = {};
     m_defines = {};
   }
 

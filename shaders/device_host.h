@@ -17,6 +17,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef _DEVICE_HOST_H_
+#define _DEVICE_HOST_H_
+
 // type of method used for sorting
 #define SORTING_GPU_SYNC_RADIX 0
 #define SORTING_CPU_ASYNC_MONO 1
@@ -47,35 +50,45 @@
 #define BINDING_COVARIANCES_BUFFER 10
 #define BINDING_SH_BUFFER 11
 
-// Warning, struct members must
-// be aligned to 128 bits
-//
+// used to skip fields init
+// when included in glsl
+#define DEFAULT(val)
+
+#ifdef __cplusplus
+#include <glm/glm.hpp>
+#define DEFAULT(val) = val
+namespace DH {
+using namespace glm;
+#endif
+
+// Warning, struct members must be aligned
+// we group by packs of 128 bits
 struct FrameInfo
 {
   mat4 projectionMatrix;
   mat4 viewMatrix;
 
   vec3  cameraPosition;
-  float orthoZoom;
+  float inverseFocalAdjustment DEFAULT(1.0f);
 
   vec2 focal;
   vec2 viewport;
 
-  vec2 basisViewport;
-  int  orthographicMode;
-  int  pointCloudModeEnabled;
+  vec2                 basisViewport;
+  float orthoZoom      DEFAULT(1.0f);  // TODO ?
+  int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
-  float inverseFocalAdjustment;
-  int   sphericalHarmonicsDegree;
-  int   sphericalHarmonics8BitMode;  // unused
-  float splatScale;
+  int pointCloudModeEnabled      DEFAULT(0);     // disabled, in [0,1]
+  int sphericalHarmonicsDegree   DEFAULT(2);     // in [0,1,2]
+  int sphericalHarmonics8BitMode DEFAULT(0);     // disabled, in [0,1]
+  float splatScale               DEFAULT(1.0f);  // in {0.1, 2.0}
 
-  int   showShOnly;
-  int   splatCount;
-  int   sortingMethod;
-  float frustumDilation;  // for frustum culling
-  float alphaCullThreshold; // for alpha culling
+  int showShOnly        DEFAULT(0);  // disabled, in {0,1}
+  int splatCount        DEFAULT(0);  // 
+  int sortingMethod     DEFAULT(SORTING_GPU_SYNC_RADIX);
+  float frustumDilation DEFAULT(0.2f);  // for frustum culling, 2% scale
 
+  float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 
 // not used
@@ -91,13 +104,19 @@ struct PushConstant
 struct IndirectParams
 {
   // for vkCmdDrawIndexedIndirect
-  uint32_t indexCount;     //= 6;  // allways = 6 indices for the quad (2 triangles)
-  uint32_t instanceCount;  //= 0;  // will be incremented by the distance compute shader
-  uint32_t firstIndex;     //= 0;  // allways zero
-  uint32_t vertexOffset;   //= 0;  // allways zero
-  uint32_t firstInstance;  //= 0;  // allways zero
+  uint32_t indexCount    DEFAULT(6);  // allways = 6 indices for the quad (2 triangles)
+  uint32_t instanceCount DEFAULT(0);  // will be incremented by the distance compute shader
+  uint32_t firstIndex    DEFAULT(0);  // allways zero
+  uint32_t vertexOffset  DEFAULT(0);  // allways zero
+  uint32_t firstInstance DEFAULT(0);  // allways zero
   // for vkCmdDrawMeshTasksIndirectEXT
-  uint32_t groupCountX;  //=0;  // Will be incremented by distance the compute shader
-  uint32_t groupCountY;  //=1;  // Allways one workgroup on Y
-  uint32_t groupCountZ;  //=1;  // Allways one workgroup on Z
+  uint32_t groupCountX DEFAULT(0);  // Will be incremented by distance the compute shader
+  uint32_t groupCountY DEFAULT(1);  // Allways one workgroup on Y
+  uint32_t groupCountZ DEFAULT(1);  // Allways one workgroup on Z
 };
+
+#ifdef __cplusplus
+}  // namespace DH
+#endif
+
+#endif
