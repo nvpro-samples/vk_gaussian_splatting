@@ -548,6 +548,7 @@ bool GaussianSplatting::initShaders(void)
   prepends += nvh::stringFormat("#define FRUSTUM_CULLING_MODE %d\n", m_defines.frustumCulling);
   prepends += "#define ORTHOGRAPHIC_MODE 0\n";  // Disabled, TODO do we enable ortho cam in the UI/camera controller
   prepends += nvh::stringFormat("#define SHOW_SH_ONLY %d\n", m_defines.showShOnly);
+  prepends += nvh::stringFormat("#define MAX_SH_DEGREE %d\n", m_defines.maxShDegree);
 
   // generate the shader modules
   m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "dist.comp.glsl", prepends);

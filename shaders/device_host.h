@@ -51,13 +51,11 @@
 #define BINDING_SH_BUFFER 11
 
 #ifndef __cplusplus
-#define CHECK_STRUCT_ALIGNMENT(_s)
 // used to skip fields init
 // when included in glsl
 #define DEFAULT(val)
 #else
 #include <glm/glm.hpp>
-#define CHECK_STRUCT_ALIGNMENT(_s) static_assert(sizeof(_s) % 16 == 0)
 // used to assign fields defaults
 #define DEFAULT(val) = val
 namespace DH {
@@ -71,7 +69,7 @@ struct FrameInfo
   mat4 projectionMatrix;
   mat4 viewMatrix;
 
-  vec3  cameraPosition;
+  vec3                         cameraPosition;
   float inverseFocalAdjustment DEFAULT(1.0f);
 
   vec2 focal;
@@ -81,14 +79,13 @@ struct FrameInfo
   float orthoZoom      DEFAULT(1.0f);  // TODO ?
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
+  int splatCount                 DEFAULT(0);     //
   int pointCloudModeEnabled      DEFAULT(0);     // disabled, in [0,1]
-  int sphericalHarmonicsDegree   DEFAULT(2);     // in [0,1,2]
   int sphericalHarmonics8BitMode DEFAULT(0);     // disabled, in [0,1]
   float splatScale               DEFAULT(1.0f);  // in {0.1, 2.0}
 
-  int splatCount        DEFAULT(0);  // 
-  int sortingMethod     DEFAULT(SORTING_GPU_SYNC_RADIX);
-  float frustumDilation DEFAULT(0.2f);  // for frustum culling, 2% scale
+  int sortingMethod        DEFAULT(SORTING_GPU_SYNC_RADIX);
+  float frustumDilation    DEFAULT(0.2f);           // for frustum culling, 2% scale
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 

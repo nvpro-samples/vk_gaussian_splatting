@@ -111,14 +111,13 @@ void main()
   splatColor.b = 0.5;
 #endif
 
-  if(frameInfo.sphericalHarmonicsDegree >= 1)
-  {
+#if MAX_SH_DEGREE >= 1
     // SH coefficients for degree 1 (1,2,3)
     vec3 shd1[3];
     // SH coefficients for degree 2 (4 5 6 7 8)
     vec3 shd2[5];
     // fetch the data (only what is needed according to degree)
-    fetchSh(splatIndex, frameInfo.sphericalHarmonicsDegree, frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
+    fetchSh(splatIndex, frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
 
     const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
     const float x            = worldViewDir.x;
@@ -126,8 +125,7 @@ void main()
     const float z            = worldViewDir.z;
     splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
 
-    if(frameInfo.sphericalHarmonicsDegree >= 2)
-    {
+#if MAX_SH_DEGREE >= 2
       const float xx = x * x;
       const float yy = y * y;
       const float zz = z * z;
@@ -137,8 +135,8 @@ void main()
 
       splatColor.rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
                         + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
-    }
-  }
+#endif
+#endif
 
   // alpha based culling
   if(splatColor.a < frameInfo.alphaCullThreshold)

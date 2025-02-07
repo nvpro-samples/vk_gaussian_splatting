@@ -186,22 +186,22 @@ void GaussianSplatting::onUIRender()
   if(ImGui::Begin("Settings"))
   {
     //
-    if(ImGui::CollapsingHeader("Data format and storage", ImGuiTreeNodeFlags_DefaultOpen))
+    if(ImGui::CollapsingHeader("Data storage and format", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      if(ImGui::Button("Reset"))
+      if(ImGui::Button("Reset "))
         m_useDataTextures = false;
 
       PE::begin("##3DGS format");
 
-      if(PE::Checkbox("Use data textures", &m_useDataTextures))    
+      if(PE::Checkbox("Use data textures", &m_useDataTextures))
         m_updateData = true;
 
       PE::end();
     }
     //
-    if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      if(ImGui::Button("Reset"))
+      if (ImGui::Button("Reset"))
       {
         resetRenderSettings();
       }
@@ -209,22 +209,22 @@ void GaussianSplatting::onUIRender()
       PE::begin("##3DGS rendering");
 
       bool vsync = m_app->isVsync();
-      if(PE::Checkbox("V-Sync", &vsync))
+      if (PE::Checkbox("V-Sync", &vsync))
         m_app->setVsync(vsync);
 
-      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
+      if (PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
       {
-        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_DIST)
+        if (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_DIST)
         {
-          if(m_selectedPipeline == PIPELINE_MESH)
+          if (m_selectedPipeline == PIPELINE_MESH)
           {
             m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
-            m_updateShaders          = true;
+            m_updateShaders = true;
           }
-          else if(m_selectedPipeline == PIPELINE_VERT)
+          else if (m_selectedPipeline == PIPELINE_VERT)
           {
             m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
-            m_updateShaders          = true;
+            m_updateShaders = true;
           }
         }
       }
@@ -233,58 +233,58 @@ void GaussianSplatting::onUIRender()
       PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 
-      if(PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
+      if (PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); }))
       {
-        if(m_selectedPipeline == PIPELINE_MESH && m_defines.frustumCulling == FRUSTUM_CULLING_VERT)
+        if (m_selectedPipeline == PIPELINE_MESH && m_defines.frustumCulling == FRUSTUM_CULLING_VERT)
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
-        else if(m_selectedPipeline == PIPELINE_VERT && m_defines.frustumCulling == FRUSTUM_CULLING_MESH)
+        else if (m_selectedPipeline == PIPELINE_VERT && m_defines.frustumCulling == FRUSTUM_CULLING_MESH)
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
       }
 
       // Radio buttons for exclusive selection
       PE::entry("Frustum culling", [&]() {
-        if(ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
+        if (ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_NONE;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
 
         ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
-        if(ImGui::RadioButton("In distance shader", m_defines.frustumCulling == FRUSTUM_CULLING_DIST))
+        if (ImGui::RadioButton("In distance shader", m_defines.frustumCulling == FRUSTUM_CULLING_DIST))
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_DIST;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
         ImGui::EndDisabled();
 
         ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_VERT);
-        if(ImGui::RadioButton("In vertex shader", m_defines.frustumCulling == FRUSTUM_CULLING_VERT))
+        if (ImGui::RadioButton("In vertex shader", m_defines.frustumCulling == FRUSTUM_CULLING_VERT))
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_VERT;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
         ImGui::EndDisabled();
 
         ImGui::BeginDisabled(m_selectedPipeline != PIPELINE_MESH);
-        if(ImGui::RadioButton("In mesh shader", m_defines.frustumCulling == FRUSTUM_CULLING_MESH))
+        if (ImGui::RadioButton("In mesh shader", m_defines.frustumCulling == FRUSTUM_CULLING_MESH))
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_MESH;
-          m_updateShaders          = true;
+          m_updateShaders = true;
         }
         ImGui::EndDisabled();
         return true;
-      });
+        });
 
       PE::SliderFloat("Frustum dilation", &m_frameInfo.frustumDilation, 0.0f, 1.0f, "%.1f");
 
       int alphaThres = 255 * m_frameInfo.alphaCullThreshold;
-      if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
+      if (PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
       {
         m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
       }
@@ -292,7 +292,8 @@ void GaussianSplatting::onUIRender()
       // we set a different size range for point and splat rendering
       PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
 
-      PE::SliderInt("Maximum SH degree", (int*)&m_frameInfo.sphericalHarmonicsDegree, 0, 2);
+      if( PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 2))
+        m_updateShaders = true;
 
       if (PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))
         m_updateShaders = true;
