@@ -20,8 +20,10 @@
 // Vulkan Memory Allocator
 #define VMA_IMPLEMENTATION
 
-#include <gaussian_splatting.h>
+#include "gaussian_splatting.h"
+
 #include <nvh/misc.hpp>
+#include <glm/gtc/packing.hpp>  // Required for half-float operations
 
 //
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
@@ -549,6 +551,7 @@ bool GaussianSplatting::initShaders(void)
   prepends += "#define ORTHOGRAPHIC_MODE 0\n";  // Disabled, TODO do we enable ortho cam in the UI/camera controller
   prepends += nvh::stringFormat("#define SHOW_SH_ONLY %d\n", m_defines.showShOnly);
   prepends += nvh::stringFormat("#define MAX_SH_DEGREE %d\n", m_defines.maxShDegree);
+  prepends += nvh::stringFormat("#define SH_FORMAT %d\n", m_defines.shFormat);
   prepends += nvh::stringFormat("#define POINT_CLOUD_MODE %d\n", m_defines.pointCloudModeEnabled);
   
   // generate the shader modules
@@ -840,6 +843,21 @@ void GaussianSplatting::deinitVkBuffers()
   });
 }
 
+inline uint8_t toUint8(float v, float rangeMin, float rangeMax)
+{
+  float normalized = (v - rangeMin) / (rangeMax - rangeMin);
+  return static_cast<uint8_t>(std::clamp(std::round(normalized * 255.0f), 0.0f, 255.0f));
+};
+
+int formatSize(uint32_t format) {
+  if(format == FORMAT_FLOAT32)
+    return 4;
+  if(format == FORMAT_FLOAT16)
+    return 2;
+  if(format == FORMAT_UINT8)
+    return 1;
+}
+
 ///////////////////
 // using data buffers to store splatset in VRAM
 
@@ -1019,7 +1037,7 @@ void GaussianSplatting::initDataBuffers(void)
     int targetSplatStride = splatStride;  // same for the time beeing, would be less if we do not upload all src degrees
 
     // allocate host and device buffers
-    const uint32_t bufferSize = splatCount * splatStride * sizeof(float);
+    const uint32_t bufferSize = splatCount * splatStride * formatSize(m_defines.shFormat);
 
     nvvk::Buffer hostBuffer = m_alloc->createBuffer(bufferSize, hostBufferUsageFlags, hostMemoryPropertyFlags);
 
@@ -1027,7 +1045,10 @@ void GaussianSplatting::initDataBuffers(void)
     m_dutil->DBG_NAME(m_sphericalHarmonicsDevice.buffer);
 
     // fill host buffer
-    float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
+    void* hostBufferMapped = m_alloc->map(hostBuffer);
+
+    float minSh = std::numeric_limits<float>::max();
+    float maxSh = std::numeric_limits<float>::min();
 
     for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     {
@@ -1042,7 +1063,16 @@ void GaussianSplatting::initDataBuffers(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
+          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
+
+          if(m_defines.shFormat == FORMAT_FLOAT32)
+            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
+          else if(m_defines.shFormat == FORMAT_FLOAT16)
+            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
+          else if(m_defines.shFormat == FORMAT_UINT8)
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
+
         }
       }
 
@@ -1054,7 +1084,15 @@ void GaussianSplatting::initDataBuffers(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
+          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
+
+          if(m_defines.shFormat == FORMAT_FLOAT32)
+            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
+          else if(m_defines.shFormat == FORMAT_FLOAT16)
+            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
+          else if(m_defines.shFormat == FORMAT_UINT8)
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
         }
       }
       // degree 3, seven coefs per component
@@ -1065,7 +1103,15 @@ void GaussianSplatting::initDataBuffers(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          hostBufferMapped[dstIndex] = m_splatSet.f_rest[srcIndex];
+          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
+          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
+
+          if(m_defines.shFormat == FORMAT_FLOAT32)
+            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
+          else if(m_defines.shFormat == FORMAT_FLOAT16)
+            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
+          else if(m_defines.shFormat == FORMAT_UINT8)
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
         }
       }
     }

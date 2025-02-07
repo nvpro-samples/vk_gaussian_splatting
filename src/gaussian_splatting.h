@@ -229,7 +229,8 @@ private:  // Methods
   {
     GUI_SORTING,         // the sorting method to use
     GUI_PIPELINE,        // the rendering pipeline to use
-    GUI_FRUSTUM_CULLING  // where to perform frustum culling (or disabled)
+    GUI_FRUSTUM_CULLING, // where to perform frustum culling (or disabled)
+    GUI_SH_FORMAT        // data format for storage of SH in VRAM
   };
 
   // initialize UI specifics 
@@ -345,6 +346,7 @@ private:  // Attributes
     bool showShOnly              = false;
     int  maxShDegree             = 2;  // in[0,1,2]
     bool pointCloudModeEnabled   = false;
+    int  shFormat                = FORMAT_FLOAT32;
   } m_defines;
 
   // Pipelines

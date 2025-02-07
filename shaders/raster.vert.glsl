@@ -117,7 +117,7 @@ void main()
     // SH coefficients for degree 2 (4 5 6 7 8)
     vec3 shd2[5];
     // fetch the data (only what is needed according to degree)
-    fetchSh(splatIndex, frameInfo.sphericalHarmonics8BitMode, shd1, shd2);
+    fetchSh(splatIndex, shd1, shd2);
 
     const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
     const float x            = worldViewDir.x;

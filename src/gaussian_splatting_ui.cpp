@@ -53,8 +53,12 @@ void GaussianSplatting::initGui()
   // m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX,  "Ray tracing", true);  // disabled for the time being, not implemented
   // Sorting method selector
   m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
-  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono");
+  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono"); // TODO
   m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
+  // 
+  m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT32, "Float 32");
+  m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT16, "Float 16");
+  m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_UINT8, "Uint8");
 }
 
 void GaussianSplatting::onUIRender()
@@ -189,13 +193,18 @@ void GaussianSplatting::onUIRender()
     if(ImGui::CollapsingHeader("Data storage and format", ImGuiTreeNodeFlags_DefaultOpen))
     {
       if(ImGui::Button("Reset "))
+      {
         m_useDataTextures = false;
-
+      }
       PE::begin("##3DGS format");
-
       if(PE::Checkbox("Use data textures", &m_useDataTextures))
+      {
         m_updateData = true;
-
+      }
+      if(PE::entry("SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &m_defines.shFormat); }))
+      {
+        m_updateData = true;
+      }
       PE::end();
     }
     //

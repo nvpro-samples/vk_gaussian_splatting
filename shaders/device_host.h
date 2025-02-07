@@ -35,6 +35,11 @@
 #define FRUSTUM_CULLING_AT_DIST 1
 #define FRUSTUM_CULLING_AT_RASTER 2
 
+// format for SH storage
+#define FORMAT_FLOAT32 0
+#define FORMAT_FLOAT16 1
+#define FORMAT_UINT8   2
+
 // bindings for set 0
 #define BINDING_FRAME_INFO_UBO 0
 #define BINDING_CENTERS_TEXTURE 1
@@ -78,12 +83,11 @@ struct FrameInfo
   float orthoZoom      DEFAULT(1.0f);  // TODO ?
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
-  int splatCount                 DEFAULT(0);     //
-  int sphericalHarmonics8BitMode DEFAULT(0);     // disabled, in [0,1]
-  float splatScale               DEFAULT(1.0f);  // in {0.1, 2.0}
-  int sortingMethod        DEFAULT(SORTING_GPU_SYNC_RADIX);
+  int splatCount        DEFAULT(0);     //
+  float splatScale      DEFAULT(1.0f);  // in {0.1, 2.0}
+  int sortingMethod     DEFAULT(SORTING_GPU_SYNC_RADIX);
+  float frustumDilation DEFAULT(0.2f);  // for frustum culling, 2% scale
 
-  float frustumDilation    DEFAULT(0.2f);           // for frustum culling, 2% scale
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 

@@ -41,7 +41,19 @@ layout(set = 0, binding = BINDING_COVARIANCES_BUFFER) buffer _covariancesBuffer
 };
 layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
 {
+#if SH_FORMAT == FORMAT_FLOAT32
   float sphericalHarmonicsBuffer[];
+#else 
+  #if SH_FORMAT == FORMAT_FLOAT16
+  float16_t sphericalHarmonicsBuffer[];
+  #else 
+    #if SH_FORMAT == FORMAT_UINT8
+      uint8_t sphericalHarmonicsBuffer[];
+    #else
+    #error "Unsupported SH format"
+    #endif
+   #endif
+#endif
 };
 #endif
 
@@ -98,11 +110,10 @@ vec4 fetchColor(in uint splatIndex)
 #endif
 
 #ifdef USE_DATA_TEXTURES
-void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
+void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
-  const float SphericalHarmonics8BitCompressionRange     = 3.0;
-  const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
-  const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
+  const float SphericalHarmonics8BitCompressionRange = 3.0;
+  const vec3  vec8BitSHShift                         = vec3(SphericalHarmonics8BitCompressionRange / 2.0);
 
   // fetching degree 1
   const vec4 sampledSH0123 =
@@ -116,18 +127,15 @@ void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 
   const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
   const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
 
-  if(format8bit == 0)
-  {
+#if SH_FORMAT != FORMAT_UINT8
     shd1[0] = sh1;
     shd1[1] = sh2;
     shd1[2] = sh3;
-  }
-  else
-  {
+#else
     shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-  }
+#endif
 
   // fetching degree 2
 #if MAX_SH_DEGREE >= 2
@@ -144,26 +152,23 @@ void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 
   const vec3 sh7 = vec3(sampledSH16171819.ba, sampledSH20212223.r);
   const vec3 sh8 = sampledSH20212223.gba;
 
-  if(format8bit == 0)
-  {
-    shd2[0] = sh4;
-    shd2[1] = sh5;
-    shd2[2] = sh6;
-    shd2[3] = sh7;
-    shd2[4] = sh8;
-  }
-  else
-  {
-    shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-  }
+#if SH_FORMAT != FORMAT_UINT8
+  shd2[0] = sh4;
+  shd2[1] = sh5;
+  shd2[2] = sh6;
+  shd2[3] = sh7;
+  shd2[4] = sh8;
+#else
+  shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+#endif
 #endif
 }
 #else
-void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 shd2[5])
+void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
   const uint splatStride = 45; // three degrees in memory, but we only fetch degrees 1 and 2
 
@@ -184,18 +189,15 @@ void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 
                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 1],
                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 2]);
 
-  if(format8bit == 0)
-  {
+#if SH_FORMAT != FORMAT_UINT8
     shd1[0] = sh1;
     shd1[1] = sh2;
     shd1[2] = sh3;
-  }
-  else
-  {
+#else
     shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-  }
+#endif
 
   // fetching degree 2
 #if MAX_SH_DEGREE >= 2
@@ -219,22 +221,19 @@ void fetchSh(in uint splatIndex, in uint format8bit, out vec3 shd1[3], out vec3 
                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 1],
                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 2]);
 
-  if(format8bit == 0)
-  {
+#if SH_FORMAT != FORMAT_UINT8
     shd2[0] = sh4;
     shd2[1] = sh5;
     shd2[2] = sh6;
     shd2[3] = sh7;
     shd2[4] = sh8;
-  }
-  else
-  {
+#else
     shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
     shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-  }
+#endif
 #endif
 }
 #endif
