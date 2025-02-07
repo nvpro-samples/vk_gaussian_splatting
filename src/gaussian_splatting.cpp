@@ -534,6 +534,8 @@ void GaussianSplatting::deinitScene()
 
 bool GaussianSplatting::initShaders(void)
 {
+  auto startTime = std::chrono::high_resolution_clock::now();
+
   // blank page
   deinitShaders();
 
@@ -556,6 +558,10 @@ bool GaussianSplatting::initShaders(void)
     m_shaderManager.deleteShaderModules();
     return false;
   }
+  auto      endTime  = std::chrono::high_resolution_clock::now();
+  long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+  std::cout << "Shaders updated in " << buildTime << "ms" << std::endl;
+
   return true;
 }
 
@@ -835,6 +841,8 @@ void GaussianSplatting::deinitVkBuffers()
 
 void GaussianSplatting::initDataBuffers(void)
 {
+  auto       startTime  = std::chrono::high_resolution_clock::now();
+
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
   //
@@ -1098,6 +1106,10 @@ void GaussianSplatting::initDataBuffers(void)
                                + m_modelMemoryStats.odevShOther;
   m_modelMemoryStats.devAll =
       m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+
+  auto      endTime   = std::chrono::high_resolution_clock::now();
+  long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+  std::cout << "Data buffers updated in " << buildTime << "ms" << std::endl;
 }
 
 void GaussianSplatting::deinitDataBuffers()
@@ -1142,6 +1154,8 @@ void GaussianSplatting::deinitTexture(nvvk::Texture& texture)
 
 void GaussianSplatting::initDataTextures(void)
 {
+  auto       startTime  = std::chrono::high_resolution_clock::now();
+
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
   // create a texture sampler using nearest filtering mode.
@@ -1328,6 +1342,10 @@ void GaussianSplatting::initDataTextures(void)
                                + m_modelMemoryStats.odevShOther;
   m_modelMemoryStats.devAll =
       m_modelMemoryStats.devCenters + m_modelMemoryStats.devCov + m_modelMemoryStats.devSh0 + m_modelMemoryStats.devShOther;
+
+  auto      endTime   = std::chrono::high_resolution_clock::now();
+  long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+  std::cout << "Data textures updated in " << buildTime << "ms" << std::endl;
 }
 
 void GaussianSplatting::deinitDataTextures()

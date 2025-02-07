@@ -204,9 +204,10 @@ private:  // Methods
     m_frameInfo.sphericalHarmonics8BitMode = 0;     // disabled, in {0,1}
     m_frameInfo.showShOnly                 = 0;     // disabled, in {0,1}
     m_frameInfo.sortingMethod              = SORTING_GPU_SYNC_RADIX;
+    m_frameInfo.frustumDilation            = 0.2f;  // 2% scale
+    m_frameInfo.alphaCullThreshold         = 1.0f / 255.0f; //
     //
-    m_defines.frustumCulling          = FRUSTUM_CULLING_DIST;
-    m_defines.opacityGaussianDisabled = false;
+    m_defines = {};
   }
 
   // reset the memory usage stats
@@ -352,8 +353,8 @@ private:  // Attributes
   // and prepend to the shader code by initShaders
   struct ShaderDefines
   {
-    int  frustumCulling          = FRUSTUM_CULLING_DIST;
-    bool opacityGaussianDisabled = false;
+    int   frustumCulling          = FRUSTUM_CULLING_DIST;
+    bool  opacityGaussianDisabled = false;
   } m_defines;
 
   // Pipelines

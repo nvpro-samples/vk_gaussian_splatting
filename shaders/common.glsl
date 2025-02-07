@@ -49,8 +49,6 @@ layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
 // constants
 
 const float sqrt8    = sqrt(8.0);
-const float minAlpha = 1.0 / 255.0;
-
 const float SH_C1    = 0.4886025119029199f;
 const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
 

@@ -286,6 +286,12 @@ void GaussianSplatting::onUIRender()
           return true;
         });
 
+        PE::SliderFloat("Frustum dilation", &m_frameInfo.frustumDilation, 0.0f, 1.0f, "%.1f");
+
+        int alphaThres = 255 * m_frameInfo.alphaCullThreshold;
+        if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
+          m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
+
         PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f,
                         m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f  // we set a different size range for point and splat rendering
         );

@@ -53,22 +53,21 @@ void main()
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
   // the culling is not good since we only take into account
   // the center of each splat instead of its extent.
-  // for the time being we just add 0.2 to the NDC as a margin which
-  // make the job with most models
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_DIST
-  if( abs(pos.x) <= 1.2f && abs(pos.y) <= 1.2f && pos.z >= 0.f && pos.z <= 1.f)
+  const float clip = 1.0f + frameInfo.frustumDilation;
+  if(abs(pos.x) > clip || abs(pos.y) > clip || pos.z < 0.f - frameInfo.frustumDilation || pos.z > 1.0)
+    return;
 #endif
+  
+  // increments the visible splat counter in the indirect buffer (second entry of the array)
+  const uint instance_index = atomicAdd(indirect.instanceCount, 1);
+  // stores the distance
+  distances[instance_index] = encodeMinMaxFp32(-depth);
+  // stores the base index
+  indices[instance_index] = id;
+  // set the workgroup count for the mesh shading pipeline
+  if(instance_index % 32 == 0)
   {
-    // increments the visible splat counter in the indirect buffer (second entry of the array)
-    const uint instance_index = atomicAdd(indirect.instanceCount, 1);
-    // stores the distance
-    distances[instance_index] = encodeMinMaxFp32(-depth);
-    // stores the base index
-    indices[instance_index] = id;
-    // set the workgroup count for the mesh shading pipeline
-    if(instance_index % 32 == 0)
-    {
-      atomicAdd(indirect.groupCountX, 1);
-    }
+    atomicAdd(indirect.groupCountX, 1);
   }
 }

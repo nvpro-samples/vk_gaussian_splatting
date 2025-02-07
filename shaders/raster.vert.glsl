@@ -86,9 +86,11 @@ void main()
 
   const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
 
-  const float clip = 1.2 * clipCenter.w;
-#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_MESH
-  if (clipCenter.z < -clip || clipCenter.x < -clip || clipCenter.x > clip || clipCenter.y < -clip || clipCenter.y > clip)
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_VERT
+  const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
+  if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
+     || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w
+     || clipCenter.z > clipCenter.w)
   {
     // emit same vertex to get degenerate triangle
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -139,6 +141,14 @@ void main()
     }
   }
 
+  // alpha based culling
+  if(splatColor.a < frameInfo.alphaCullThreshold)
+  {
+    // emit same vertex to get degenerate triangle
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    return;
+  }
+
   // emit as early as possible for perf reasons
   outFragCol = splatColor;
 
@@ -167,32 +177,8 @@ void main()
 
   // Transform the 3D covariance matrix (Vrk) to compute the 2D covariance matrix
   mat3 cov2Dm = transpose(T) * Vrk * T;
-
-  const bool antialiased = false;
-  if(antialiased)
-  {
-    const float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
-    cov2Dm[0][0] += 0.3;
-    cov2Dm[1][1] += 0.3;
-    const float detBlur      = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
-    const float compensation = sqrt(max(detOrig / detBlur, 0.0));
-    splatColor.a *= compensation;
-    // overwrite
-    outFragCol = splatColor;
-  }
-  else
-  {
-    cov2Dm[0][0] += 0.3;
-    cov2Dm[1][1] += 0.3;
-  }
-
-  // alpha based culling
-  if(splatColor.a < minAlpha)
-  {
-    // emit same vertex to get degenerate triangle
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    return;
-  }
+  cov2Dm[0][0] += 0.3;
+  cov2Dm[1][1] += 0.3;
 
   // We are interested in the upper-left 2x2 portion of the projected 3D covariance matrix because
   // we only care about the X and Y values. We want the X-diagonal, cov2Dm[0][0],

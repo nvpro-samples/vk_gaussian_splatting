@@ -70,9 +70,11 @@ struct FrameInfo
   int   sphericalHarmonics8BitMode;  // unused
   float splatScale;
 
-  int showShOnly;
-  int splatCount;
-  int sortingMethod;
+  int   showShOnly;
+  int   splatCount;
+  int   sortingMethod;
+  float frustumDilation;  // for frustum culling
+  float alphaCullThreshold; // for alpha culling
 
 };
 
