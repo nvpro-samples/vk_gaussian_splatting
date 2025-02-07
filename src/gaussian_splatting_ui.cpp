@@ -204,6 +204,7 @@ void GaussianSplatting::onUIRender()
       if (ImGui::Button("Reset"))
       {
         resetRenderSettings();
+        m_updateShaders = true;
       }
 
       PE::begin("##3DGS rendering");
@@ -260,7 +261,7 @@ void GaussianSplatting::onUIRender()
       }
 
       // we set a different size range for point and splat rendering
-      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_frameInfo.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
+      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
 
       if( PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 2))
         m_updateShaders = true;
@@ -268,9 +269,8 @@ void GaussianSplatting::onUIRender()
       if (PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))
         m_updateShaders = true;
 
-      bool disableSplatting = m_frameInfo.pointCloudModeEnabled != 0;
-      if(PE::Checkbox("Disable splatting", &disableSplatting))
-        m_frameInfo.pointCloudModeEnabled = disableSplatting ? 1 : 0;
+      if(PE::Checkbox("Disable splatting", &m_defines.pointCloudModeEnabled))
+        m_updateShaders = true;
 
       if(PE::Checkbox("Disable opacity gaussian ", &m_defines.opacityGaussianDisabled))
         m_updateShaders = true;

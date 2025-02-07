@@ -79,11 +79,10 @@ struct FrameInfo
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
   int splatCount                 DEFAULT(0);     //
-  int pointCloudModeEnabled      DEFAULT(0);     // disabled, in [0,1]
   int sphericalHarmonics8BitMode DEFAULT(0);     // disabled, in [0,1]
   float splatScale               DEFAULT(1.0f);  // in {0.1, 2.0}
-
   int sortingMethod        DEFAULT(SORTING_GPU_SYNC_RADIX);
+
   float frustumDilation    DEFAULT(0.2f);           // for frustum culling, 2% scale
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };

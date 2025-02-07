@@ -344,6 +344,7 @@ private:  // Attributes
     bool opacityGaussianDisabled = false;
     bool showShOnly              = false;
     int  maxShDegree             = 2;  // in[0,1,2]
+    bool pointCloudModeEnabled   = false;
   } m_defines;
 
   // Pipelines

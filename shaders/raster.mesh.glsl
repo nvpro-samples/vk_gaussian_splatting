@@ -239,11 +239,6 @@ void main()
     float       eigenValue1 = traceOver2 + term2;
     float       eigenValue2 = traceOver2 - term2;
 
-    if(frameInfo.pointCloudModeEnabled == 1)
-    {
-      eigenValue1 = eigenValue2 = 0.2;
-    }
-
     // from original code
     if(eigenValue2 <= 0.0)
     {
@@ -254,6 +249,10 @@ void main()
       gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       return;
     }
+
+#if POINT_CLOUD_MODE
+    eigenValue1 = eigenValue2 = 0.2;
+#endif
 
     const vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
     // since the eigen vectors are orthogonal, we derive the second one from the first
