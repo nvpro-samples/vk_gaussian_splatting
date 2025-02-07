@@ -31,6 +31,7 @@ int main(int argc, char** argv)
   vkSetup.addDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
   vkSetup.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesNV);
   vkSetup.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesEXT);
+  vkSetup.addDeviceExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME); // for ImGui
   vkSetup.addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   nvvkhl::addSurfaceExtensions(vkSetup.instanceExtensions);
   
