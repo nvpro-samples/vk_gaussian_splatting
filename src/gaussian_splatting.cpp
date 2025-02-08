@@ -856,6 +856,7 @@ int formatSize(uint32_t format) {
     return 2;
   if(format == FORMAT_UINT8)
     return 1;
+  return 0;
 }
 
 ///////////////////
@@ -1071,7 +1072,7 @@ void GaussianSplatting::initDataBuffers(void)
           else if(m_defines.shFormat == FORMAT_FLOAT16)
             static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
           else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
 
         }
       }
@@ -1092,7 +1093,7 @@ void GaussianSplatting::initDataBuffers(void)
           else if(m_defines.shFormat == FORMAT_FLOAT16)
             static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
           else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
         }
       }
       // degree 3, seven coefs per component
@@ -1111,7 +1112,7 @@ void GaussianSplatting::initDataBuffers(void)
           else if(m_defines.shFormat == FORMAT_FLOAT16)
             static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
           else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1.5, 1.5);
+            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
         }
       }
     }

@@ -112,7 +112,7 @@ vec4 fetchColor(in uint splatIndex)
 #ifdef USE_DATA_TEXTURES
 void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
-  const float SphericalHarmonics8BitCompressionRange = 3.0;
+  const float SphericalHarmonics8BitCompressionRange = 2.0;
   const vec3  vec8BitSHShift                         = vec3(SphericalHarmonics8BitCompressionRange / 2.0);
 
   // fetching degree 1
@@ -132,9 +132,9 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
     shd1[1] = sh2;
     shd1[2] = sh3;
 #else
-    shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
 #endif
 
   // fetching degree 2
@@ -172,9 +172,10 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
   const uint splatStride = 45; // three degrees in memory, but we only fetch degrees 1 and 2
 
-  const float SphericalHarmonics8BitCompressionRange     = 3.0;
+  const float SphericalHarmonics8BitCompressionRange     = 2.0;
   const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
   const vec3  vec8BitSHShift                             = vec3(SphericalHarmonics8BitCompressionHalfRange);
+  const float SphericalHarmonics8BitScale                = SphericalHarmonics8BitCompressionRange / 255.0f;
 
   // fetching degree 1
   const vec3 sh1 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 0 + 0],
@@ -194,9 +195,9 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
     shd1[1] = sh2;
     shd1[2] = sh3;
 #else
-    shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd1[2] = sh3 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd1[0] = sh1 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd1[1] = sh2 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd1[2] = sh3 * SphericalHarmonics8BitScale - vec8BitSHShift;
 #endif
 
   // fetching degree 2
@@ -228,11 +229,11 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
     shd2[3] = sh7;
     shd2[4] = sh8;
 #else
-    shd2[0] = sh4 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[1] = sh5 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[2] = sh6 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[3] = sh7 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
-    shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+    shd2[0] = sh4 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd2[1] = sh5 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd2[2] = sh6 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd2[3] = sh7 * SphericalHarmonics8BitScale - vec8BitSHShift;
+    shd2[4] = sh8 * SphericalHarmonics8BitScale - vec8BitSHShift;
 #endif
 #endif
 }
