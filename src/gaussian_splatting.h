@@ -181,7 +181,7 @@ private:  // Methods
   void deinitTexture(nvvk::Texture& texture);
 
   // Utility function to compute the texture size according to the size of the data to be stored
-  // By default use map of 4K Width and 1K heightn then adjust the height according to the data size
+  // By default use map of 4K Width and 1K height then adjust the height according to the data size
   inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount, glm::ivec2 texSize = {4096, 1024} )
   {
     while(texSize.x * texSize.y * elementsPerTexel < maxSplatCount * elementsPerSplat)

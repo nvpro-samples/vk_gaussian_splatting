@@ -43,16 +43,16 @@ layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
 {
 #if SH_FORMAT == FORMAT_FLOAT32
   float sphericalHarmonicsBuffer[];
-#else 
-  #if SH_FORMAT == FORMAT_FLOAT16
+#else
+#if SH_FORMAT == FORMAT_FLOAT16
   float16_t sphericalHarmonicsBuffer[];
-  #else 
-    #if SH_FORMAT == FORMAT_UINT8
-      uint8_t sphericalHarmonicsBuffer[];
-    #else
-    #error "Unsupported SH format"
-    #endif
-   #endif
+#else
+#if SH_FORMAT == FORMAT_UINT8
+  uint8_t sphericalHarmonicsBuffer[];
+#else
+#error "Unsupported SH format"
+#endif
+#endif
 #endif
 };
 #endif
@@ -90,7 +90,7 @@ vec3 fetchCenter(in uint splatIndex)
 // fetch center value from data buffer
 vec3 fetchCenter(in uint splatIndex)
 {
-  return vec3(centersBuffer[splatIndex*3+0],centersBuffer[splatIndex*3+1],centersBuffer[splatIndex*3+2]);
+  return vec3(centersBuffer[splatIndex * 3 + 0], centersBuffer[splatIndex * 3 + 1], centersBuffer[splatIndex * 3 + 2]);
 }
 #endif
 
@@ -110,6 +110,7 @@ vec4 fetchColor(in uint splatIndex)
 #endif
 
 #ifdef USE_DATA_TEXTURES
+// fetch from data textures
 void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
   const float SphericalHarmonics8BitCompressionRange = 2.0;
@@ -128,9 +129,9 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
   const vec3 sh3 = vec3(sampledSH4567.ba, sampledSH891011.r);
 
 #if SH_FORMAT != FORMAT_UINT8
-    shd1[0] = sh1;
-    shd1[1] = sh2;
-    shd1[2] = sh3;
+  shd1[0] = sh1;
+  shd1[1] = sh2;
+  shd1[2] = sh3;
 #else
   shd1[0] = sh1 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
   shd1[1] = sh2 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
@@ -168,9 +169,10 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 #endif
 }
 #else
+// fetch from data buffers
 void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
-  const uint splatStride = 45; // three degrees in memory, but we only fetch degrees 1 and 2
+  const uint splatStride = 45;  // three degrees in memory, but we only fetch degrees 1 and 2
 
   const float SphericalHarmonics8BitCompressionRange     = 2.0;
   const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
@@ -183,21 +185,21 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 0 + 2]);
 
   const vec3 sh2 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 0],
-                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 1],
-                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 2]);
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 1],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 1 + 2]);
 
   const vec3 sh3 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 0],
-                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 1],
-                       sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 2]);
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 1],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 2 + 2]);
 
 #if SH_FORMAT != FORMAT_UINT8
-    shd1[0] = sh1;
-    shd1[1] = sh2;
-    shd1[2] = sh3;
+  shd1[0] = sh1;
+  shd1[1] = sh2;
+  shd1[2] = sh3;
 #else
-    shd1[0] = sh1 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd1[1] = sh2 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd1[2] = sh3 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd1[0] = sh1 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd1[1] = sh2 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd1[2] = sh3 * SphericalHarmonics8BitScale - vec8BitSHShift;
 #endif
 
   // fetching degree 2
@@ -223,17 +225,17 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 7 + 2]);
 
 #if SH_FORMAT != FORMAT_UINT8
-    shd2[0] = sh4;
-    shd2[1] = sh5;
-    shd2[2] = sh6;
-    shd2[3] = sh7;
-    shd2[4] = sh8;
+  shd2[0] = sh4;
+  shd2[1] = sh5;
+  shd2[2] = sh6;
+  shd2[3] = sh7;
+  shd2[4] = sh8;
 #else
-    shd2[0] = sh4 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd2[1] = sh5 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd2[2] = sh6 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd2[3] = sh7 * SphericalHarmonics8BitScale - vec8BitSHShift;
-    shd2[4] = sh8 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd2[0] = sh4 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd2[1] = sh5 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd2[2] = sh6 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd2[3] = sh7 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd2[4] = sh8 * SphericalHarmonics8BitScale - vec8BitSHShift;
 #endif
 #endif
 }
@@ -264,7 +266,7 @@ mat3 fetchCovariance(in uint splatIndex)
       vec3(sampledCovarianceA.a, sampledCovarianceB.rg) * (1.0 - fOddOffset) + vec3(sampledCovarianceB.gba) * fOddOffset;
 
   return mat3(cov3D_M11_M12_M13.x, cov3D_M11_M12_M13.y, cov3D_M11_M12_M13.z, cov3D_M11_M12_M13.y, cov3D_M22_M23_M33.x,
-       cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
+              cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 }
 #else
 mat3 fetchCovariance(in uint splatIndex)

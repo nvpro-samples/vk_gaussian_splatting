@@ -849,7 +849,7 @@ inline uint8_t toUint8(float v, float rangeMin, float rangeMax)
   return static_cast<uint8_t>(std::clamp(std::round(normalized * 255.0f), 0.0f, 255.0f));
 };
 
-int formatSize(uint32_t format) {
+inline int formatSize(uint32_t format) {
   if(format == FORMAT_FLOAT32)
     return 4;
   if(format == FORMAT_FLOAT16)
@@ -857,6 +857,16 @@ int formatSize(uint32_t format) {
   if(format == FORMAT_UINT8)
     return 1;
   return 0;
+}
+
+inline void storeSh(int format, float* srcBuffer, uint32_t srcIndex, void* dstBuffer, uint32_t dstIndex)
+{
+  if(format == FORMAT_FLOAT32)
+    static_cast<float*>(dstBuffer)[dstIndex] = srcBuffer[srcIndex];
+  else if(format == FORMAT_FLOAT16)
+    static_cast<uint16_t*>(dstBuffer)[dstIndex] = glm::packHalf1x16(srcBuffer[srcIndex]);
+  else if(format == FORMAT_UINT8)
+    static_cast<uint8_t*>(dstBuffer)[dstIndex] = toUint8(srcBuffer[srcIndex], -1., 1.);
 }
 
 ///////////////////
@@ -1008,7 +1018,7 @@ void GaussianSplatting::initDataBuffers(void)
 
     // memory statistics
     m_modelMemoryStats.srcSh0  = bufferSize;
-    m_modelMemoryStats.odevSh0 = bufferSize;  // no compression or quantization
+    m_modelMemoryStats.odevSh0 = bufferSize;  
     m_modelMemoryStats.devSh0  = bufferSize;
   }
 
@@ -1067,13 +1077,7 @@ void GaussianSplatting::initDataBuffers(void)
           minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
           maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
 
-          if(m_defines.shFormat == FORMAT_FLOAT32)
-            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
-          else if(m_defines.shFormat == FORMAT_FLOAT16)
-            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
-          else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
-
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
       }
 
@@ -1088,12 +1092,7 @@ void GaussianSplatting::initDataBuffers(void)
           minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
           maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
 
-          if(m_defines.shFormat == FORMAT_FLOAT32)
-            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
-          else if(m_defines.shFormat == FORMAT_FLOAT16)
-            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
-          else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
       }
       // degree 3, seven coefs per component
@@ -1107,12 +1106,7 @@ void GaussianSplatting::initDataBuffers(void)
           minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
           maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
 
-          if(m_defines.shFormat == FORMAT_FLOAT32)
-            static_cast<float*>(hostBufferMapped)[dstIndex] = m_splatSet.f_rest[srcIndex];
-          else if(m_defines.shFormat == FORMAT_FLOAT16)
-            static_cast<uint16_t*>(hostBufferMapped)[dstIndex] = glm::packHalf1x16(m_splatSet.f_rest[srcIndex]);
-          else if(m_defines.shFormat == FORMAT_UINT8)
-            static_cast<uint8_t*>(hostBufferMapped)[dstIndex] = toUint8(m_splatSet.f_rest[srcIndex], -1., 1.);
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
       }
     }
@@ -1165,13 +1159,10 @@ void GaussianSplatting::initDataBuffers(void)
 
 void GaussianSplatting::deinitDataBuffers()
 {
-  // will delete at next frame
-  m_app->submitResourceFree([this]() {
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_centersDevice));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_sphericalHarmonicsDevice));
-  });
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_centersDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_sphericalHarmonicsDevice));
 }
 
 ///////////////////
@@ -1209,7 +1200,8 @@ void GaussianSplatting::initDataTextures(void)
 
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
-  // create a texture sampler using nearest filtering mode.
+  // will create a texture sampler using nearest filtering mode foe each texture map
+  // samplers will be released by texture destruction.
   VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
   sampler_info.magFilter  = VK_FILTER_NEAREST;
   sampler_info.minFilter  = VK_FILTER_NEAREST;
@@ -1328,8 +1320,12 @@ void GaussianSplatting::initDataTextures(void)
     glm::ivec2 mapSize =
         computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
 
-    std::vector<float> paddedSHArray(mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel, 0.0f);
+    const uint32_t bufferSize = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * formatSize(m_defines.shFormat);
 
+    std::vector<uint8_t> paddedSHArray(bufferSize, 0);
+
+    void* data = (void*)paddedSHArray.data();
+    
     for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     {
       const auto srcBase   = totalSphericalHarmonicsComponentCount * splatIdx;
@@ -1343,7 +1339,7 @@ void GaussianSplatting::initDataTextures(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, data, dstIndex);
         }
       }
 
@@ -1355,31 +1351,44 @@ void GaussianSplatting::initDataTextures(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, data, dstIndex);
         }
       }
-      /*
-      // degree 3 TODO
+      // degree 3, seven coefs per component
       for(auto i = 0; i < 7; i++)
       {
         for(auto rgb = 0; rgb < 3; rgb++)
         {
-          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 8 + i);
-          const auto dstIndex = destBase + 24 + (i * 3 + rgb);
-        
-          paddedSHArray[dstIndex] = m_splatSet.f_rest[srcIndex];
+          const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
+          const auto dstIndex = destBase + dstOffset++;  // inc after add
+
+          storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, data, dstIndex);
         }
       }
-      */
     }
 
     // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)paddedSHArray.size() * sizeof(float), (void*)paddedSHArray.data(),
-                VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+    if(m_defines.shFormat == FORMAT_FLOAT32)
+    {
+      initTexture(mapSize.x, mapSize.y, bufferSize, data,
+                  VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+    }
+    else if(m_defines.shFormat == FORMAT_FLOAT16)
+    {
+
+      initTexture(mapSize.x, mapSize.y, bufferSize, data,
+                  VK_FORMAT_R16G16B16A16_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+    }
+    else if(m_defines.shFormat == FORMAT_UINT8)
+    {
+      initTexture(mapSize.x, mapSize.y, bufferSize, data,
+                  VK_FORMAT_R8G8B8A8_UNORM, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+    }
+    
     // memory statistics
     m_modelMemoryStats.srcShOther  = (uint32_t)m_splatSet.f_rest.size() * sizeof(float);
-    m_modelMemoryStats.odevShOther = splatCount * 8 * 3 * sizeof(float);  // we only use Sh1 and SH2 for now
-    m_modelMemoryStats.devShOther  = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * sizeof(float);
+    m_modelMemoryStats.odevShOther = (uint32_t)m_splatSet.f_rest.size() * formatSize(m_defines.shFormat);  
+    m_modelMemoryStats.devShOther  = bufferSize;
   }
 
   // update statistics totals
