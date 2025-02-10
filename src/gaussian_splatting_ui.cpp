@@ -210,6 +210,7 @@ void GaussianSplatting::onUIRender()
       }
       PE::end();
     }
+    
     //
     if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -316,18 +317,19 @@ void GaussianSplatting::onUIRender()
 
       PE::end();
     }
-    ImGui::End();
   }
-  /*
+  ImGui::End();
+ 
   if(ImGui::Begin("Misc"))
   {
     if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
     {
       ImGuiH::CameraWidget();
     }
-    ImGui::End();
+  
   }
-  */
+  ImGui::End();
+
   if (ImGui::Begin("Memory Statistics"))
   {
     if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
