@@ -1044,7 +1044,7 @@ void GaussianSplatting::initDataBuffers(void)
     }
     if(sphericalHarmonicsCoefficientsPerChannel == 15)
     {
-      sphericalHarmonicsDegree = 2;
+      sphericalHarmonicsDegree = 3;
       splatStride += 7 * 3;
     }
 
@@ -1308,14 +1308,22 @@ void GaussianSplatting::initDataTextures(void)
       sphericalHarmonicsDegree = 1;
     if(sphericalHarmonicsCoefficientsPerChannel >= 8)
       sphericalHarmonicsDegree = 2;
+    if(sphericalHarmonicsCoefficientsPerChannel >= 15)
+      sphericalHarmonicsDegree = 3;
 
     // add some padding at each splat if needed for easy texture lookups
-    const int sphericalHarmonicsComponentCount =
-        (sphericalHarmonicsDegree == 1) ? 9 : ((sphericalHarmonicsDegree == 2) ? 24 : 0);
-    int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
-    if(paddedSphericalHarmonicsComponentCount % 2 != 0)
-      paddedSphericalHarmonicsComponentCount++;
+    int sphericalHarmonicsComponentCount = 0;
+    if(sphericalHarmonicsDegree == 1)
+      sphericalHarmonicsComponentCount = 9;
+    if(sphericalHarmonicsDegree == 2)
+      sphericalHarmonicsComponentCount = 24;
+    if(sphericalHarmonicsDegree == 3)
+      sphericalHarmonicsComponentCount = 45;
 
+    int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
+    while(paddedSphericalHarmonicsComponentCount % 4 != 0)
+      paddedSphericalHarmonicsComponentCount++;
+    
     //
     glm::ivec2 mapSize =
         computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);

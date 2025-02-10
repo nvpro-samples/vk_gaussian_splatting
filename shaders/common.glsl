@@ -115,14 +115,15 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
   const float SphericalHarmonics8BitCompressionRange = 2.0;
   const vec3  vec8BitSHShift                         = vec3(SphericalHarmonics8BitCompressionRange / 2.0);
-
+  
+  const uint stride = 12;  // 12 for degree 3, 6 for degree 2
   // fetching degree 1
   const vec4 sampledSH0123 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 0, textureSize(sphericalHarmonicsTexture, 0)), 0);
   const vec4 sampledSH4567 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 1, textureSize(sphericalHarmonicsTexture, 0)), 0);
   const vec4 sampledSH891011 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 2, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 2, textureSize(sphericalHarmonicsTexture, 0)), 0);
 
   const vec3 sh1 = sampledSH0123.rgb;
   const vec3 sh2 = vec3(sampledSH0123.a, sampledSH4567.rg);
@@ -141,11 +142,11 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
   // fetching degree 2
 #if MAX_SH_DEGREE >= 2
   const vec4 sampledSH12131415 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 3, textureSize(sphericalHarmonicsTexture, 0)), 0);
   const vec4 sampledSH16171819 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 4, textureSize(sphericalHarmonicsTexture, 0)), 0);
   const vec4 sampledSH20212223 =
-      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, 6, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 5, textureSize(sphericalHarmonicsTexture, 0)), 0);
 
   const vec3 sh4 = sampledSH891011.gba;
   const vec3 sh5 = sampledSH12131415.rgb;
