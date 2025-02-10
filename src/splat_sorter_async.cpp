@@ -19,7 +19,12 @@
 
 //
 #include "splat_sorter_async.h"
-
+#include "utilities.h"
+//
+// for parallel processing
+#include <algorithm>
+#include <execution>
+//
 #include <glm/vec4.hpp>
 
 bool SplatSorterAsync::initialize()
@@ -98,27 +103,16 @@ bool SplatSorterAsync::innerSort()
   distances.resize(splatCount);
   m_indices.resize(splatCount);
 
-  // Sequential version of compute distances
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-  for(uint32_t i = 0; i < splatCount; ++i)
+  // compute distances in parallel
+  START_PAR_LOOP(distances.size(), splatIdx)
   {
-    const auto pos = &((*m_positions)[i * 3]);
+    const auto pos = &((*m_positions)[splatIdx * 3]);
     // distance to plane
     const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-    distances[i]     = dist;
-    gsIndex[i]       = i;
+    distances[splatIdx] = dist;
+    m_indices[splatIdx] = (uint32_t)splatIdx;
   }
-#else
-  // parallel for, compute distances
-  std::for_each(std::execution::par_unseq, distances.begin(), distances.end(), [&](float const& val) {
-    size_t   i   = &val - &distances[0];
-    const auto pos = &((*m_positions)[i * 3]);
-    // distance to plane
-    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
-    distances[i]     = dist;
-    m_indices[i]     = (uint32_t)i;
-  });
-#endif
+  END_PAR_LOOP()
 
   auto time1 = std::chrono::high_resolution_clock::now();
   m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();

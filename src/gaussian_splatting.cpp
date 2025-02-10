@@ -21,6 +21,13 @@
 #define VMA_IMPLEMENTATION
 
 #include "gaussian_splatting.h"
+#include "utilities.h"
+
+#include <execution>
+#include <ranges>
+
+#include <ppl.h>
+#include <algorithm>
 
 #include <nvh/misc.hpp>
 #include <glm/gtc/packing.hpp>  // Required for half-float operations
@@ -928,22 +935,18 @@ void GaussianSplatting::initDataBuffers(void)
     // map and fill host buffer
     float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
 
-    glm::vec3 scale;
-    glm::quat rotation;
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto stride3 = splatIdx * 3;
       const auto stride4 = splatIdx * 4;
       const auto stride6 = splatIdx * 6;
-      scale.x            = std::exp(m_splatSet.scale[stride3 + 0]);
-      scale.y            = std::exp(m_splatSet.scale[stride3 + 1]);
-      scale.z            = std::exp(m_splatSet.scale[stride3 + 2]);
+      glm::vec3  scale{std::exp(m_splatSet.scale[stride3 + 0]), std::exp(m_splatSet.scale[stride3 + 1]),
+                      std::exp(m_splatSet.scale[stride3 + 2])};
 
-      rotation.x = m_splatSet.rotation[stride4 + 1];
-      rotation.y = m_splatSet.rotation[stride4 + 2];
-      rotation.z = m_splatSet.rotation[stride4 + 3];
-      rotation.w = m_splatSet.rotation[stride4 + 0];
-      rotation   = glm::normalize(rotation);
+      glm::quat rotation{m_splatSet.rotation[stride4 + 0], m_splatSet.rotation[stride4 + 1],
+                         m_splatSet.rotation[stride4 + 2], m_splatSet.rotation[stride4 + 3]};
+      rotation = glm::normalize(rotation);
 
       // computes the covariance
       const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
@@ -959,6 +962,7 @@ void GaussianSplatting::initDataBuffers(void)
       hostBufferMapped[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
       hostBufferMapped[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
     }
+    END_PAR_LOOP();
 
     m_alloc->unmap(hostBuffer);
 
@@ -991,7 +995,8 @@ void GaussianSplatting::initDataBuffers(void)
     // fill host buffer
     float* hostBufferMapped = static_cast<float*>(m_alloc->map(hostBuffer));
 
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto  stride3           = splatIdx * 3;
       const auto  stride4           = splatIdx * 4;
@@ -1001,6 +1006,7 @@ void GaussianSplatting::initDataBuffers(void)
       hostBufferMapped[stride4 + 2] = glm::clamp(0.5f + SH_C0 * m_splatSet.f_dc[stride3 + 2], 0.0f, 1.0f);
       hostBufferMapped[stride4 + 3] = glm::clamp(1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx])), 0.0f, 1.0f);
     }
+    END_PAR_LOOP()
 
     m_alloc->unmap(hostBuffer);
 
@@ -1055,10 +1061,10 @@ void GaussianSplatting::initDataBuffers(void)
     // fill host buffer
     void* hostBufferMapped = m_alloc->map(hostBuffer);
 
-    float minSh = std::numeric_limits<float>::max();
-    float maxSh = std::numeric_limits<float>::min();
+    auto startShTime = std::chrono::high_resolution_clock::now();
 
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    // for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto srcBase   = splatStride * splatIdx;
       const auto destBase  = targetSplatStride * splatIdx;
@@ -1071,13 +1077,9 @@ void GaussianSplatting::initDataBuffers(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
-          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
-
           storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
       }
-
       // degree 2, five coefs per component
       for(auto i = 0; i < 5; i++)
       {
@@ -1085,9 +1087,6 @@ void GaussianSplatting::initDataBuffers(void)
         {
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
-
-          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
-          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
 
           storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
@@ -1100,13 +1099,15 @@ void GaussianSplatting::initDataBuffers(void)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          minSh = std::min(minSh, m_splatSet.f_rest[srcIndex]);
-          maxSh = std::max(maxSh, m_splatSet.f_rest[srcIndex]);
-
           storeSh(m_defines.shFormat, m_splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
         }
       }
     }
+    END_PAR_LOOP()
+    
+    auto      endShTime   = std::chrono::high_resolution_clock::now();
+    long long buildShTime = std::chrono::duration_cast<std::chrono::milliseconds>(endShTime - startShTime).count();
+    std::cout << "Sh data updated in " << buildShTime << "ms" << std::endl;
 
     m_alloc->unmap(hostBuffer);
 
@@ -1210,14 +1211,17 @@ void GaussianSplatting::initDataTextures(void)
   {
     glm::ivec2         mapSize = computeDataTextureSize(3, 3, splatCount);
     std::vector<float> centers(mapSize.x * mapSize.y * 4);  // includes some padding and unused w channel
-    for(uint32_t i = 0; i < splatCount; ++i)
+    //for(uint32_t i = 0; i < splatCount; ++i)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       // we skip the alpha channel that is left undefined and not used in the shader
       for(uint32_t cmp = 0; cmp < 3; ++cmp)
       {
-        centers[i * 4 + cmp] = m_splatSet.positions[i * 3 + cmp];
+        centers[splatIdx * 4 + cmp] = m_splatSet.positions[splatIdx * 3 + cmp];
       }
     }
+    END_PAR_LOOP()
+
     // place the result in the dedicated texture map
     initTexture(mapSize.x, mapSize.y, (uint32_t)centers.size() * sizeof(float), (void*)centers.data(),
                 VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_centersMap);
@@ -1230,21 +1234,17 @@ void GaussianSplatting::initDataTextures(void)
   {
     glm::ivec2         mapSize = computeDataTextureSize(4, 6, splatCount);
     std::vector<float> covariances(mapSize.x * mapSize.y * 4, 0.0f);
-    glm::vec3          scale;
-    glm::quat          rotation;
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto stride3 = splatIdx * 3;
       const auto stride4 = splatIdx * 4;
       const auto stride6 = splatIdx * 6;
-      scale.x            = std::exp(m_splatSet.scale[stride3 + 0]);
-      scale.y            = std::exp(m_splatSet.scale[stride3 + 1]);
-      scale.z            = std::exp(m_splatSet.scale[stride3 + 2]);
-
-      rotation.x = m_splatSet.rotation[stride4 + 1];
-      rotation.y = m_splatSet.rotation[stride4 + 2];
-      rotation.z = m_splatSet.rotation[stride4 + 3];
-      rotation.w = m_splatSet.rotation[stride4 + 0];
+      glm::vec3  scale{std::exp(m_splatSet.scale[stride3 + 0]), std::exp(m_splatSet.scale[stride3 + 1]),
+                      std::exp(m_splatSet.scale[stride3 + 2])};
+      
+      glm::quat rotation{m_splatSet.rotation[stride4 + 0], m_splatSet.rotation[stride4 + 1], m_splatSet.rotation[stride4 + 2],
+                         m_splatSet.rotation[stride4 + 3] };
       rotation   = glm::normalize(rotation);
 
       // computes the covariance
@@ -1261,6 +1261,7 @@ void GaussianSplatting::initDataTextures(void)
       covariances[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
       covariances[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
     }
+    END_PAR_LOOP()
 
     // place the result in the dedicated texture map
     initTexture(mapSize.x, mapSize.y, (uint32_t)covariances.size() * sizeof(float), (void*)covariances.data(),
@@ -1275,7 +1276,8 @@ void GaussianSplatting::initDataTextures(void)
   {
     glm::ivec2           mapSize = computeDataTextureSize(4, 4, splatCount);
     std::vector<uint8_t> colors(mapSize.x * mapSize.y * 4);  // includes some padding
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto  stride3 = splatIdx * 3;
       const auto  stride4 = splatIdx * 4;
@@ -1286,6 +1288,7 @@ void GaussianSplatting::initDataTextures(void)
       colors[stride4 + 3] =
           (uint8_t)glm::clamp(std::floor((1.0f / (1.0f + std::exp(-m_splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
     }
+    END_PAR_LOOP()
     // place the result in the dedicated texture map
     initTexture(mapSize.x, mapSize.y, (uint32_t)colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM,
                 m_alloc->acquireSampler(sampler_info), m_colorsMap);
@@ -1322,8 +1325,9 @@ void GaussianSplatting::initDataTextures(void)
     std::vector<uint8_t> paddedSHArray(bufferSize, 0);
 
     void* data = (void*)paddedSHArray.data();
-    
-    for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+
+    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto srcBase   = totalSphericalHarmonicsComponentCount * splatIdx;
       const auto destBase  = paddedSphericalHarmonicsComponentCount * splatIdx;
@@ -1363,6 +1367,7 @@ void GaussianSplatting::initDataTextures(void)
         }
       }
     }
+    END_PAR_LOOP()
 
     // place the result in the dedicated texture map
     if(m_defines.shFormat == FORMAT_FLOAT32)

@@ -21,12 +21,6 @@
 #define _SPLAT_SORTER_ASYNC_H_
 
 #include <string>
-// for parallel processing
-#ifdef _WIN32
-#include <ppl.h>
-#include <execution>
-#include <algorithm>
-#endif
 // threading
 #include <thread>
 #include <condition_variable>
