@@ -826,21 +826,18 @@ void GaussianSplatting::deinitVkBuffers()
     m_gpuSorter = VK_NULL_HANDLE;
   }
 
-  // will delete at next frame
-  m_app->submitResourceFree([this]() {
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadVertices));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadIndices));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatDistancesDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesHost));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_vrdxStorageDevice));
 
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirect));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirectHost));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirect));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirectHost));
 
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatDistancesDevice));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesDevice));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_splatIndicesHost));
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_vrdxStorageDevice));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadVertices));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadIndices));
 
-    m_alloc->destroy(const_cast<nvvk::Buffer&>(m_frameInfoBuffer));
-  });
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_frameInfoBuffer));
 }
 
 inline uint8_t toUint8(float v, float rangeMin, float rangeMax)
@@ -1375,7 +1372,6 @@ void GaussianSplatting::initDataTextures(void)
     }
     else if(m_defines.shFormat == FORMAT_FLOAT16)
     {
-
       initTexture(mapSize.x, mapSize.y, bufferSize, data,
                   VK_FORMAT_R16G16B16A16_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
     }
@@ -1410,11 +1406,8 @@ void GaussianSplatting::initDataTextures(void)
 
 void GaussianSplatting::deinitDataTextures()
 {
-  // will delete at next frame
-  m_app->submitResourceFree([this]() {
-    deinitTexture(m_centersMap);
-    deinitTexture(m_colorsMap);
-    deinitTexture(m_covariancesMap);
-    deinitTexture(m_sphericalHarmonicsMap);
-  });
+  deinitTexture(m_centersMap);
+  deinitTexture(m_colorsMap);
+  deinitTexture(m_covariancesMap);
+  deinitTexture(m_sphericalHarmonicsMap);
 }
