@@ -252,6 +252,8 @@ private:  // Attributes
   // loaded model
   SplatSet m_splatSet;
 
+  // hide/show ui elements
+  bool m_showUI = true;
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
   // cpu sorter feedback for ui

@@ -184,6 +184,9 @@ void GaussianSplatting::onUIRender()
     m_updateShaders = false;
   }
 
+  if(!m_showUI)
+    return;
+
   //
   namespace PE = ImGuiH::PropertyEditor;
   
@@ -521,6 +524,7 @@ void GaussianSplatting::onUIMenu()
   if(ImGui::BeginMenu("View"))
   {
     ImGui::MenuItem("V-Sync", "Ctrl+Shift+V", &v_sync);
+    ImGui::MenuItem("ShowUI", "", &m_showUI);
     ImGui::EndMenu();
   }
 #ifndef NDEBUG
