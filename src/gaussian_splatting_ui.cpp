@@ -198,12 +198,13 @@ void GaussianSplatting::onUIRender()
     //
     if(ImGui::CollapsingHeader("Data storage and format", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      if(ImGui::Button("Reset "))
+      PE::begin("##3DGS format");
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         m_defines.dataStorage = STORAGE_BUFFERS;
-        m_defines.shFormat = FORMAT_FLOAT32;
+        m_defines.shFormat    = FORMAT_FLOAT32;
       }
-      PE::begin("##3DGS format");
       if(PE::entry("Storage", [&]() { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); }))
       {
         m_updateData = true;
@@ -218,18 +219,20 @@ void GaussianSplatting::onUIRender()
     //
     if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      if (ImGui::Button("Reset"))
+      PE::begin("##GLOB vsync ");
+      bool vsync = m_app->isVsync();
+      if (PE::Checkbox("V-Sync", &vsync))
+        m_app->setVsync(vsync);
+      
+      PE::end();
+
+      PE::begin("##3DGS rendering");
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRenderSettings();
         m_updateShaders = true;
       }
-
-      PE::begin("##3DGS rendering");
-
-      bool vsync = m_app->isVsync();
-      if (PE::Checkbox("V-Sync", &vsync))
-        m_app->setVsync(vsync);
-
       if (PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
       {
         if (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_AT_DIST)
