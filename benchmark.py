@@ -55,7 +55,8 @@ def save_to_csv(benchmarks, filename="benchmark_results.csv"):
 # branding :-)
 nvidia_colors = {
     "green": "#76B900",
-    "dark_green": "#3C7021",
+    "dark_green": "#2A7F00", #"#3C7021",
+    "light_green": "#8BFF00",  
     "black": "#000000",
     "white": "#FFFFFF",
 }
@@ -138,6 +139,89 @@ def plot_cumulative_histogram(benchmarks, filename="histogram.png"):
     plt.savefig(filename)
     print(f"Histogram saved as {filename}")
 
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from collections import defaultdict
+
+def plot_cumulative_histogram_format(
+    benchmarks, 
+    pipelines, 
+    pipeline_names,  
+    stages=["GPU Dist", "GPU Sort", "Rendering"], 
+    filename="histogram.png"
+):
+    scene_groups = defaultdict(list)
+
+    # Group the results by scene and pipeline
+    for scene_name, _, benchmark_name, timers in benchmarks:
+        if benchmark_name in pipelines and isinstance(timers, dict):
+            scene_groups[scene_name].append((benchmark_name, timers))
+    
+    if not scene_groups:
+        print("No relevant benchmarks found.")
+        return
+    
+    all_data = []
+    x_labels = []
+    width = 0.35  # Base bar width
+
+    # Flatten data for all scenes and pipelines
+    for scene, results in scene_groups.items():
+        scene_data = {pipeline: {stage: 0 for stage in stages} for pipeline in pipelines}
+        for benchmark_name, timers in results:
+            for stage in stages:
+                scene_data[benchmark_name][stage] += timers.get(stage, {}).get("VK", 0)
+        all_data.append(scene_data)
+        x_labels.append(scene)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Adjust the space between groups by reducing the range of index values
+    index = np.arange(len(x_labels)) * 0.5  # Multiply index by factor to reduce spacing between groups
+    num_pipelines = len(pipelines)
+    
+    # Adjust bar width to ensure space between bars within each group
+    bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
+
+    # Define colors for stages
+    stage_colors = [nvidia_colors["black"], nvidia_colors["dark_green"], nvidia_colors["green"]]
+    
+    # Stack bars
+    bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
+
+    for i, stage in enumerate(stages):
+        for j, pipeline in enumerate(pipelines):
+            values = [scene_data[pipeline].get(stage, 0) for scene_data in all_data]
+
+            # Adjust the offset for each bar within a group so that bars are well spaced
+            position_offset = (j - (num_pipelines - 1) / 2) * (bar_width + 0.05)  # Add space between bars
+
+            ax.bar(index + position_offset, values, bar_width, color=stage_colors[i], bottom=bottom_values[pipeline])
+            bottom_values[pipeline] += np.array(values)
+
+    # Customize plot
+    ax.set_xlabel("Scene")
+    ax.set_ylabel("Cumulative VK Time (microseconds)")
+    ax.set_title("Pipeline Performance Comparison")
+
+    # Format x-ticks with pipeline short names
+    ax.set_xticks(index)
+    ax.set_xticklabels([f"{scene}\n({', '.join(pipeline_names)})" for scene in x_labels], 
+                       rotation=45, ha="right")
+    
+    # Create legend for stages
+    legend_handles = [mpatches.Patch(color=stage_colors[i], label=stage) for i, stage in enumerate(stages)]
+    ax.legend(handles=legend_handles, title="Stages", loc='upper right')
+
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(filename)
+    print(f"Histogram saved as {filename}")
+
+
 if __name__ == "__main__":    
     executable = os.path.abspath("bin_x64/Release/vk_gaussian_splatting.exe")
     benchmark_file = os.path.abspath("benchmark.txt")
@@ -188,5 +272,12 @@ if __name__ == "__main__":
         all_results.extend(results)
     
     save_to_csv(all_results)
-    plot_cumulative_histogram(all_results)
+    # plot_cumulative_histogram(all_results)
+    pipelines = ["Mesh pipeline", "Vert pipeline"]
+    pipeline_names = ["Mesh", "Vert"]
+    plot_cumulative_histogram_format(all_results, pipelines, pipeline_names, filename="histogram_shader.png")
+    pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"]
+    pipeline_names = ["fp32", "fp16", "uint8"]
+    plot_cumulative_histogram_format(all_results, pipelines, pipeline_names, filename="histogram_format.png")
+
     print("CSV and histogram generation complete.")

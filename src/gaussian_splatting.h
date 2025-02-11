@@ -93,6 +93,7 @@ public:  // Methods specializing IAppElement
     // Done in this class instead of in main() so private members can be registered for direct modification
     benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
     benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
+    benchmark->parameterLists().add("shformat|0=fp32 1=fp16 2=uint8", &m_defines.shFormat);
   };
 
   ~GaussianSplatting() override{
