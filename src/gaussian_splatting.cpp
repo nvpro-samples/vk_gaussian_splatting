@@ -130,7 +130,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
     {
       // resets CPU sorting time info
-      m_distTime = m_sortTime = 0;
+      m_distTime = m_sortTime = 0.0;
       //
       processSortingOnGPU(cmd, splatCount);
     }

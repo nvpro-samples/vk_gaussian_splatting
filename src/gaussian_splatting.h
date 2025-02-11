@@ -257,8 +257,8 @@ private:  // Attributes
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
   // cpu sorter feedback for ui
-  uint32_t m_distTime = 0; // distance compute time in ms
-  uint32_t m_sortTime = 0; // sorting compute time in ms
+  double m_distTime = 0.0; // distance compute time in ms
+  double m_sortTime = 0.0; // sorting compute time in ms
 
   //
   nvvkhl::Application*                     m_app{nullptr};

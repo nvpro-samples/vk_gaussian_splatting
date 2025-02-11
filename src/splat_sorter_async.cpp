@@ -115,7 +115,7 @@ bool SplatSorterAsync::innerSort()
   END_PAR_LOOP()
 
   auto time1 = std::chrono::high_resolution_clock::now();
-  m_distTime = std::chrono::duration_cast<std::chrono::milliseconds>(time1 - startTime).count();
+  m_distTime = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(time1 - startTime).count();
 
   // comparison function working on the data <dist,idex>
   auto compare = [&](size_t i, size_t j) { return distances[i] > distances[j]; };
@@ -128,7 +128,7 @@ bool SplatSorterAsync::innerSort()
 #endif
 
   auto time2 = std::chrono::high_resolution_clock::now();
-  m_sortTime = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
+  m_sortTime = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(time2 - time1).count();
 
   return true;
 }

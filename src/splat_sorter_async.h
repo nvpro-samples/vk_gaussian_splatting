@@ -87,7 +87,7 @@ public:
     return true;
   }
   // Fill indices with sorted values (call std::swap) and stats
-  inline bool consume(std::vector<uint32_t>& indices, uint32_t& distTime, uint32_t& sortTime)
+  inline bool consume(std::vector<uint32_t>& indices, double& distTime, double& sortTime)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if(m_status == SORTED || m_status == FAILURE)
@@ -127,8 +127,8 @@ private:
   std::vector<float> distances;  // points distances, internal buffer
 
   std::vector<uint32_t> m_indices;       // sorted indices result
-  uint32_t              m_distTime = 0;  // distance update timer
-  uint32_t              m_sortTime = 0;  // distance sorting timer
+  double                m_distTime = 0;  // distance update timer
+  double                m_sortTime = 0;  // distance sorting timer
 };
 
 #endif

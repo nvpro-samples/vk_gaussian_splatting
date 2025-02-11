@@ -293,28 +293,21 @@ void GaussianSplatting::onUIRender()
     //
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      // TODO: do not use disabled input object to display statistics
-      PE::begin("##3DGS statistics");
-      ImGui::BeginDisabled();
+      PE::begin("##Raster statistics");
       uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
-      PE::entry(
-          "Total splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&totalSplatCount, 0, 100000); }, "TODOC");
-      uint32_t renderedSplatCount =
+      PE::Text("Total splats", "%d", totalSplatCount);
+      uint32_t rasterSplatCount =
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
-      PE::entry(
-          "Rendered splats", [&]() { return ImGui::InputInt("##HiddenID", (int*)&renderedSplatCount, 0, 100000); }, "TODOC");
+      PE::Text("Rasterized splats", "%d", rasterSplatCount);
       uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
                         ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
                                                                                  (m_frameInfo.splatCount + 31) / 32) :
                         0;
-      PE::entry(
-          "Mesh shader work groups", [&]() { return ImGui::InputInt("##HiddenID", (int*)&wg, 0, 100000); }, "TODOC");
-      PE::entry(
-          "CPU Distances  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_distTime), 0, 100000); }, "TODOC");
-      PE::entry(
-          "CPU Sorting  (ms)", [&]() { return ImGui::InputInt("##HiddenID", (int*)&(m_sortTime), 0, 100000); }, "TODOC");
-      ImGui::EndDisabled();
-
+      PE::Text("Mesh shader work groups", "%d", wg);
+      PE::end();
+      PE::begin("##Sorting statistics");
+      PE::Text("CPU Distances  (ms)", "%.3f", m_distTime);
+      PE::Text("CPU Sorting  (ms)", "%.3f", m_sortTime);
       PE::end();
     }
   }
