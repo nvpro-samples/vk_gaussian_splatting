@@ -19,7 +19,7 @@
 
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
-#ifdef USE_DATA_TEXTURES
+#if DATA_STORAGE == STORAGE_TEXTURES
 // textures map describing the 3DGS model
 layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
 layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTexture;
@@ -80,7 +80,7 @@ ivec2 getDataPosF(in uint splatIndex, in float stride, in uint offset, in ivec2 
   return ivec2(fullOffset % dimensions.x, fullOffset / dimensions.x);
 }
 
-#ifdef USE_DATA_TEXTURES
+#if DATA_STORAGE == STORAGE_TEXTURES
 // fetch center value from texture map
 vec3 fetchCenter(in uint splatIndex)
 {
@@ -94,7 +94,7 @@ vec3 fetchCenter(in uint splatIndex)
 }
 #endif
 
-#ifdef USE_DATA_TEXTURES
+#if DATA_STORAGE == STORAGE_TEXTURES
 // fetchColor replaces fetchSH0 since non view dependent color is precomputed on CPU
 vec4 fetchColor(in uint splatIndex)
 {
@@ -109,7 +109,7 @@ vec4 fetchColor(in uint splatIndex)
 }
 #endif
 
-#ifdef USE_DATA_TEXTURES
+#if DATA_STORAGE == STORAGE_TEXTURES
 // fetch from data textures
 void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 {
@@ -242,7 +242,7 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
 }
 #endif
 
-#ifdef USE_DATA_TEXTURES
+#if DATA_STORAGE == STORAGE_TEXTURES
 mat3 fetchCovariance(in uint splatIndex)
 {
   // Use RGBA texture map to store sets of 3 elements requires some offset shifting depending on splatIndex

@@ -25,6 +25,15 @@
 #define SORTING_CPU_ASYNC_MONO 1
 #define SORTING_CPU_ASYNC_MULTI 2
 
+// type of model storage
+#define STORAGE_BUFFERS 0
+#define STORAGE_TEXTURES 1
+
+// format for SH storage
+#define FORMAT_FLOAT32 0
+#define FORMAT_FLOAT16 1
+#define FORMAT_UINT8   2
+
 // type of pipeline used
 #define PIPELINE_MESH 0
 #define PIPELINE_VERT 1
@@ -34,11 +43,6 @@
 #define FRUSTUM_CULLING_NONE 0
 #define FRUSTUM_CULLING_AT_DIST 1
 #define FRUSTUM_CULLING_AT_RASTER 2
-
-// format for SH storage
-#define FORMAT_FLOAT32 0
-#define FORMAT_FLOAT16 1
-#define FORMAT_UINT8   2
 
 // bindings for set 0
 #define BINDING_FRAME_INFO_UBO 0

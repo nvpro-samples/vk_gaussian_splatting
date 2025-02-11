@@ -47,6 +47,9 @@ std::string formatMemorySize(size_t sizeInBytes)
 
 void GaussianSplatting::initGui()
 {
+  // Storage
+  m_ui.enumAdd(GUI_STORAGE, STORAGE_BUFFERS, "Buffers");
+  m_ui.enumAdd(GUI_STORAGE, STORAGE_TEXTURES, "Textures");
   // Pipeline selector
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Vertex shader");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Mesh shader");
@@ -197,10 +200,11 @@ void GaussianSplatting::onUIRender()
     {
       if(ImGui::Button("Reset "))
       {
-        m_useDataTextures = false;
+        m_defines.dataStorage = STORAGE_BUFFERS;
+        m_defines.shFormat = FORMAT_FLOAT32;
       }
       PE::begin("##3DGS format");
-      if(PE::Checkbox("Use data textures", &m_useDataTextures))
+      if(PE::entry("Storage", [&]() { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); }))
       {
         m_updateData = true;
       }

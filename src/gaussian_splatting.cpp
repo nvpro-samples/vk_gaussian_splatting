@@ -489,7 +489,7 @@ void GaussianSplatting::initAll()
   //
   initShaders();
   initVkBuffers();
-  if(m_useDataTextures)
+  if(m_defines.dataStorage == STORAGE_TEXTURES)
     initDataTextures();
   else
     initDataBuffers();
@@ -511,7 +511,7 @@ void GaussianSplatting::reinitDataStorage()
   deinitPipelines();
   deinitShaders();
   //
-  if(m_useDataTextures)
+  if(m_defines.dataStorage == STORAGE_TEXTURES)
   {
     initDataTextures();
   }
@@ -550,14 +550,13 @@ bool GaussianSplatting::initShaders(void)
 
   // prepare definitions prepend
   std::string prepends;
-  if(m_useDataTextures)
-    prepends += "#define USE_DATA_TEXTURES\n";
   if(m_defines.opacityGaussianDisabled)
     prepends += "#define DISABLE_OPACITY_GAUSSIAN\n";
   prepends += nvh::stringFormat("#define FRUSTUM_CULLING_MODE %d\n", m_defines.frustumCulling);
   prepends += "#define ORTHOGRAPHIC_MODE 0\n";  // Disabled, TODO do we enable ortho cam in the UI/camera controller
   prepends += nvh::stringFormat("#define SHOW_SH_ONLY %d\n", m_defines.showShOnly);
   prepends += nvh::stringFormat("#define MAX_SH_DEGREE %d\n", m_defines.maxShDegree);
+  prepends += nvh::stringFormat("#define DATA_STORAGE %d\n", m_defines.dataStorage);
   prepends += nvh::stringFormat("#define SH_FORMAT %d\n", m_defines.shFormat);
   prepends += nvh::stringFormat("#define POINT_CLOUD_MODE %d\n", m_defines.pointCloudModeEnabled);
   
@@ -597,7 +596,7 @@ void GaussianSplatting::initPipelines()
   m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_INDIRECT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  if(m_useDataTextures)
+  if(m_defines.dataStorage == STORAGE_TEXTURES)
   {
     m_dset->addBinding(BINDING_SH_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
     m_dset->addBinding(BINDING_CENTERS_TEXTURE, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_ALL);
@@ -632,7 +631,7 @@ void GaussianSplatting::initPipelines()
   const VkDescriptorBufferInfo indirect_desc{m_indirect.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_dset->makeWrite(0, BINDING_INDIRECT_BUFFER, &indirect_desc));
 
-  if(m_useDataTextures)
+  if(m_defines.dataStorage == STORAGE_TEXTURES)
   {
     // add data texture maps
     writes.emplace_back(m_dset->makeWrite(0, BINDING_CENTERS_TEXTURE, &m_centersMap.descriptor));

@@ -227,6 +227,7 @@ private:  // Methods
   // for multiple choice selectors in the UI
   enum GuiEnums
   {
+    GUI_STORAGE,         // model storage in VRAM (in texture or buffer)
     GUI_SORTING,         // the sorting method to use
     GUI_PIPELINE,        // the rendering pipeline to use
     GUI_FRUSTUM_CULLING, // where to perform frustum culling (or disabled)
@@ -296,9 +297,6 @@ private:  // Attributes
   // also triggers shaders and pipeline rebuild
   bool m_updateData = false;
 
-  // switch between data textures and data buffers
-  bool m_useDataTextures = false;
-
   // Data textures
   VkSampler     m_sampler;  // texture sampler
   nvvk::Texture m_centersMap;
@@ -349,6 +347,7 @@ private:  // Attributes
     int  maxShDegree             = 2;  // in[0,1,2]
     bool pointCloudModeEnabled   = false;
     int  shFormat                = FORMAT_FLOAT32;
+    int  dataStorage             = STORAGE_BUFFERS;
   } m_defines;
 
   // Pipelines
