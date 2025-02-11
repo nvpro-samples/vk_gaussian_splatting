@@ -4,19 +4,19 @@
 benchmark "Skip start frames"
 
 -vsync 0
--benchmarkframes 6000
+-benchmarkframes 600
 -pipeline 0
 benchmark "Mesh pipeline"
 
 -benchmarkframes 2
--screenshot "meshPipeline.png"
+-screenshot "mesh_screen.png"
 benchmark "Mesh Screen shot"
 
--benchmarkframes 6000
+-benchmarkframes 600
 -pipeline 1
 benchmark "Vert pipeline"
 
 -benchmarkframes 2
--screenshot "vertPipeline.png"
+-screenshot "vert_screen.png"
 benchmark "Vert Screen shot"
 
