@@ -357,7 +357,7 @@ if __name__ == "__main__":
     plot_cumulative_histogram_memory(
         all_results, 
         xlabel="Scene",
-        ylabel="Bytes",
+        ylabel="Cumulative VRAM usage (bytes)",
         title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
         pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
         pipeline_names= ["fp32", "fp16", "uint8"],

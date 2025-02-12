@@ -296,13 +296,29 @@ This operation preserves the anisotropic shape of the Gaussian in screen space. 
 
 ## Benchmarking
 
+To run the benchmark you need to have the INRIA dataset located in folder <path_to_3dgs_dataset_root>.
+
+You may need to install additional pythons dependencies such as:
+
+``` sh
+python -m pip install matplotlib
+```
+
+Then run the benchmark using the following command:
+
 ``` sh
 # Running the benchmark defined in benchmark.txt 
-mkdir _benchmark
-cd _benchmark
-../bin_x64/Release/vk_gaussian_splatting.exe -benchmark ../benchmark.txt <path_to_3dgs_dataset>/bicycle/point_cloud/iteration_30000/point_cloud.ply
-
+python benchmark.py <path_to_3dgs_dataset_root>
 ```
+
+The following charts presents the results of such a benchmark, when run on an `NVIDIA RTX 6000 Ada Generation`, drivers version 572.64.0, Intel(R) Core(TM) i9-14900K, 3200Mhz, 24 Cores, 32 Logical Processors.
+
+![TODO](doc/histogram_shader_timers.png)   
+
+![TODO](doc/histogram_format_timers.png)
+
+![TODO](doc/histogram_format_memory.png)
+
 
 ## Profiling with NSight
 
