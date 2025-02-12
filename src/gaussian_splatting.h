@@ -94,6 +94,9 @@ public:  // Methods specializing IAppElement
     benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
     benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
     benchmark->parameterLists().add("shformat|0=fp32 1=fp16 2=uint8", &m_defines.shFormat);
+    benchmark->parameterLists().add("updateData|1=triggers an update of data buffers or textures, used for benchmarking", &m_updateData);
+    // reporting specialization
+    benchmark->addPostBenchmarkAdvanceCallback([&]() { benchmarkAdvance(); });
   };
 
   ~GaussianSplatting() override{
@@ -223,6 +226,11 @@ private:  // Methods
   void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
   
   ////////
+  // Benchmarking
+
+  void benchmarkAdvance();
+
+  ////////
   // UI
 
   // for multiple choice selectors in the UI
@@ -253,6 +261,9 @@ private:  // Attributes
   PlyAsyncLoader m_plyLoader;
   // loaded model
   SplatSet m_splatSet;
+
+  // counting benchmark steps
+  int m_benchmarkId = 0;
 
   // hide/show ui elements
   bool m_showUI = true;

@@ -4,28 +4,34 @@
 benchmark "Skip start frames"
 
 -vsync 0
--benchmarkframes 600
+-benchmarkframes 800
+-shformat 0
 -pipeline 0
+-updateData 1
 benchmark "Mesh pipeline"
-
--vsync 0
--benchmarkframes 600
--pipeline 0
--shformat 1
-benchmark "Mesh pipeline fp16"
-
--vsync 0
--benchmarkframes 600
--pipeline 0
--shformat 2
-benchmark "Mesh pipeline uint8"
 
 -benchmarkframes 2
 -screenshot "mesh_screen.png"
 benchmark "Mesh Screen shot"
 
--benchmarkframes 600
+-vsync 0
+-benchmarkframes 800
+-pipeline 0
+-shformat 1
+-updateData 1
+benchmark "Mesh pipeline fp16"
+
+-vsync 0
+-benchmarkframes 800
+-pipeline 0
+-shformat 2
+-updateData 1
+benchmark "Mesh pipeline uint8"
+
+-benchmarkframes 800
+-shformat 0
 -pipeline 1
+-updateData 1
 benchmark "Vert pipeline"
 
 -benchmarkframes 2

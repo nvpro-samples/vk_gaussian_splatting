@@ -147,6 +147,9 @@ from collections import defaultdict
 
 def plot_cumulative_histogram_format(
     benchmarks, 
+    title,
+    ylabel,
+    xlabel,
     pipelines, 
     pipeline_names,  
     stages=["GPU Dist", "GPU Sort", "Rendering"], 
@@ -203,9 +206,9 @@ def plot_cumulative_histogram_format(
             bottom_values[pipeline] += np.array(values)
 
     # Customize plot
-    ax.set_xlabel("Scene")
-    ax.set_ylabel("Cumulative VK Time (microseconds)")
-    ax.set_title("Pipeline Performance Comparison")
+    ax.set_xlabel(xlabel) # "Scene")
+    ax.set_ylabel(ylabel) # "Cumulative VK Time (microseconds)")
+    ax.set_title(title)   # "Pipeline Performance Comparison")
 
     # Format x-ticks with pipeline short names
     ax.set_xticks(index)
@@ -245,7 +248,7 @@ if __name__ == "__main__":
         "stump 30000": "stump/point_cloud/iteration_30000/point_cloud.ply",
         "train 30000": "train/point_cloud/iteration_30000/point_cloud.ply",
         "treehill 30000": "treehill/point_cloud/iteration_30000/point_cloud.ply",
-        "truck 30000": "truck/point_cloud/iteration_30000/point_cloud.ply"
+        "truck 2.54M Splat": "truck/point_cloud/iteration_30000/point_cloud.ply"
     }
     
     # Build the full paths by combining the dataset path and scene relative paths
@@ -272,12 +275,25 @@ if __name__ == "__main__":
         all_results.extend(results)
     
     save_to_csv(all_results)
-    # plot_cumulative_histogram(all_results)
-    pipelines = ["Mesh pipeline", "Vert pipeline"]
-    pipeline_names = ["Mesh", "Vert"]
-    plot_cumulative_histogram_format(all_results, pipelines, pipeline_names, filename="histogram_shader.png")
-    pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"]
-    pipeline_names = ["fp32", "fp16", "uint8"]
-    plot_cumulative_histogram_format(all_results, pipelines, pipeline_names, filename="histogram_format.png")
+
+    plot_cumulative_histogram_format(
+        all_results, 
+        xlabel="Scene",
+        ylabel="Cumulative VK Time (microseconds)",
+        title="Pipeline Performance Comparison - Mesh vs. Vert",
+        pipelines = ["Mesh pipeline", "Vert pipeline"], 
+        pipeline_names= ["Mesh", "Vert"],
+        stages=["GPU Dist", "GPU Sort", "Rendering"], 
+        filename="histogram_shader.png")
+
+    plot_cumulative_histogram_format(
+        all_results, 
+        xlabel="Scene",
+        ylabel="Cumulative VK Time (microseconds)",
+        title="Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8",
+        pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
+        pipeline_names= ["fp32", "fp16", "uint8"],
+        stages=["GPU Dist", "GPU Sort", "Rendering"], 
+        filename="histogram_format.png")
 
     print("CSV and histogram generation complete.")
