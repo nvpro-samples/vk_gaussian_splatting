@@ -16,41 +16,100 @@ def run_benchmark(executable, benchmark_file, scene_path, output_log):
 def parse_benchmark(log_text, scene_name):
     benchmark_pattern = re.compile(r'BENCHMARK (\d+) \"([^"]+)\" {')
     timer_pattern = re.compile(r'Timer ([^;]+);\s+VK\s+(\d+); CPU\s+(\d+);')
-    
+    benchmark_adv_pattern = re.compile(r'BENCHMARK_ADV (\d+) {')
+    memory_pattern = re.compile(r'Memory (\w+); Host used\s+(\d+); Device Used\s+(\d+); Device Allocated\s+(\d+);')
+
     benchmarks = []
     
+    # Extract benchmark sections
     benchmark_sections = re.split(benchmark_pattern, log_text)[1:]
     
+    benchmark_data = {}
     for i in range(0, len(benchmark_sections), 3):
         benchmark_id = int(benchmark_sections[i])
         benchmark_name = benchmark_sections[i+1].strip()
-        benchmark_data = benchmark_sections[i+2]
+        benchmark_content = benchmark_sections[i+2]
         
         timers = {}
-        for match in timer_pattern.finditer(benchmark_data):
+        for match in timer_pattern.finditer(benchmark_content):
             stage = match.group(1).strip()
             vk_time = int(match.group(2))
             cpu_time = int(match.group(3))
             timers[stage] = {'VK': vk_time, 'CPU': cpu_time}
-        
-        benchmarks.append((scene_name, benchmark_id, benchmark_name, timers))
+
+        benchmark_data[benchmark_id] = {
+            "scene": scene_name,
+            "id": benchmark_id,
+            "name": benchmark_name,
+            "timers": timers,
+            "memory": {}
+        }
+
+    # Extract BENCHMARK_ADV sections
+    benchmark_adv_sections = re.split(benchmark_adv_pattern, log_text)[1:]
     
-    return benchmarks
+    for i in range(0, len(benchmark_adv_sections), 2):
+        benchmark_id = int(benchmark_adv_sections[i])
+        benchmark_content = benchmark_adv_sections[i+1]
+
+        memory_data = {}
+        for match in memory_pattern.finditer(benchmark_content):
+            memory_type = match.group(1).strip()  # "Scene" or "Rendering"
+            host_used = int(match.group(2))
+            device_used = int(match.group(3))
+            device_allocated = int(match.group(4))
+
+            memory_data[memory_type] = {
+                "Host Used": host_used,
+                "Device Used": device_used,
+                "Device Allocated": device_allocated
+            }
+        
+        # Attach to corresponding BENCHMARK
+        if benchmark_id in benchmark_data:
+            benchmark_data[benchmark_id]["memory"] = memory_data
+
+    return list(benchmark_data.values())
+
 
 def save_to_csv(benchmarks, filename="benchmark_results.csv"):
-    stages = {stage for _, _, _, timers in benchmarks for stage in timers}
-    fieldnames = ["Scene", "Benchmark ID", "Benchmark Name"] + [f"{stage} VK" for stage in stages] + [f"{stage} CPU" for stage in stages]
+    # Collect all possible timer stages
+    stages = sorted({stage for b in benchmarks for stage in b["timers"]})
     
+    # Define CSV field names
+    fieldnames = ["Scene", "Benchmark ID", "Benchmark Name"]
+    fieldnames += [f"{stage} VK" for stage in stages] + [f"{stage} CPU" for stage in stages]
+    fieldnames += ["Scene Host Used", "Scene Device Used", "Scene Device Allocated"]
+    fieldnames += ["Rendering Host Used", "Rendering Device Used", "Rendering Device Allocated"]
+
     with open(filename, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-        
-        for scene_name, benchmark_id, benchmark_name, timers in benchmarks:
-            row = {"Scene": scene_name, "Benchmark ID": benchmark_id, "Benchmark Name": benchmark_name}
+
+        for benchmark in benchmarks:
+            row = {
+                "Scene": benchmark["scene"],
+                "Benchmark ID": benchmark["id"],
+                "Benchmark Name": benchmark["name"],
+            }
+            
+            # Add timer values
             for stage in stages:
-                row[f"{stage} VK"] = timers.get(stage, {}).get("VK", "N/A")
-                row[f"{stage} CPU"] = timers.get(stage, {}).get("CPU", "N/A")
+                row[f"{stage} VK"] = benchmark["timers"].get(stage, {}).get("VK", "N/A")
+                row[f"{stage} CPU"] = benchmark["timers"].get(stage, {}).get("CPU", "N/A")
+
+            # Add memory values (default to "N/A" if missing)
+            row["Scene Host Used"] = benchmark["memory"].get("Scene", {}).get("Host Used", "N/A")
+            row["Scene Device Used"] = benchmark["memory"].get("Scene", {}).get("Device Used", "N/A")
+            row["Scene Device Allocated"] = benchmark["memory"].get("Scene", {}).get("Device Allocated", "N/A")
+
+            row["Rendering Host Used"] = benchmark["memory"].get("Rendering", {}).get("Host Used", "N/A")
+            row["Rendering Device Used"] = benchmark["memory"].get("Rendering", {}).get("Device Used", "N/A")
+            row["Rendering Device Allocated"] = benchmark["memory"].get("Rendering", {}).get("Device Allocated", "N/A")
+
             writer.writerow(row)
+
+
 
 # branding :-)
 nvidia_colors = {
@@ -60,90 +119,6 @@ nvidia_colors = {
     "black": "#000000",
     "white": "#FFFFFF",
 }
-
-def plot_cumulative_histogram(benchmarks, filename="histogram.png"):
-    pipelines = ["Mesh pipeline", "Vert pipeline"]
-    scene_groups = defaultdict(list)
-    
-    # Group the results by scene and pipeline
-    for scene_name, _, benchmark_name, timers in benchmarks:
-        if benchmark_name in pipelines:
-            scene_groups[scene_name].append((benchmark_name, timers))
-    
-    if not scene_groups:
-        print("No relevant benchmarks found.")
-        return
-    
-    stages = ["GPU Dist", "GPU Sort", "Rendering"]
-    all_data = []
-    x_labels = []
-    width = 0.35  # Bar width (to create space for two bars per scene)
-    
-    # Flatten the data for all scenes and pipelines
-    for scene, results in scene_groups.items():
-        scene_data = {"Mesh pipeline": {stage: 0 for stage in stages},
-                      "Vert pipeline": {stage: 0 for stage in stages}}  # Initialize data for both pipelines
-        for benchmark_name, timers in results:
-            for stage in stages:
-                scene_data[benchmark_name][stage] += timers.get(stage, {}).get("VK", 0)  # Sum up VK times for each stage
-        all_data.append(scene_data)
-        x_labels.append(scene)
-    
-    # Create the plot
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
-    index = np.arange(len(x_labels))  # Position of bars (one for Mesh, one for Vert)
-    bar_width = width  # Bar width
-    spacing = 0.1  # Space between bars for Mesh and Vert
-    
-    # Apply NVIDIA colors (swap GPU Dist and Rendering)
-    stage_colors = [nvidia_colors["black"], nvidia_colors["dark_green"], nvidia_colors["green"]]
-    pipeline_colors = [nvidia_colors["green"], nvidia_colors["dark_green"]]  # Green and dark green for Mesh/Vert
-
-    # Plot stacked bars for each pipeline
-    bottom_mesh = np.zeros(len(x_labels))  # Start the stacking for Mesh
-    bottom_vert = np.zeros(len(x_labels))  # Start the stacking for Vert
-
-    # Plot bars for each stage (stacked for both Mesh and Vert pipelines)
-    for i, stage in enumerate(stages):
-        # For each scene, plot Mesh and Vert bars
-        mesh_values = [scene_data["Mesh pipeline"].get(stage, 0) for scene_data in all_data]
-        vert_values = [scene_data["Vert pipeline"].get(stage, 0) for scene_data in all_data]
-        
-        # Plot the Mesh bars for this stage
-        ax.bar(index - bar_width / 2 - spacing / 2, mesh_values, bar_width, color=stage_colors[i], bottom=bottom_mesh)
-        bottom_mesh += np.array(mesh_values)  # Update bottom for stacking
-
-        # Plot the Vert bars for this stage
-        ax.bar(index + bar_width / 2 + spacing / 2, vert_values, bar_width, color=stage_colors[i], bottom=bottom_vert)
-        bottom_vert += np.array(vert_values)  # Update bottom for stacking
-
-    # Customize the plot
-    ax.set_xlabel("Scene")
-    ax.set_ylabel("Cumulative VK Time (microseconds)")
-    ax.set_title("Mesh pipeline vs. Vertex pipeline")
-    
-    # Rotate the x-axis labels to prevent overlap
-    ax.set_xticks(index)
-    ax.set_xticklabels([f"{scene}\n(Mesh, Vert)" for scene in x_labels], rotation=45, ha="right")
-    
-    
-    # Create custom legend handles with the same colors for stages
-    legend_handles = [mpatches.Patch(color=stage_colors[i], label=stage) for i, stage in enumerate(stages)]
-    
-    # Set the legend with the custom handles
-    ax.legend(handles=legend_handles, title="Stages", loc='upper right')
-
-    # Adjust layout to minimize white space
-    plt.tight_layout()
-    plt.savefig(filename)
-    print(f"Histogram saved as {filename}")
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from collections import defaultdict
 
 def plot_cumulative_histogram_format(
     benchmarks, 
@@ -158,13 +133,13 @@ def plot_cumulative_histogram_format(
     scene_groups = defaultdict(list)
 
     # Group the results by scene and pipeline
-    for scene_name, _, benchmark_name, timers in benchmarks:
+    for benchmark in benchmarks:
+        scene_name = benchmark["scene"]
+        benchmark_name = benchmark["name"]
+        timers = benchmark["timers"]
+        
         if benchmark_name in pipelines and isinstance(timers, dict):
             scene_groups[scene_name].append((benchmark_name, timers))
-    
-    if not scene_groups:
-        print("No relevant benchmarks found.")
-        return
     
     all_data = []
     x_labels = []
@@ -238,17 +213,17 @@ if __name__ == "__main__":
     scenes = {
         "bicycle 30000": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply",
         "bonsai 30000": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply",
-        "counter 30000": "counter/point_cloud/iteration_30000/point_cloud.ply",
-        "drjohnson 30000": "drjohnson/point_cloud/iteration_30000/point_cloud.ply",
-        "flowers 30000": "flowers/point_cloud/iteration_30000/point_cloud.ply",
-        "garden 30000": "garden/point_cloud/iteration_30000/point_cloud.ply",
-        "kitchen 30000": "kitchen/point_cloud/iteration_30000/point_cloud.ply",
-        "playroom 30000": "playroom/point_cloud/iteration_30000/point_cloud.ply",
-        "room 30000": "room/point_cloud/iteration_30000/point_cloud.ply",
-        "stump 30000": "stump/point_cloud/iteration_30000/point_cloud.ply",
-        "train 30000": "train/point_cloud/iteration_30000/point_cloud.ply",
-        "treehill 30000": "treehill/point_cloud/iteration_30000/point_cloud.ply",
-        "truck 2.54M Splat": "truck/point_cloud/iteration_30000/point_cloud.ply"
+        #"counter 30000": "counter/point_cloud/iteration_30000/point_cloud.ply",
+        #"drjohnson 30000": "drjohnson/point_cloud/iteration_30000/point_cloud.ply",
+        #"flowers 30000": "flowers/point_cloud/iteration_30000/point_cloud.ply",
+        #"garden 30000": "garden/point_cloud/iteration_30000/point_cloud.ply",
+        #"kitchen 30000": "kitchen/point_cloud/iteration_30000/point_cloud.ply",
+        #"playroom 30000": "playroom/point_cloud/iteration_30000/point_cloud.ply",
+        #"room 30000": "room/point_cloud/iteration_30000/point_cloud.ply",
+        #"stump 30000": "stump/point_cloud/iteration_30000/point_cloud.ply",
+        #"train 30000": "train/point_cloud/iteration_30000/point_cloud.ply",
+        #"treehill 30000": "treehill/point_cloud/iteration_30000/point_cloud.ply",
+        #"truck 2.54M Splat": "truck/point_cloud/iteration_30000/point_cloud.ply"
     }
     
     # Build the full paths by combining the dataset path and scene relative paths

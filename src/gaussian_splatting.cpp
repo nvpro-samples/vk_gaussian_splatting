@@ -1430,9 +1430,9 @@ void GaussianSplatting::benchmarkAdvance()
   m_benchmarkId++;
 
   std::cout << "BENCHMARK_ADV " << m_benchmarkId << " {" << std::endl;
-  std::cout << " Model Memory; Host used \t" << m_modelMemoryStats.srcAll << "; Device Used \t" << m_modelMemoryStats.odevAll
+  std::cout << " Memory Scene; Host used \t" << m_modelMemoryStats.srcAll << "; Device Used \t" << m_modelMemoryStats.odevAll
             << "; Device Allocated \t" << m_modelMemoryStats.devAll << "; (bytes)" << std::endl;
-  std::cout << " Rendering Memory; Host used \t" << m_renderMemoryStats.hostTotal << "; Device Used \t" << m_renderMemoryStats.deviceUsedTotal
+  std::cout << " Memory Rendering; Host used \t" << m_renderMemoryStats.hostTotal << "; Device Used \t" << m_renderMemoryStats.deviceUsedTotal
             << "; Device Allocated \t" << m_renderMemoryStats.deviceAllocTotal << "; (bytes)" << std::endl;
   std::cout << "}" << std::endl;
 
