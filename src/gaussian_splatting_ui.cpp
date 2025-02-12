@@ -45,6 +45,26 @@ std::string formatMemorySize(size_t sizeInBytes)
   return fmt::format("{:.3} {}", size, units[currentUnit]);
 }
 
+std::string formatSize(size_t sizeValue)
+{
+  static const std::string units[]     = {"", "K", "M", "G"};
+  static const size_t      unitSizes[] = {1, 1000, 1000 * 1000, 1000 * 1000 * 1000};
+
+  uint32_t currentUnit = 0;
+  for(uint32_t i = 1; i < 4; i++)
+  {
+    if(sizeValue < unitSizes[i])
+    {
+      break;
+    }
+    currentUnit++;
+  }
+
+  float size = float(sizeValue) / float(unitSizes[currentUnit]);
+
+  return fmt::format("{:.3} {}", size, units[currentUnit]);
+}
+
 void GaussianSplatting::initGui()
 {
   // Storage
@@ -302,7 +322,7 @@ void GaussianSplatting::onUIRender()
     {
       PE::begin("##Raster statistics");
       uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
-      PE::Text("Total splats", "%d", totalSplatCount);
+      PE::Text("Total splats", "%d | %s", totalSplatCount, formatSize(totalSplatCount));
       uint32_t rasterSplatCount =
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       PE::Text("Rasterized splats", "%d", rasterSplatCount);

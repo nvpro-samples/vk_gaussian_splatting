@@ -118,9 +118,12 @@ nvidia_colors = {
     "light_green": "#8BFF00",  
     "black": "#000000",
     "white": "#FFFFFF",
+    "blue": "#0066CC",  # For general use or additional distinction
+    "dark_blue": "#003366",  # Darker blue for contrasting memory fields
+    "light_blue": "#3399FF",  # Lighter blue for additional distinction
 }
 
-def plot_cumulative_histogram_format(
+def plot_cumulative_histogram_timers(
     benchmarks, 
     title,
     ylabel,
@@ -128,7 +131,7 @@ def plot_cumulative_histogram_format(
     pipelines, 
     pipeline_names,  
     stages=["GPU Dist", "GPU Sort", "Rendering"], 
-    filename="histogram.png"
+    filename="histogram_timers.png"
 ):
     scene_groups = defaultdict(list)
 
@@ -199,6 +202,86 @@ def plot_cumulative_histogram_format(
     plt.savefig(filename)
     print(f"Histogram saved as {filename}")
 
+def plot_cumulative_histogram_memory(
+    benchmarks, 
+    title,
+    ylabel,
+    xlabel,
+    pipelines, 
+    pipeline_names,  
+    stages=["Scene", "Rendering"], 
+    filename="histogram_memory.png"
+):
+    scene_groups = defaultdict(list)
+
+    # Group the results by scene and pipeline
+    for benchmark in benchmarks:
+        scene_name = benchmark["scene"]
+        benchmark_name = benchmark["name"]
+        memory = benchmark["memory"]
+        
+        if benchmark_name in pipelines and isinstance(memory, dict):
+            scene_groups[scene_name].append((benchmark_name, memory))
+    
+    all_data = []
+    x_labels = []
+    width = 0.35  # Base bar width
+
+    # Flatten data for all scenes and pipelines
+    for scene, results in scene_groups.items():
+        scene_data = {pipeline: {stage: 0 for stage in stages} for pipeline in pipelines}
+        for benchmark_name, memory in results:
+            for stage in stages:
+                scene_data[benchmark_name][stage] += memory.get(stage, {}).get("Device Allocated", 0)
+
+        all_data.append(scene_data)
+        x_labels.append(scene)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Adjust the space between groups by reducing the range of index values
+    index = np.arange(len(x_labels)) * 0.5  # Multiply index by factor to reduce spacing between groups
+    num_pipelines = len(pipelines)
+    
+    # Adjust bar width to ensure space between bars within each group
+    bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
+
+    # Define colors for stages
+    stage_colors = [nvidia_colors["dark_green"], nvidia_colors["green"], nvidia_colors["light_green"]]
+    
+    # Stack bars
+    bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
+
+    for i, stage in enumerate(stages):
+        for j, pipeline in enumerate(pipelines):
+            values = [scene_data[pipeline].get(stage, 0) for scene_data in all_data]
+
+            # Adjust the offset for each bar within a group so that bars are well spaced
+            position_offset = (j - (num_pipelines - 1) / 2) * (bar_width + 0.05)  # Add space between bars
+
+            ax.bar(index + position_offset, values, bar_width, color=stage_colors[i], bottom=bottom_values[pipeline])
+            bottom_values[pipeline] += np.array(values)
+
+    # Customize plot
+    ax.set_xlabel(xlabel) # "Scene")
+    ax.set_ylabel(ylabel) # "Cumulative VK Time (microseconds)")
+    ax.set_title(title)   # "Pipeline Performance Comparison")
+
+    # Format x-ticks with pipeline short names
+    ax.set_xticks(index)
+    ax.set_xticklabels([f"{scene}\n({', '.join(pipeline_names)})" for scene in x_labels], 
+                       rotation=45, ha="right")
+    
+    # Create legend for stages
+    legend_handles = [mpatches.Patch(color=stage_colors[i], label=stage) for i, stage in enumerate(stages)]
+    ax.legend(handles=legend_handles, title="VRAM Cost", loc='upper right')
+
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(filename)
+    print(f"Histogram saved as {filename}")
+
 
 if __name__ == "__main__":    
     executable = os.path.abspath("bin_x64/Release/vk_gaussian_splatting.exe")
@@ -211,19 +294,19 @@ if __name__ == "__main__":
     
     # Define the scenes with the relative paths
     scenes = {
-        "bicycle 30000": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply",
-        "bonsai 30000": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply",
-        #"counter 30000": "counter/point_cloud/iteration_30000/point_cloud.ply",
-        #"drjohnson 30000": "drjohnson/point_cloud/iteration_30000/point_cloud.ply",
-        #"flowers 30000": "flowers/point_cloud/iteration_30000/point_cloud.ply",
-        #"garden 30000": "garden/point_cloud/iteration_30000/point_cloud.ply",
-        #"kitchen 30000": "kitchen/point_cloud/iteration_30000/point_cloud.ply",
-        #"playroom 30000": "playroom/point_cloud/iteration_30000/point_cloud.ply",
-        #"room 30000": "room/point_cloud/iteration_30000/point_cloud.ply",
-        #"stump 30000": "stump/point_cloud/iteration_30000/point_cloud.ply",
-        #"train 30000": "train/point_cloud/iteration_30000/point_cloud.ply",
-        #"treehill 30000": "treehill/point_cloud/iteration_30000/point_cloud.ply",
-        #"truck 2.54M Splat": "truck/point_cloud/iteration_30000/point_cloud.ply"
+        "bicycle 6.13M Splats": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply",
+        "bonsai 1.24M Splats": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply",
+        "counter 1.22M Splats": "counter/point_cloud/iteration_30000/point_cloud.ply",
+        "drjohnson 3.41M Splats": "drjohnson/point_cloud/iteration_30000/point_cloud.ply",
+        "flowers 3.64M Splats": "flowers/point_cloud/iteration_30000/point_cloud.ply",
+        "garden 5.83M Splats": "garden/point_cloud/iteration_30000/point_cloud.ply",
+        "kitchen 1.85M Splats": "kitchen/point_cloud/iteration_30000/point_cloud.ply",
+        "playroom 2.55M Splats": "playroom/point_cloud/iteration_30000/point_cloud.ply",
+        "room 1.59M Splats": "room/point_cloud/iteration_30000/point_cloud.ply",
+        "stump 4.96M Splats": "stump/point_cloud/iteration_30000/point_cloud.ply",
+        "train 1.03M Splats": "train/point_cloud/iteration_30000/point_cloud.ply",
+        "treehill 3.78M Splats": "treehill/point_cloud/iteration_30000/point_cloud.ply",
+        "truck 2.54M Splats": "truck/point_cloud/iteration_30000/point_cloud.ply"
     }
     
     # Build the full paths by combining the dataset path and scene relative paths
@@ -251,7 +334,7 @@ if __name__ == "__main__":
     
     save_to_csv(all_results)
 
-    plot_cumulative_histogram_format(
+    plot_cumulative_histogram_timers(
         all_results, 
         xlabel="Scene",
         ylabel="Cumulative VK Time (microseconds)",
@@ -259,9 +342,9 @@ if __name__ == "__main__":
         pipelines = ["Mesh pipeline", "Vert pipeline"], 
         pipeline_names= ["Mesh", "Vert"],
         stages=["GPU Dist", "GPU Sort", "Rendering"], 
-        filename="histogram_shader.png")
+        filename="histogram_shader_timers.png")
 
-    plot_cumulative_histogram_format(
+    plot_cumulative_histogram_timers(
         all_results, 
         xlabel="Scene",
         ylabel="Cumulative VK Time (microseconds)",
@@ -269,6 +352,16 @@ if __name__ == "__main__":
         pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
         pipeline_names= ["fp32", "fp16", "uint8"],
         stages=["GPU Dist", "GPU Sort", "Rendering"], 
-        filename="histogram_format.png")
+        filename="histogram_format_timers.png")
+
+    plot_cumulative_histogram_memory(
+        all_results, 
+        xlabel="Scene",
+        ylabel="Bytes",
+        title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
+        pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
+        pipeline_names= ["fp32", "fp16", "uint8"],
+        stages=["Scene", "Rendering"], 
+        filename="histogram_format_memory.png")
 
     print("CSV and histogram generation complete.")
