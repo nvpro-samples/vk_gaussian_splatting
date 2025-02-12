@@ -2,7 +2,7 @@
 
 ![image showing the rendering modes on the train 3DGS model](doc/rendering_modes.jpg)
 
-We envision this project as a **testbed** for exploring and comparing different approaches to the real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the Vulkan 1.3 API.  
+We envision this project as a **testbed** fto explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the Vulkan 1.3 API.  
 
 Our initial implementation is based on **rasterization** and demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since **Gaussian splats require back-to-front sorting for correct alpha compositing**, we present two alternative sorting methods. The first is a **GPU-based Radix Sort** implemented in a compute pipeline, while the second is a **CPU-based asynchronous sorting strategy** that uses the **multi-threaded sort function** from the C++ STL. This project serves as a **reference for efficient 3D Gaussian rendering with Vulkan**, showcasing **modern shader techniques** and **optimized sorting strategies**.  
 
