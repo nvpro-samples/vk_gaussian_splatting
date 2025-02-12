@@ -50,8 +50,6 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
-//#extension GL_KHR_shader_subgroup : enable
-//#extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_GOOGLE_include_directive : require
 #include "device_host.h"

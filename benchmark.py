@@ -109,18 +109,13 @@ def save_to_csv(benchmarks, filename="benchmark_results.csv"):
 
             writer.writerow(row)
 
-
-
 # branding :-)
-nvidia_colors = {
+color_set = {
     "green": "#76B900",
-    "dark_green": "#2A7F00", #"#3C7021",
+    "dark_green": "#2A7F00", 
     "light_green": "#8BFF00",  
     "black": "#000000",
     "white": "#FFFFFF",
-    "blue": "#0066CC",  # For general use or additional distinction
-    "dark_blue": "#003366",  # Darker blue for contrasting memory fields
-    "light_blue": "#3399FF",  # Lighter blue for additional distinction
 }
 
 def plot_cumulative_histogram_timers(
@@ -168,7 +163,7 @@ def plot_cumulative_histogram_timers(
     bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
 
     # Define colors for stages
-    stage_colors = [nvidia_colors["black"], nvidia_colors["dark_green"], nvidia_colors["green"]]
+    stage_colors = [color_set["black"], color_set["dark_green"], color_set["green"]]
     
     # Stack bars
     bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
@@ -184,9 +179,9 @@ def plot_cumulative_histogram_timers(
             bottom_values[pipeline] += np.array(values)
 
     # Customize plot
-    ax.set_xlabel(xlabel) # "Scene")
-    ax.set_ylabel(ylabel) # "Cumulative VK Time (microseconds)")
-    ax.set_title(title)   # "Pipeline Performance Comparison")
+    ax.set_xlabel(xlabel) 
+    ax.set_ylabel(ylabel) 
+    ax.set_title(title)   
 
     # Format x-ticks with pipeline short names
     ax.set_xticks(index)
@@ -248,7 +243,7 @@ def plot_cumulative_histogram_memory(
     bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
 
     # Define colors for stages
-    stage_colors = [nvidia_colors["dark_green"], nvidia_colors["green"], nvidia_colors["light_green"]]
+    stage_colors = [color_set["dark_green"], color_set["green"], color_set["light_green"]]
     
     # Stack bars
     bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
@@ -264,9 +259,9 @@ def plot_cumulative_histogram_memory(
             bottom_values[pipeline] += np.array(values)
 
     # Customize plot
-    ax.set_xlabel(xlabel) # "Scene")
-    ax.set_ylabel(ylabel) # "Cumulative VK Time (microseconds)")
-    ax.set_title(title)   # "Pipeline Performance Comparison")
+    ax.set_xlabel(xlabel) 
+    ax.set_ylabel(ylabel) 
+    ax.set_title(title)   
 
     # Format x-ticks with pipeline short names
     ax.set_xticks(index)
