@@ -333,7 +333,7 @@ if __name__ == "__main__":
         all_results, 
         xlabel="Scene",
         ylabel="Cumulative VK Time (microseconds)",
-        title="Pipeline Performance Comparison - Mesh vs. Vert",
+        title="Pipeline Performance Comparison - Mesh vs. Vertex",
         pipelines = ["Mesh pipeline", "Vert pipeline"], 
         pipeline_names= ["Mesh", "Vert"],
         stages=["GPU Dist", "GPU Sort", "Rendering"], 

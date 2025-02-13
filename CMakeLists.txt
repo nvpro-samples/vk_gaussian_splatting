@@ -8,15 +8,6 @@ Project(${PROJNAME} LANGUAGES C CXX)
 Message(STATUS "-------------------------------")
 Message(STATUS "Processing Project ${PROJNAME}:")
 
-# Download CPM.cmake
-set(CPM_DOWNLOAD_VERSION 0.40.2)
-set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
-    message(STATUS "Downloading CPM.cmake...")
-    file(DOWNLOAD https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
-endif()
-include(${CPM_DOWNLOAD_LOCATION})
-
 #####################################################################################
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
 # this cannot be put anywhere else since we still didn't find setup.cmake yet
@@ -105,12 +96,9 @@ _add_package_ShaderC()
 _add_package_IMGUI()
 _add_package_NVML()
 
+#####
 # Include Vulkan Radix Sort
-CPMAddPackage(
-  NAME vulkan_radix_sort
-  GITHUB_REPOSITORY jaesung-cs/vulkan_radix_sort
-  GIT_TAG 3faac413f643ca799f42950af6f7fb9c12913003
-)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx)
 
 #####################################################################################
 # process the rest of some cmake code that needs to be done *after* the packages add
@@ -121,9 +109,13 @@ _add_nvpro_core_lib()
 #
 file(GLOB SOURCE_FILES src/*.*)
 file(GLOB SHADER_FILES shaders/*.glsl shaders/*.h)
-file(GLOB EXTERN_FILES 3rdparty/*.*)
+file(GLOB EXTERN_FILES 3rdparty/miniply/*.*)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/shaders ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty)
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src 
+  ${CMAKE_CURRENT_SOURCE_DIR}/shaders 
+  ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/miniply
+  ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx)
 
 #####################################################################################
 # Executable
@@ -151,6 +143,7 @@ source_group(common FILES
 )
 source_group("Shader Files" FILES ${SHADER_FILES})
 source_group("Source Files" FILES ${SOURCE_FILES})
+source_group("Extern Files" FILES ${EXTERN_FILES})
 
 if(UNIX)
   set(UNIXLINKLIBS dl pthread)

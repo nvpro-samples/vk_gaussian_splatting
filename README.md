@@ -284,6 +284,8 @@ The fragment shader operates as follows:
 
 For the time beeing WORK_GROUP_SIZE = 32, recommended for NVidia hardware.
 
+TODO : write this section
+
 ### On Using a Jacobian When Rasterizing 3D Gaussian Splatting with a Perspective Camera
 
 When rasterizing 3D Gaussian splatting with a perspective camera, the Jacobian matrix is used to correctly account for how the 3D Gaussian transforms when projected onto the 2D image plane. This ensures accurate splat shape, size, and intensity in screen space.
@@ -315,11 +317,11 @@ python benchmark.py <path_to_3dgs_dataset_root>
 
 The following charts presents the results of such a benchmark, when run on an `NVIDIA RTX 6000 Ada Generation`, drivers version 572.64.0, Intel(R) Core(TM) i9-14900K, 3200Mhz, 24 Cores, 32 Logical Processors.
 
-![TODO](doc/histogram_shader_timers.png)   
+![Image showing pipeline Performance Comparison - Mesh vs. Vertex](doc/histogram_shader_timers.png)   
 
-![TODO](doc/histogram_format_timers.png)
+![Image showing Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8](doc/histogram_format_timers.png)
 
-![TODO](doc/histogram_format_memory.png)
+![Image showing Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8](doc/histogram_format_memory.png)
 
 ## References
 
@@ -333,7 +335,19 @@ The following charts presents the results of such a benchmark, when run on an `N
 
 [[Hou2024](https://arxiv.org/abs/2410.18931)] **Sort-free Gaussian Splatting via Weighted Sum Rendering**. Hou, Q., Rauwendaal, R., Li, Z., Le, H., Farhadzadeh, F., Porikli, F.M., Bourd, A., & Said, A. (2024). ArXiv, abs/2410.18931.
 
-## 3rd party licences
+## 3rd-Party Licenses
+
+| Library | URL | License |
+|--------------|---------|--|
+| **miniply** | https://github.com/vilya/miniply | [MIT](https://github.com/vilya/miniply/blob/master/LICENSE.md) |
+| **vrdx** | https://github.com/jaesung-cs/vulkan_radix_sort | [MIT](https://github.com/jaesung-cs/vulkan_radix_sort/blob/master/LICENSE) |
+
+Some parts of the current implementation are strongly inspired by, and in some cases incorporate, source code and comments from the following third-party projects:
+
+| Project | URL | License |
+|--------------|---------|--|
+| **vkgs** | https://github.com/jaesung-cs/vkgs | [MIT](https://github.com/jaesung-cs/vkgs/blob/master/LICENSE) |
+| **GaussianSplats3D** | https://github.com/mkkellogg/GaussianSplats3D/tree/main | [MIT](https://github.com/mkkellogg/GaussianSplats3D/blob/main/LICENSE) |
 
 ## License
 

@@ -28,7 +28,7 @@
 std::string formatMemorySize(size_t sizeInBytes)
 {
   static const std::string units[]     = {"B", "KB", "MB", "GB"};
-  static const size_t      unitSizes[] = {1, 1000, 1000 * 1000, 1000 * 1000 * 1000};
+  static const size_t      unitSizes[] = {1, 1024, 1024 * 1024, 1024 * 1024 * 1024};
 
   uint32_t currentUnit = 0;
   for(uint32_t i = 1; i < 4; i++)
@@ -320,22 +320,49 @@ void GaussianSplatting::onUIRender()
     //
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      PE::begin("##Raster statistics");
-      uint32_t totalSplatCount = (uint32_t)m_splatIndices.size();
-      PE::Text("Total splats", "%d | %s", totalSplatCount, formatSize(totalSplatCount));
-      uint32_t rasterSplatCount =
+      const int32_t totalSplatCount = (uint32_t)m_splatIndices.size();
+      const int32_t rasterSplatCount =
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
-      PE::Text("Rasterized splats", "%d", rasterSplatCount);
-      uint32_t wg = (m_selectedPipeline == PIPELINE_MESH) ?
-                        ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
-                                                                                 (m_frameInfo.splatCount + 31) / 32) :
-                        0;
-      PE::Text("Mesh shader work groups", "%d", wg);
-      PE::end();
-      PE::begin("##Sorting statistics");
-      PE::Text("CPU Distances  (ms)", "%.3f", m_distTime);
-      PE::Text("CPU Sorting  (ms)", "%.3f", m_sortTime);
-      PE::end();
+      const uint32_t wgCount = (m_selectedPipeline == PIPELINE_MESH) ?
+                                   ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                                                                                            (m_frameInfo.splatCount + 31) / 32) :
+                                   0;
+
+      if(ImGui::BeginTable("Stats", 3, ImGuiTableFlags_BordersOuter))
+      {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+        ImGui::TableSetupColumn("Size short", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Size Fill", ImGuiTableColumnFlags_WidthStretch);
+        // ImGui::TableHeadersRow();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Total splats");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatSize(totalSplatCount).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", totalSplatCount);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Sorted splats");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatSize(rasterSplatCount).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", rasterSplatCount);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("Mesh shader work groups");
+        ImGui::TableNextColumn();
+        ImGui::Text(formatSize(wgCount).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", wgCount);
+        ImGui::TableNextRow();
+        ImGui::EndTable();
+
+        PE::begin("##Sorting statistics");
+        PE::Text("CPU Distances  (ms)", "%.3f", m_distTime);
+        PE::Text("CPU Sorting  (ms)", "%.3f", m_sortTime);
+        PE::end();
+      }
     }
   }
   ImGui::End();
