@@ -63,20 +63,18 @@ The visualization workflow follows these main steps:
 4. Rasterization –
     *    For each new frame, the sorted splats are rasterized using either the Mesh Shader Pipeline or the Vertex Shader Pipeline, depending on the selected rasterization mode.
 
-This structured workflow ensures efficient rendering while allowing different sorting and rasterization strategies to be compared.
-
 ![image showing the user interface viewing the bicycle 3DGS model](doc/user_interface.jpg)
 
 ### Data Format and Storage Panel
 
 The Data Format and Storage Panel allows users to configure how the model's data is stored in VRAM.
-*	**Data Storage** – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
+*	**Storage** – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
     *	Position
     *	Color and Opacity (deduced from SH degree 0 at construction)
     *	Covariance Matrix
     *	Spherical Harmonics (SH) Coefficients (for degrees higher than 0)
 
-This option impacts memory access patterns and performance, allowing comparisons between different storage strategies. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
+This **storage** option impacts memory access patterns and performance, allowing comparisons between different storage strategies. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
 *	**Data Buffer Mode** – Uses a separate buffer for each attribute type.
     *	This layout improves memory lookups during shader execution, as threads access attributes in sequential stages (e.g., first positions, then colors, etc.).
     *  	Buffers are allocated and initialized by the [initDataBuffers](src/gaussian_splatting.cpp#L809) method.
@@ -86,7 +84,10 @@ This option impacts memory access patterns and performance, allowing comparisons
     *	Future work could explore organizing data based on value proximity to leverage texture compression.
     *   Textures are allocated and initialized by the [initDataTextures](src/gaussian_splatting.cpp#L1110) method.
 
-This flexibility enables performance comparisons between buffer-based and texture-based data storage, each with trade-offs in memory access efficiency and potential optimization opportunities.
+Finally, the **SH format** selector controls the precision used for storing spherical harmonics (SH) coefficients.
+
+- **SH format** – Selects between **Float32**, **Float16**, and **UInt8** for SH coefficient storage, balancing precision and memory usage.
+
 
 ### Rendering Panel
 
@@ -111,7 +112,7 @@ The **Profiling Panel** reports the **GPU** and **CPU** time spent on different 
 
 The **Statistics Panel** provides additional information, such as:  
 - The **total number of splats** in the model.  
-- The **number of splats** selected for rasterization (after culling).  
+- The **number of splats** selected for rasterization after sorting.  
 - The **time spent** in the last asynchronous **CPU sort** (if enabled).  
 
 ## Sorting methods
