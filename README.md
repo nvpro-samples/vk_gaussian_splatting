@@ -2,7 +2,7 @@
 
 ![image showing the rendering modes on the train 3DGS model](doc/rendering_modes.jpg)
 
-We envision this project as a **testbed** fto explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the Vulkan 1.3 API.  
+We envision this project as a **testbed** fto explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the **Vulkan 1.3 API**.
 
 Our initial implementation is based on **rasterization** and demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since **Gaussian splats require back-to-front sorting for correct alpha compositing**, we present two alternative sorting methods. The first is a **GPU-based Radix Sort** implemented in a compute pipeline, while the second is a **CPU-based asynchronous sorting strategy** that uses the **multi-threaded sort function** from the C++ STL. This project serves as a **reference for efficient 3D Gaussian rendering with Vulkan**, showcasing **modern shader techniques** and **optimized sorting strategies**.  
 
@@ -196,13 +196,11 @@ Since we use the third-party Vulkan Radix Sort library from [jaesung-cs/vulkan_r
 
 Finally, a last memory barrier is added to ensure the availability of the sorted indices buffer for the stages of the graphics pipeline.
 
-> TODO: Dist/cull/sort process could use only one pipeline but using 3rdparty lib for radix prevents this. 
-
 ## Data Flow Using CPU-Based Sorting  
 
 ![Image showing Gaussian Splatting rasterization pipelines with CPU sorting](doc/pipeline_cpu_sorting.png)  
 
-The **CPU-based sorting** is executed in a **separate thread**, with its implementation residing in the **`innerSort`** method (see [`splat_sorter_async.cpp`](src/splat_sorter_async.cpp#L81)). The **rendering loop** controls both the **start of a new sort** (triggered when sorting is idle and the camera changes) and the **consumption of sorted indices**. This logic is implemented in the **`tryConsumeAndUploadCpuSortingResult`** method (see [`gaussian_splatting.cpp`](src/gaussian_splatting.cpp#L206)).
+The **CPU-based sorting** is executed in a **separate thread**, with its implementation residing in the **`innerSort`** method (see [splat_sorter_async.cpp](src/splat_sorter_async.cpp#L81)). The **rendering loop** controls both the **start of a new sort** (triggered when sorting is idle and the camera changes) and the **consumption of sorted indices**. This logic is implemented in the **`tryConsumeAndUploadCpuSortingResult`** method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp#L206)).
 
 Within this method, executed by the main thread (rendering loop):
 
@@ -268,7 +266,7 @@ The **same color and opacity** (computed from **Spherical Harmonics (SH) coeffic
 
 ### Fragment Shader  
 
-The fragment shader is implemented in **[raster.frag.glsl](shaders/raster.frag.glsl)**.  
+The fragment shader is implemented in [**raster.frag.glsl**](shaders/raster.frag.glsl).  
 
 It is designed to be extremely **lightweight**, as most computations are already handled in the **vertex shader**. Since **Gaussian Splatting** is inherently **fragment-intensive**, minimizing the workload in this stage is crucial for performance.  
 
@@ -278,15 +276,13 @@ The fragment shader operates as follows:
 3. The **opacity is updated** based on `A` using the **Gaussian formula**.  
 4. The **final color** (including the updated opacity) is written to `outColor`, using the splat color from **`inSplatCol`**.  
 
-> **Note:** that one might use barycentric coordinates to remove the need from passing fragPos, to be verified and potentially implemented.
-
 ### Mesh shader
 
-The mesh shader is implemented in [raster.mesh.glsl](shaders/raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.presented hereafter.
+The mesh shader is implemented in [**raster.mesh.glsl**](shaders/raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.
 
 #### Shader Setup
 
-* Requires Vulkan mesh shading (GL_EXT_mesh_shader)
+* Requires Vulkan mesh shading extension `GL_EXT_mesh_shader`
 * Uses a workgroup size of 32 (layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;). 
     * This configuration is optimized for NVIDIA hardware.
 * Outputs triangles, with a maximum of 128 vertices and 64 primitives per workgroup.
@@ -326,7 +322,7 @@ In this scenario, the `shader_subgroup` extension is required to **compute ballo
 
 ### On Using a Jacobian When Rasterizing 3D Gaussian Splatting with a Perspective Camera
 
-When rasterizing 3D Gaussian splatting with a perspective camera, the Jacobian matrix is used to correctly account for how the 3D Gaussian transforms when projected onto the 2D image plane. This ensures accurate splat shape, size, and intensity in screen space.
+When rasterizing 3D Gaussian splatting with a perspective camera, the Jacobian matrix is used to correctly account for how the 3D Gaussian transforms when projected onto the 2D image plane. This ensures accurate splat shape and size in screen space.
 
 In 3D space, Gaussians are typically represented as ellipsoids with a mean position **μ** and a covariance matrix **Σ**. When projecting to 2D, the shape of these Gaussians warps non-linearly due to perspective effects. The Jacobian matrix **J** of the projection function encodes how infinitesimal changes in 3D coordinates affect the 2D screen-space coordinates.
 
