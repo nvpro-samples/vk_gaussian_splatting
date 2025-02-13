@@ -3,3 +3,4 @@ build/
 _install/
 _autogen/
 _benchmark/
+generated/
