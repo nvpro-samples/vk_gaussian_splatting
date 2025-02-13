@@ -469,7 +469,7 @@ void GaussianSplatting::deinitAll()
   deinitScene();
   deinitDataTextures();
   deinitDataBuffers();
-  deinitVkBuffers();
+  deinitRendererBuffers();
   deinitShaders();
   deinitPipelines();
   resetRenderSettings();
@@ -480,6 +480,8 @@ void GaussianSplatting::deinitAll()
 
 void GaussianSplatting::initAll()
 {
+  // resize the CPU sorter indices buffer
+  m_splatIndices.resize(m_splatIndices.size());
   // TODO: use BBox of point cloud to set far plane
   CameraManip.setClipPlanes({0.1F, 2000.0F});
   // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
@@ -488,7 +490,7 @@ void GaussianSplatting::initAll()
   resetRenderSettings();
   //
   initShaders();
-  initVkBuffers();
+  initRendererBuffers();
   if(m_defines.dataStorage == STORAGE_TEXTURES)
     initDataTextures();
   else
@@ -744,12 +746,9 @@ void GaussianSplatting::deinitPipelines()
   vkDestroyPipeline(m_device, m_computePipeline, nullptr);
 }
 
-void GaussianSplatting::initVkBuffers()
+void GaussianSplatting::initRendererBuffers()
 {
   const auto splatCount = (uint32_t)m_splatSet.size();
-
-  // TODO: this has nothing to do here, check where to put this
-  m_splatIndices.resize(splatCount);
 
   // All this block for the sorting
   {
@@ -823,7 +822,7 @@ void GaussianSplatting::initVkBuffers()
   m_dutil->DBG_NAME(m_frameInfoBuffer.buffer);
 }
 
-void GaussianSplatting::deinitVkBuffers()
+void GaussianSplatting::deinitRendererBuffers()
 {
   // TODO can we  rather move this to pipelines creation/deletion ?
   if(m_gpuSorter != VK_NULL_HANDLE)

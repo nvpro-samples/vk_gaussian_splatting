@@ -169,9 +169,9 @@ private:  // Methods
 
   void deinitPipelines();
 
-  void initVkBuffers();
+  void initRendererBuffers();
 
-  void deinitVkBuffers();
+  void deinitRendererBuffers();
 
   bool initShaders(void);
 
@@ -210,19 +210,15 @@ private:  // Methods
   // Updates frame information uniform buffer and frame camera info 
   void updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const uint32_t splatCount);
 
-  // TODO API doc
   void tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount);
-
-  // TODO API doc
+    
   void processSortingOnGPU(VkCommandBuffer cmd, const uint32_t splatCount);
-
-  // TODO API doc
+    
   void drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t splatCount);
 
-  // TODO API doc (for statistics display in the UI)
+  // for statistics display in the UI
   void readBackIndirectParameters(VkCommandBuffer cmd);
 
-  // TODO API doc
   void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
   
   ////////

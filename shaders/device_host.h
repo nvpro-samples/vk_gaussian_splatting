@@ -84,7 +84,7 @@ struct FrameInfo
   vec2 viewport;
 
   vec2                 basisViewport;
-  float orthoZoom      DEFAULT(1.0f);  // TODO ?
+  float orthoZoom      DEFAULT(1.0f);  // 
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
   int splatCount        DEFAULT(0);     //
