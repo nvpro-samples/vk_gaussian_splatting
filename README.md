@@ -241,7 +241,7 @@ The `WORK_GROUP_SIZE` value will be discussed in the **Mesh Shader** section.
 
 ### Vertex Shader  
 
-The vertex shader is implemented in [raster.vert.glsl](shaders/raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). The mathematical formulations and comments have been directly retained from this source.
+The vertex shader is implemented in [raster.vert.glsl](shaders/raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). Some mathematical formulations and comments have been directly retained from this source.
 
 The vertex shader operates on each of the **four vertices** of each quad. Since the input quad has **normalized 2D positions** in the range **[-1,1]**, the shader does not need to distinguish between individual vertices. Instead, the transformation—derived from the **splat position** and **covariance matrix**—determines the final scale and placement of the splat.  
 
@@ -281,9 +281,47 @@ The fragment shader operates as follows:
 
 ### Mesh shader
 
-For the time beeing WORK_GROUP_SIZE = 32, recommended for NVidia hardware.
+The mesh shader is implemented in [raster.mesh.glsl](shaders/raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.presented hereafter.
 
-TODO : write this section
+#### Shader Setup
+
+* Requires Vulkan mesh shading (GL_EXT_mesh_shader)
+* Uses a workgroup size of 32 (layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;). 
+    * This configuration is optimized for NVIDIA hardware.
+* Outputs triangles, with a maximum of 128 vertices and 64 primitives per workgroup.
+
+#### Workgroup Management
+
+* Parallel Processing: Each global invocation (thread) processes **one splat**.
+* Batch Processing: The workgroup can process up to **32 splats** (outputQuadCount).
+
+#### Mesh Shader Output Setup
+
+* The first thread (gl_LocalInvocationIndex == 0) sets the total number of **vertices and primitives** for the workgroup using:
+    
+     `SetMeshOutputsEXT(outputQuadCount * 4, outputQuadCount * 2);`
+
+* Each **splat** emits a **quad** (4 vertices, 2 triangles).
+
+#### Vertex and Primitive Emission
+
+* Each quad is defined in local space with:
+
+    `const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};`
+
+* Outputs per-vertex attributes as early as possible (outFragPos).
+* Assigns triangle indices to form two triangles per quad:
+
+    `gl_PrimitiveTriangleIndicesEXT[...] = uvec3(...);`
+
+#### Notes on implementation
+
+This version of the **Mesh Shader** is optimized for cases where **culling is performed in a previous stage**, meaning the number of outputs for each workgroup is **known at the beginning of execution**.  
+
+When performing **culling inside the Mesh Shader**, further optimizations are possible by using the `GL_NV_mesh_shader` extension instead of `GL_EXT_mesh_shader`. This extension allows **setting the number of workgroup outputs at the end of execution**, ensuring the exact number of primitives emitted.  
+
+In this scenario, the `shader_subgroup` extension is required to **compute ballots** efficiently. A version implementing this approach is reserved for **future work**.  
+
 
 ### On Using a Jacobian When Rasterizing 3D Gaussian Splatting with a Perspective Camera
 
