@@ -2,7 +2,7 @@
 
 ![image showing the rendering modes on the train 3DGS model](doc/rendering_modes.jpg)
 
-We envision this project as a **testbed** fto explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the **Vulkan 1.3 API**.
+We envision this project as a **testbed** to explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]**. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the **Vulkan 1.3 API**.
 
 Our initial implementation is based on **rasterization** and demonstrates two approaches for rendering splats: one leveraging **mesh shaders** and another utilizing **vertex shaders**. Since **Gaussian splats require back-to-front sorting for correct alpha compositing**, we present two alternative sorting methods. The first is a **GPU-based Radix Sort** implemented in a compute pipeline, while the second is a **CPU-based asynchronous sorting strategy** that uses the **multi-threaded sort function** from the C++ STL. This project serves as a **reference for efficient 3D Gaussian rendering with Vulkan**, showcasing **modern shader techniques** and **optimized sorting strategies**.  
 
@@ -49,14 +49,14 @@ Files can be opened using any of the following methods:
 
 Compatibility
 *	[Jawset Postshot](https://www.jawset.com/) output files are compatible with the INRIA format and can be opened directly.
-*	Other reconstruction softwares outputs may work but have not been tested.
+*	Other reconstruction software's outputs may work but have not been tested.
 
 ## Sample usage
 
 The visualization workflow follows these main steps:
 
 1. Loading the 3DGS Model into RAM.
-2. Data Transformation & Upload – The splat attributes (positions, opacity, Spherical Harmonic (SH) coefficients from degree 0 to 3, and rotation scale) are transformed if necessary and uploaded into VRAM. The data storage and format can be updated during the course of the visualization, the data in VRAM and the pipelines are then regenerated.
+2. Data Transformation & Upload – The splat attributes (positions, opacity, Spherical Harmonic (SH) coefficients from degree 0 to 3, and rotation scale) are transformed if necessary and uploaded into VRAM. The data storage and format can be updated during the visualization, the data in VRAM and the pipelines are then regenerated.
 3. Sorting –
     *    At every frame or whenever the viewpoint changes (depending on user settings and sorting method), the splats are sorted back-to-front for correct alpha compositing.
     *    The resulting sorted indices are passed to the rasterization stage.
@@ -178,7 +178,7 @@ Instance Index Assignment
     * **Distances Buffer** → Stores the encoded distance to the viewpoint.
     * **Indices Buffer** → Stores the GlobalInvocationID.x as the index.
 * For the Mesh Shader Pipeline, an additional step is performed, 
-    * the **groupCountX** field in the indirect parameters buffer is incremented for every WORK_GROUP_SIZE visible splats, using an atomic add. This parameters will be devised in section Mesh shader.
+    * the **groupCountX** field in the indirect parameters buffer is incremented for every WORK_GROUP_SIZE visible splats, using an atomic add. These parameters will be devised in section Mesh shader.
 
 At the end of this process:
 
@@ -334,9 +334,9 @@ This operation preserves the anisotropic shape of the Gaussian in screen space. 
 
 ## Benchmarking
 
-To run the benchmark you need to have the INRIA dataset located in folder <path_to_3dgs_dataset_root>.
+To run the benchmark, you need to have the INRIA dataset located in folder <path_to_3dgs_dataset_root>.
 
-You may need to install additional pythons dependencies such as:
+You may need to install additional python dependencies such as:
 
 ``` sh
 python -m pip install matplotlib
@@ -359,7 +359,7 @@ The following charts presents the results of such a benchmark, when run on an `N
 
 ## References
 
-[[Zwicker2002](https://www.cs.umd.edu/~zwicker/publications/EWASplatting-TVCG02.pdf)]. **EWA Splatting**. E., Zwicker, M., Pfister, H., Van Baar, J., Gross, M.H., Zwicker, M., Pfister, H., Van Baar, J., & Gross, M.H. (2002). IEEE Transactions on Visualization and Computer Graphics .
+[[Zwicker2002](https://www.cs.umd.edu/~zwicker/publications/EWASplatting-TVCG02.pdf)]. **EWA Splatting**. E., Zwicker, M., Pfister, H., Van Baar, J., Gross, M.H., Zwicker, M., Pfister, H., Van Baar, J., & Gross, M.H. (2002). IEEE Transactions on Visualization and Computer Graphics.
 
 [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] **3D Gaussian Splatting for Real-Time Radiance Field Rendering**. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
 
