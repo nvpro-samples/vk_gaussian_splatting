@@ -11,7 +11,6 @@ For future work, we plan to explore **ray tracing for 3DGS** [Moënne-Loccoz2024
 ## Requirements
 
 - **Vulkan 1.3 SDK** from LunarG – [Download](https://vulkan.lunarg.com/).  
-- **CUDA v12.6** is currently required by the **vrdx** build *(TODO: Remove this dependency as only the library is used, not the benchmark.)*.  
 - **CUDA v12.6** is optional and can be used to activate **NVML GPU monitoring** in the sample – [Download](https://developer.nvidia.com/cuda-downloads).  
 
 ## Building and Running
@@ -347,7 +346,7 @@ Some parts of the current implementation are strongly inspired by, and in some c
 | Project | URL | License |
 |--------------|---------|--|
 | **vkgs** | https://github.com/jaesung-cs/vkgs | [MIT](https://github.com/jaesung-cs/vkgs/blob/master/LICENSE) |
-| **GaussianSplats3D** | https://github.com/mkkellogg/GaussianSplats3D/tree/main | [MIT](https://github.com/mkkellogg/GaussianSplats3D/blob/main/LICENSE) |
+| **GaussianSplats3D** | https://github.com/mkkellogg/GaussianSplats3D | [MIT](https://github.com/mkkellogg/GaussianSplats3D/blob/main/LICENSE) |
 
 ## License
 
