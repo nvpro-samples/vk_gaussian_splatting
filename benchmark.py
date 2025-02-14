@@ -7,6 +7,7 @@ import os
 import argparse
 from collections import defaultdict
 import matplotlib.patches as mpatches  # Add this import for legend patches
+import shutil
 
 def run_benchmark(executable, benchmark_file, scene_path, output_log):
     command = [os.path.abspath(executable), "-benchmark", os.path.abspath(benchmark_file), scene_path]
@@ -280,7 +281,7 @@ def plot_cumulative_histogram_memory(
 
 if __name__ == "__main__":    
     executable = os.path.abspath("bin_x64/Release/vk_gaussian_splatting.exe")
-    benchmark_file = os.path.abspath("benchmark.txt")
+    benchmark_file = os.path.abspath("benchmark.cfg")
     # Setup argument parsing for the base dataset path
     parser = argparse.ArgumentParser(description="Run benchmarks for 3D scenes.")
     parser.add_argument("dataset_path", type=str, help="Base path to the dataset")
@@ -317,10 +318,20 @@ if __name__ == "__main__":
 
     all_results = []
     for scene_name, scene_path in full_scene_paths.items():
-        output_log = f"benchmark_{scene_name.replace(' ', '_')}.log"
+        output_prefix = f"benchmark_{scene_name.replace(' ', '_')}"
+        output_log = f"{output_prefix}.log"
+
         print(f"Running benchmark for {scene_name} at {scene_path}...")
         run_benchmark(executable, benchmark_file, scene_path, output_log)
+
+        # Rename the generated screen shots
+        for img_file in ["mesh_screenshot.png", "vert_screenshot.png"]:
+            if os.path.exists(img_file):
+                new_name = f"{output_prefix}_{img_file}"
+                shutil.move(img_file, new_name)
+                #print(f"Renamed {img_file} to {new_name}")
         
+        # Read and process the benchmark log
         with open(output_log, "r", encoding="utf-8") as file:
             log_text = file.read()
         
