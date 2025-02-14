@@ -320,7 +320,7 @@ void GaussianSplatting::onUIRender()
     //
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      const int32_t totalSplatCount = (uint32_t)m_splatIndices.size();
+      const int32_t totalSplatCount = (uint32_t)m_splatSet.size();
       const int32_t rasterSplatCount =
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       const uint32_t wgCount = (m_selectedPipeline == PIPELINE_MESH) ?

@@ -100,6 +100,12 @@ _add_package_NVML()
 # Include Vulkan Radix Sort
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx)
 
+set_property(TARGET vk_radix_sort PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET spine_comp PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET downsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET downsweep_key_value_comp PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET upsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
+
 #####################################################################################
 # process the rest of some cmake code that needs to be done *after* the packages add
 _add_nvpro_core_lib()
