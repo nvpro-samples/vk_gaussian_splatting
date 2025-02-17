@@ -60,9 +60,11 @@ layout(set = 0, binding = BINDING_SH_BUFFER) buffer _sphericalHarmonicsBuffer
 ////////////
 // constants
 
-const float sqrt8    = sqrt(8.0);
-const float SH_C1    = 0.4886025119029199f;
-const float[5] SH_C2 = float[](1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742);
+const float sqrt8   = sqrt(8.0);
+const float SH_C1   = 0.4886025119029199f;
+const float SH_C2[] = {1.0925484, -1.0925484, 0.3153916, -1.0925484, 0.5462742};
+const float SH_C3[] = {-0.5900435899266435f, 2.890611442640554f, -0.4570457994644658f, 0.3731763325901154f,
+                       -0.4570457994644658f, 1.445305721320277f, -0.5900435899266435f};
 
 // data texture accessors
 ivec2 getDataPos(in uint splatIndex, in uint stride, in uint offset, in ivec2 dimensions)
@@ -111,7 +113,15 @@ vec4 fetchColor(in uint splatIndex)
 
 #if DATA_STORAGE == STORAGE_TEXTURES
 // fetch from data textures
-void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
+void fetchSh(in uint  splatIndex,
+             out vec3 shd1[3]
+#if MAX_SH_DEGREE >= 2
+             , out vec3 shd2[5]
+#endif
+#if MAX_SH_DEGREE >= 3
+             , out vec3 shd3[9]
+#endif
+)
 {
   const float SphericalHarmonics8BitCompressionRange = 2.0;
   const vec3  vec8BitSHShift                         = vec3(SphericalHarmonics8BitCompressionRange / 2.0);
@@ -168,12 +178,63 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
   shd2[4] = sh8 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
 #endif
 #endif
+
+  // Fetching degree 3
+#if MAX_SH_DEGREE >= 3
+  const vec4 sampledSH24252627 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 6, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH28293031 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 7, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH32333435 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 8, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH36373839 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 9, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH404142 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 10, textureSize(sphericalHarmonicsTexture, 0)), 0);
+  const vec4 sampledSH434445 =
+      texelFetch(sphericalHarmonicsTexture, getDataPos(splatIndex, stride, 11, textureSize(sphericalHarmonicsTexture, 0)), 0);
+
+  const vec3 sh9  = sampledSH24252627.rgb;
+  const vec3 sh10 = vec3(sampledSH24252627.a, sampledSH28293031.rg);
+  const vec3 sh11 = vec3(sampledSH28293031.ba, sampledSH32333435.r );
+  const vec3 sh12 = sampledSH32333435.gba;
+  const vec3 sh13 = sampledSH36373839.rgb;
+  const vec3 sh14 = vec3(sampledSH36373839.a, sampledSH404142.rg);
+  const vec3 sh15 = vec3(sampledSH404142.ba, sampledSH434445.r);
+
+#if SH_FORMAT != FORMAT_UINT8
+  shd3[0] = sh9;
+  shd3[1] = sh10;
+  shd3[2] = sh11;
+  shd3[3] = sh12;
+  shd3[4] = sh13;
+  shd3[5] = sh14;
+  shd3[6] = sh15;
+#else
+  shd3[0] = sh9 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[1] = sh10 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[2] = sh11 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[3] = sh12 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[4] = sh13 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[5] = sh14 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+  shd3[6] = sh15 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
+#endif
+#endif
+
 }
 #else
 // fetch from data buffers
-void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
+void fetchSh(
+  in uint splatIndex ,out vec3 shd1[3] 
+#if MAX_SH_DEGREE >= 2
+  ,out vec3 shd2[5]
+#endif
+#if MAX_SH_DEGREE >= 3
+  ,out vec3 shd3[9]
+#endif
+)
 {
-  const uint splatStride = 45;  // three degrees in memory, but we only fetch degrees 1 and 2
+  const uint splatStride = 45;
 
   const float SphericalHarmonics8BitCompressionRange     = 2.0;
   const float SphericalHarmonics8BitCompressionHalfRange = SphericalHarmonics8BitCompressionRange / 2.0;
@@ -237,6 +298,55 @@ void fetchSh(in uint splatIndex, out vec3 shd1[3], out vec3 shd2[5])
   shd2[2] = sh6 * SphericalHarmonics8BitScale - vec8BitSHShift;
   shd2[3] = sh7 * SphericalHarmonics8BitScale - vec8BitSHShift;
   shd2[4] = sh8 * SphericalHarmonics8BitScale - vec8BitSHShift;
+#endif
+#endif
+
+  // fetching degree 3
+#if MAX_SH_DEGREE >= 3
+  const vec3 sh9 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 8 + 0],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 8 + 1],
+                        sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 8 + 2]);
+
+  const vec3 sh10 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 9 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 9 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 9 + 2]);
+
+  const vec3 sh11 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 10 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 10 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 10 + 2]);
+
+  const vec3 sh12 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 11 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 11 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 11 + 2]);
+
+  const vec3 sh13 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 12 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 12 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 12 + 2]);
+
+  const vec3 sh14 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 13 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 13 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 13 + 2]);
+
+  const vec3 sh15 = vec3(sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 14 + 0],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 14 + 1],
+                         sphericalHarmonicsBuffer[splatStride * splatIndex + 3 * 14 + 2]);
+
+#if SH_FORMAT != FORMAT_UINT8
+  shd3[0] = sh9;
+  shd3[1] = sh10;
+  shd3[2] = sh11;
+  shd3[3] = sh12;
+  shd3[4] = sh13;
+  shd3[5] = sh14;
+  shd3[6] = sh15;
+#else
+  shd3[0] = sh9 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[1] = sh10 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[2] = sh11 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[3] = sh12 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[4] = sh13 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[5] = sh14 * SphericalHarmonics8BitScale - vec8BitSHShift;
+  shd3[6] = sh15 * SphericalHarmonics8BitScale - vec8BitSHShift;
 #endif
 #endif
 }

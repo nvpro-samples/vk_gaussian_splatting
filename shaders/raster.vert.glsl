@@ -112,12 +112,25 @@ void main()
 #endif
 
 #if MAX_SH_DEGREE >= 1
-    // SH coefficients for degree 1 (1,2,3)
-    vec3 shd1[3];
-    // SH coefficients for degree 2 (4 5 6 7 8)
-    vec3 shd2[5];
-    // fetch the data (only what is needed according to degree)
-    fetchSh(splatIndex, shd1, shd2);
+  // SH coefficients for degree 1 (1,2,3)
+  vec3 shd1[3];
+#if MAX_SH_DEGREE >= 2
+  // SH coefficients for degree 2 (4 5 6 7 8)
+  vec3 shd2[5];
+#endif
+#if MAX_SH_DEGREE >= 3
+  // SH coefficients for degree 3 (9,10,11,12,13,14,15,16,17)
+  vec3 shd3[9];
+#endif
+  // fetch the data (only what is needed according to degree)
+  fetchSh(splatIndex, shd1
+#if MAX_SH_DEGREE >= 2
+    , shd2
+#endif
+#if MAX_SH_DEGREE >= 3
+    , shd3
+#endif
+  );
 
     const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
     const float x            = worldViewDir.x;

@@ -303,7 +303,7 @@ void GaussianSplatting::onUIRender()
       // we set a different size range for point and splat rendering
       PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
 
-      if( PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 2))
+      if( PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 3))
         m_updateShaders = true;
 
       if (PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))

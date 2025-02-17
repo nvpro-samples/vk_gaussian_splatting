@@ -352,7 +352,7 @@ private:  // Attributes
     int  frustumCulling          = FRUSTUM_CULLING_AT_DIST;
     bool opacityGaussianDisabled = false;
     bool showShOnly              = false;
-    int  maxShDegree             = 2;  // in[0,1,2]
+    int  maxShDegree             = 3;  // in [0,3]
     bool pointCloudModeEnabled   = false;
     int  shFormat                = FORMAT_FLOAT32;
     int  dataStorage             = STORAGE_BUFFERS;
