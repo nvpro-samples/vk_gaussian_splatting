@@ -32,7 +32,7 @@
 // format for SH storage
 #define FORMAT_FLOAT32 0
 #define FORMAT_FLOAT16 1
-#define FORMAT_UINT8   2
+#define FORMAT_UINT8 2
 
 // type of pipeline used
 #define PIPELINE_MESH 0
@@ -58,16 +58,24 @@
 #define BINDING_COVARIANCES_BUFFER 10
 #define BINDING_SH_BUFFER 11
 
-#ifndef __cplusplus
-// used to skip fields init
-// when included in glsl
-#define DEFAULT(val)
-#else
+// location for vertex attributes
+// (only for vertex shader mode)
+#define ATTRIBUTE_LOC_POSITION 0
+#define ATTRIBUTE_LOC_SPLAT_INDEX 1
+
+#ifdef __cplusplus
 #include <glm/glm.hpp>
 // used to assign fields defaults
 #define DEFAULT(val) = val
-namespace DH {
+namespace shaderio {
 using namespace glm;
+#else
+// used to skip fields init
+// when included in glsl
+#define DEFAULT(val)
+// common extensions
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 #endif
 
 // Warning, struct members must be aligned
@@ -84,7 +92,7 @@ struct FrameInfo
   vec2 viewport;
 
   vec2                 basisViewport;
-  float orthoZoom      DEFAULT(1.0f);  // 
+  float orthoZoom      DEFAULT(1.0f);  //
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
   int splatCount        DEFAULT(0);     //
@@ -120,7 +128,8 @@ struct IndirectParams
 };
 
 #ifdef __cplusplus
-}  // namespace DH
+}  // namespace shaderio
 #endif
 
+#undef DEFAULT
 #endif

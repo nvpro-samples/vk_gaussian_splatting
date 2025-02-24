@@ -74,7 +74,7 @@
 #include <nvvkhl/pipeline_container.hpp>
 
 // Shared between host and device
-#include "shaders/device_host.h" 
+#include "shaders/shaderio.h" 
 
 #include "splat_set.h"
 #include "ply_async_loader.h"
@@ -292,7 +292,7 @@ private:  // Attributes
   // IndirectParams structure defined in device_host.h
   nvvk::Buffer   m_indirect;          // indirect parameter buffer
   nvvk::Buffer   m_indirectHost;      // buffer for readback
-  DH::IndirectParams m_indirectReadback;  // readback values
+  shaderio::IndirectParams m_indirectReadback;  // readback values
 
   //
   nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad
@@ -362,8 +362,8 @@ private:  // Attributes
   VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
   VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
   VkPipeline       m_computePipeline{};                      // The compute pipeline to compute distances and cull
-  DH::PushConstant m_pushConst{};                            // Information sent to the shader using push constant
-  DH::FrameInfo    m_frameInfo{};                            // Frame parameters, sent to device using a uniform buffer
+  shaderio::PushConstant m_pushConst{};                            // Information sent to the shader using push constant
+  shaderio::FrameInfo    m_frameInfo{};                            // Frame parameters, sent to device using a uniform buffer
   nvvk::Buffer     m_frameInfoBuffer;                        // uniform buffer to store frame info 
 
   // Model related memory usage statistics

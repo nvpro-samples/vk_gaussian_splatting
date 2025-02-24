@@ -52,7 +52,7 @@
 #extension GL_EXT_control_flow_attributes : require
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_GOOGLE_include_directive : require
-#include "device_host.h"
+#include "shaderio.h"
 #include "common.glsl"
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;

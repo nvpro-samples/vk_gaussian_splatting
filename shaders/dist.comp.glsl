@@ -1,31 +1,26 @@
 #version 460
 
 #extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_scalar_block_layout : enable
-#extension GL_EXT_shader_explicit_arithmetic_types : enable
-#include "device_host.h"
+#include "shaderio.h"
 #include "common.glsl"
 
-// we could write to manage alignment automatically
-// layout(set = 0, binding = 0, scalar) uniform FrameInfo_
-// but it may be less performant than aligning
-// attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = 0) uniform FrameInfo_
+// scalar prevents alignment issues
+layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
 {
   FrameInfo frameInfo;
 };
 
 layout(local_size_x = 256) in;
 
-layout(set = 0, binding = 5, scalar) writeonly buffer _distances
+layout(set = 0, binding = BINDING_DISTANCES_BUFFER, scalar) writeonly buffer _distances
 {
   uint32_t distances[];
 };
-layout(std430, set = 0, binding = 6, scalar) writeonly buffer _indices
+layout(std430, set = 0, binding = BINDING_INDICES_BUFFER, scalar) writeonly buffer _indices
 {
   uint32_t indices[];
 };
-layout(std430, set = 0, binding = 7, scalar) writeonly buffer _indirect
+layout(std430, set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) writeonly buffer _indirect
 {
   IndirectParams indirect;
 };

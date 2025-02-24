@@ -49,27 +49,17 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-#include "device_host.h"
+#include "shaderio.h"
 #include "common.glsl"
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in uint32_t inSplatIndex;
+layout(location = ATTRIBUTE_LOC_POSITION) in vec3 inPosition;
+layout(location = ATTRIBUTE_LOC_SPLAT_INDEX) in uint32_t inSplatIndex;
 
 layout(location = 0) out vec2 outFragPos;
 layout(location = 1) out vec4 outFragCol;
 
-// unused for the time beeing
-layout(push_constant) uniform PushConstant_
-{
-  PushConstant pushC;
-};
-
-// in order to manage alignment automatically we could write:
-// layout(set = 0, binding = ..., scalar) uniform FrameInfo_
-// but it may be less performant than aligning
-// attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO) uniform _frameInfo
+// scalar prevents alignment issues
+layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
 {
   FrameInfo frameInfo;
 };

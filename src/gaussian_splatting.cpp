@@ -197,7 +197,7 @@ void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const u
   m_frameInfo.focal                  = glm::vec2(focalLengthX, focalLengthY);
   m_frameInfo.inverseFocalAdjustment = 1.0f / focalAdjustment;
 
-  vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(DH::FrameInfo), &m_frameInfo);
+  vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(shaderio::FrameInfo), &m_frameInfo);
 
   // sync with end of copy to device
   VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
@@ -291,8 +291,8 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
 
   // 1. reset the draw indirect parameters and counters, will be updated by compute shader
   {
-    const DH::IndirectParams drawIndexedIndirectParams;
-    vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(DH::IndirectParams), (void*)&drawIndexedIndirectParams);
+    const shaderio::IndirectParams drawIndexedIndirectParams;
+    vkCmdUpdateBuffer(cmd, m_indirect.buffer, 0, sizeof(shaderio::IndirectParams), (void*)&drawIndexedIndirectParams);
 
     VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -397,7 +397,7 @@ void GaussianSplatting::readBackIndirectParameters(VkCommandBuffer cmd)
     auto timerSection = m_profiler->timeRecurring("Indirect readback", cmd);
 
     // copy from device to host buffer
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(DH::IndirectParams)};
+    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(shaderio::IndirectParams)};
     vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
 
     // sync with end of copy to host, GPU timeline,
@@ -414,7 +414,7 @@ void GaussianSplatting::readBackIndirectParameters(VkCommandBuffer cmd)
 
     // copy to main memory (this copy the value from last frame, CPU timeline)
     uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
-    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(DH::IndirectParams));
+    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(shaderio::IndirectParams));
     m_alloc->unmap(m_indirectHost);
   }
 }
@@ -446,10 +446,10 @@ void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, con
     }
     else
     {
-      m_renderMemoryStats.usedIndirect = sizeof(DH::IndirectParams);
+      m_renderMemoryStats.usedIndirect = sizeof(shaderio::IndirectParams);
     }
   }
-  m_renderMemoryStats.usedUboFrameInfo = sizeof(DH::FrameInfo);
+  m_renderMemoryStats.usedUboFrameInfo = sizeof(shaderio::FrameInfo);
 
   m_renderMemoryStats.hostTotal =
       m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances + m_renderMemoryStats.usedUboFrameInfo;
@@ -617,7 +617,7 @@ void GaussianSplatting::initPipelines()
   m_dset->initLayout();
   m_dset->initPool(1);
   const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
-                                                    0, sizeof(DH::PushConstant)};
+                                                    0, sizeof(shaderio::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
 
   // Write descriptors for the buffers and textures
@@ -715,15 +715,14 @@ void GaussianSplatting::initPipelines()
 
     // create the pipeline that uses vertex shaders
     {
-      // add vertex attributes descriptions (only in vertex shader mode)
-      const auto POS_BINDING = 0;
-      const auto IDX_BINDING = 1;
+      const auto BINDING_ATTR_POSITION =0;
+      const auto BINDING_ATTR_SPLAT_INDEX = 1;
 
-      pstate.addBindingDescriptions({{POS_BINDING, 3 * sizeof(float)}});  // 3 component per vertex position
-      pstate.addAttributeDescriptions({{0, POS_BINDING, VK_FORMAT_R32G32B32_SFLOAT, 0}});
+      pstate.addBindingDescriptions({{BINDING_ATTR_POSITION, 3 * sizeof(float)}});  // 3 component per vertex position
+      pstate.addAttributeDescriptions({{ATTRIBUTE_LOC_POSITION, BINDING_ATTR_POSITION, VK_FORMAT_R32G32B32_SFLOAT, 0}});
 
-      pstate.addBindingDescriptions({{IDX_BINDING, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
-      pstate.addAttributeDescriptions({{1, IDX_BINDING, VK_FORMAT_R32_UINT, 0}});
+      pstate.addBindingDescriptions({{BINDING_ATTR_SPLAT_INDEX, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
+      pstate.addAttributeDescriptions({{ATTRIBUTE_LOC_SPLAT_INDEX, BINDING_ATTR_SPLAT_INDEX, VK_FORMAT_R32_UINT, 0}});
 
       //
       nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
@@ -789,12 +788,12 @@ void GaussianSplatting::initRendererBuffers()
   }
 
   // create the buffer for indirect parameters
-  m_indirect = m_alloc->createBuffer(sizeof(DH::IndirectParams),
+  m_indirect = m_alloc->createBuffer(sizeof(shaderio::IndirectParams),
                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
   // for statistics readback
-  m_indirectHost = m_alloc->createBuffer(sizeof(DH::IndirectParams), VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+  m_indirectHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams), VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   m_dutil->DBG_NAME(m_indirect.buffer);
@@ -817,7 +816,7 @@ void GaussianSplatting::initRendererBuffers()
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
   // Uniform buffer
-  m_frameInfoBuffer = m_alloc->createBuffer(sizeof(DH::FrameInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+  m_frameInfoBuffer = m_alloc->createBuffer(sizeof(shaderio::FrameInfo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   m_dutil->DBG_NAME(m_frameInfoBuffer.buffer);
 }

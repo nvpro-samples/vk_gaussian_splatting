@@ -49,8 +49,7 @@
 
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-#include "device_host.h"
+#include "shaderio.h"
 
 precision highp float;
 
@@ -59,11 +58,8 @@ layout(location = 1) perprimitiveEXT in flat vec4 inSplatCol;
 
 layout(location = 0) out vec4 outColor;
 
-// we could write to manage alignment automatically
-// layout(set = 0, binding = 0, scalar) uniform FrameInfo_
-// but it may be less performant than aligning
-// attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = 0) uniform FrameInfo_
+// scalar prevents alignment issues
+layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
 {
   FrameInfo frameInfo;
 };
