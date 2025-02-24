@@ -74,7 +74,7 @@
 #include <nvvkhl/pipeline_container.hpp>
 
 // Shared between host and device
-#include "shaders/shaderio.h" 
+#include "shaders/shaderio.h"
 
 #include "splat_set.h"
 #include "ply_async_loader.h"
@@ -89,7 +89,7 @@ public:  // Methods specializing IAppElement
       : m_profiler(profiler)
       , m_benchmark()
   {
-    // Register command line arguments 
+    // Register command line arguments
     // Done in this class instead of in main() so private members can be registered for direct modification
     benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
     benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
@@ -123,7 +123,6 @@ public:  // Methods specializing IAppElement
   void registerRecentFilesHandler();
 
 private:  // Methods
-
   void initGbuffers(const glm::vec2& size);
 
   void deinitGbuffers();
@@ -138,8 +137,8 @@ private:  // Methods
   // Invoked on scene close or on exit.
   void deinitAll();
 
-  // reinitializes the data related to the scene (the 
-  // splat set) in VRAM following a change of parameters 
+  // reinitializes the data related to the scene (the
+  // splat set) in VRAM following a change of parameters
   // in the UI, to use data buffers or data textures.
   // this requires to regenerate shaders and pipelines.
   void reinitDataStorage();
@@ -150,15 +149,15 @@ private:  // Methods
 
   // free scene (splat set) from RAM
   void deinitScene();
-  
-  // create the buffers on the device and upload 
+
+  // create the buffers on the device and upload
   // the splat set data from host to device
   void initDataBuffers(void);
-  
+
   // release buffers at next frame
   void deinitDataBuffers(void);
 
-  // create the texture maps on the device and upload 
+  // create the texture maps on the device and upload
   // the splat set data from host to device
   void initDataTextures(void);
 
@@ -186,7 +185,7 @@ private:  // Methods
 
   // Utility function to compute the texture size according to the size of the data to be stored
   // By default use map of 4K Width and 1K height then adjust the height according to the data size
-  inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount, glm::ivec2 texSize = {4096, 1024} )
+  inline glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, int maxSplatCount, glm::ivec2 texSize = {4096, 1024})
   {
     while(texSize.x * texSize.y * elementsPerTexel < maxSplatCount * elementsPerSplat)
       texSize.y *= 2;
@@ -198,7 +197,7 @@ private:  // Methods
   inline void resetRenderSettings()
   {
     m_frameInfo = {};
-    m_defines = {};
+    m_defines   = {};
   }
 
   // reset the memory usage stats
@@ -207,20 +206,20 @@ private:  // Methods
   /////////////
   // Rendering submethods
 
-  // Updates frame information uniform buffer and frame camera info 
+  // Updates frame information uniform buffer and frame camera info
   void updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const uint32_t splatCount);
 
   void tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount);
-    
+
   void processSortingOnGPU(VkCommandBuffer cmd, const uint32_t splatCount);
-    
+
   void drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t splatCount);
 
   // for statistics display in the UI
   void readBackIndirectParameters(VkCommandBuffer cmd);
 
   void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
-  
+
   ////////
   // Benchmarking
 
@@ -232,21 +231,20 @@ private:  // Methods
   // for multiple choice selectors in the UI
   enum GuiEnums
   {
-    GUI_STORAGE,         // model storage in VRAM (in texture or buffer)
-    GUI_SORTING,         // the sorting method to use
-    GUI_PIPELINE,        // the rendering pipeline to use
-    GUI_FRUSTUM_CULLING, // where to perform frustum culling (or disabled)
-    GUI_SH_FORMAT        // data format for storage of SH in VRAM
+    GUI_STORAGE,          // model storage in VRAM (in texture or buffer)
+    GUI_SORTING,          // the sorting method to use
+    GUI_PIPELINE,         // the rendering pipeline to use
+    GUI_FRUSTUM_CULLING,  // where to perform frustum culling (or disabled)
+    GUI_SH_FORMAT         // data format for storage of SH in VRAM
   };
 
-  // initialize UI specifics 
+  // initialize UI specifics
   void initGui(void);
 
   // methods to handle recent files in file menu
   void addToRecentFiles(const std::string& filePath, int historySize = 20);
- 
-private:  // Attributes
 
+private:  // Attributes
   // triggers a scene load at next frame when set to non empty string
   std::string m_sceneToLoadFilename;
   // name of the loaded scene if successfull
@@ -266,8 +264,8 @@ private:  // Attributes
   // UI utility for choice menus
   ImGuiH::Registry m_ui;
   // cpu sorter feedback for ui
-  double m_distTime = 0.0; // distance compute time in ms
-  double m_sortTime = 0.0; // sorting compute time in ms
+  double m_distTime = 0.0;  // distance compute time in ms
+  double m_sortTime = 0.0;  // sorting compute time in ms
 
   //
   nvvkhl::Application*                     m_app{nullptr};
@@ -290,14 +288,14 @@ private:  // Attributes
   glm::vec3 m_up;
 
   // IndirectParams structure defined in device_host.h
-  nvvk::Buffer   m_indirect;          // indirect parameter buffer
-  nvvk::Buffer   m_indirectHost;      // buffer for readback
+  nvvk::Buffer             m_indirect;          // indirect parameter buffer
+  nvvk::Buffer             m_indirectHost;      // buffer for readback
   shaderio::IndirectParams m_indirectReadback;  // readback values
 
   //
   nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad
   nvvk::Buffer m_quadIndices;   // Buffer of indices for the splat quad
-  
+
   // trigger a rebuild of the shaders and pipelines at next frame
   bool m_updateShaders = false;
 
@@ -313,10 +311,10 @@ private:  // Attributes
   nvvk::Texture m_sphericalHarmonicsMap;
 
   // Data buffers
-  nvvk::Buffer m_centersDevice;    
-  nvvk::Buffer m_colorsDevice;  
+  nvvk::Buffer m_centersDevice;
+  nvvk::Buffer m_colorsDevice;
   nvvk::Buffer m_covariancesDevice;
-  nvvk::Buffer m_sphericalHarmonicsDevice;   
+  nvvk::Buffer m_sphericalHarmonicsDevice;
 
   // rasterization pipeline selector
   uint32_t m_selectedPipeline = PIPELINE_MESH;
@@ -335,7 +333,7 @@ private:  // Attributes
 
   // used to load and compile shaders
   nvvk::ShaderModuleManager m_shaderManager;
-  
+
   // The different shaders that are used in the pipelines
   struct Shaders
   {
@@ -359,12 +357,11 @@ private:  // Attributes
   } m_defines;
 
   // Pipelines
-  VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
-  VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
-  VkPipeline       m_computePipeline{};                      // The compute pipeline to compute distances and cull
-  shaderio::PushConstant m_pushConst{};                            // Information sent to the shader using push constant
-  shaderio::FrameInfo    m_frameInfo{};                            // Frame parameters, sent to device using a uniform buffer
-  nvvk::Buffer     m_frameInfoBuffer;                        // uniform buffer to store frame info 
+  VkPipeline          m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
+  VkPipeline          m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
+  VkPipeline          m_computePipeline{};                      // The compute pipeline to compute distances and cull
+  shaderio::FrameInfo m_frameInfo{};      // Frame parameters, sent to device using a uniform buffer
+  nvvk::Buffer        m_frameInfoBuffer;  // uniform buffer to store frame info
 
   // Model related memory usage statistics
   struct ModelMemoryStats
@@ -425,6 +422,5 @@ private:  // Attributes
     uint32_t deviceAllocTotal = 0;
 
   } m_renderMemoryStats;
-
 };
 #endif

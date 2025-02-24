@@ -32,7 +32,6 @@
 #include <nvh/misc.hpp>
 #include <glm/gtc/packing.hpp>  // Required for half-float operations
 
-//
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
   initGui();
@@ -111,7 +110,6 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   if(!m_gBuffers)
     return;
 
-  //
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
 
   // 0 if not ready so the rendering does not
@@ -131,7 +129,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     {
       // resets CPU sorting time info
       m_distTime = m_sortTime = 0.0;
-      //
+
       processSortingOnGPU(cmd, splatCount);
     }
     else
@@ -284,7 +282,6 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
   }
 }
 
-//
 void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t splatCount)
 {
   // when GPU sorting, we sort at each frame, all buffer in device memory, no copy from RAM
@@ -477,7 +474,7 @@ void GaussianSplatting::initAll()
   CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
   // reset general parameters
   resetRenderSettings();
-  //
+  // init a new setup
   initShaders();
   initRendererBuffers();
   if(m_defines.dataStorage == STORAGE_TEXTURES)
@@ -490,7 +487,7 @@ void GaussianSplatting::initAll()
 void GaussianSplatting::reinitDataStorage()
 {
   vkDeviceWaitIdle(m_device);
-  //
+
   if(m_centersMap.image != VK_NULL_HANDLE)
   {
     deinitDataTextures();
@@ -501,7 +498,7 @@ void GaussianSplatting::reinitDataStorage()
   }
   deinitPipelines();
   deinitShaders();
-  //
+
   if(m_defines.dataStorage == STORAGE_TEXTURES)
   {
     initDataTextures();
@@ -524,7 +521,6 @@ void GaussianSplatting::reinitShaders()
   initShaders();
   initPipelines();
 }
-
 
 void GaussianSplatting::deinitScene()
 {
@@ -550,7 +546,7 @@ bool GaussianSplatting::initShaders(void)
   prepends += nvh::stringFormat("#define DATA_STORAGE %d\n", m_defines.dataStorage);
   prepends += nvh::stringFormat("#define SH_FORMAT %d\n", m_defines.shFormat);
   prepends += nvh::stringFormat("#define POINT_CLOUD_MODE %d\n", m_defines.pointCloudModeEnabled);
-  
+
   // generate the shader modules
   m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "dist.comp.glsl", prepends);
   m_shaders.vertexShader = m_shaderManager.createShaderModule(VK_SHADER_STAGE_VERTEX_BIT, "raster.vert.glsl", prepends);
@@ -562,7 +558,7 @@ bool GaussianSplatting::initShaders(void)
     m_shaderManager.deleteShaderModules();
     return false;
   }
-  auto      endTime  = std::chrono::high_resolution_clock::now();
+  auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
   std::cout << "Shaders updated in " << buildTime << "ms" << std::endl;
 
@@ -582,7 +578,7 @@ void GaussianSplatting::initPipelines()
   // reset descriptor bindings
   std::vector<VkDescriptorSetLayoutBinding> empty;
   m_dset->setBindings(empty);
-  //
+
   m_dset->addBinding(BINDING_FRAME_INFO_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_DISTANCES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   m_dset->addBinding(BINDING_INDICES_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
@@ -602,9 +598,9 @@ void GaussianSplatting::initPipelines()
     m_dset->addBinding(BINDING_SH_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
   }
 
-  //
   m_dset->initLayout();
   m_dset->initPool(1);
+
   const VkPushConstantRange push_constant_ranges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
                                                     0, sizeof(shaderio::PushConstant)};
   m_dset->initPipeLayout(1, &push_constant_ranges);
@@ -704,7 +700,7 @@ void GaussianSplatting::initPipelines()
 
     // create the pipeline that uses vertex shaders
     {
-      const auto BINDING_ATTR_POSITION =0;
+      const auto BINDING_ATTR_POSITION    = 0;
       const auto BINDING_ATTR_SPLAT_INDEX = 1;
 
       pstate.addBindingDescriptions({{BINDING_ATTR_POSITION, 3 * sizeof(float)}});  // 3 component per vertex position
@@ -713,7 +709,6 @@ void GaussianSplatting::initPipelines()
       pstate.addBindingDescriptions({{BINDING_ATTR_SPLAT_INDEX, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}});
       pstate.addAttributeDescriptions({{ATTRIBUTE_LOC_SPLAT_INDEX, BINDING_ATTR_SPLAT_INDEX, VK_FORMAT_R32_UINT, 0}});
 
-      //
       nvvk::GraphicsPipelineGenerator pgen(m_device, m_dset->getPipeLayout(), prend_info, pstate);
       pgen.addShader(m_shaderManager.get(m_shaders.vertexShader), VK_SHADER_STAGE_VERTEX_BIT);
       pgen.addShader(m_shaderManager.get(m_shaders.fragmentShader), VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -782,7 +777,8 @@ void GaussianSplatting::initRendererBuffers()
                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
   // for statistics readback
-  m_indirectHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams), VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+  m_indirectHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams),
+                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   m_dutil->DBG_NAME(m_indirect.buffer);
@@ -801,7 +797,6 @@ void GaussianSplatting::initRendererBuffers()
   m_dutil->DBG_NAME(m_quadVertices.buffer);
   m_dutil->DBG_NAME(m_quadIndices.buffer);
 
-  //
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
   // Uniform buffer
@@ -812,7 +807,7 @@ void GaussianSplatting::initRendererBuffers()
 
 void GaussianSplatting::deinitRendererBuffers()
 {
-  // TODO can we  rather move this to pipelines creation/deletion ?
+  // TODO can we rather move this to pipelines creation/deletion ?
   if(m_gpuSorter != VK_NULL_HANDLE)
   {
     vrdxDestroySorter(m_gpuSorter);
@@ -839,7 +834,8 @@ inline uint8_t toUint8(float v, float rangeMin, float rangeMax)
   return static_cast<uint8_t>(std::clamp(std::round(normalized * 255.0f), 0.0f, 255.0f));
 };
 
-inline int formatSize(uint32_t format) {
+inline int formatSize(uint32_t format)
+{
   if(format == FORMAT_FLOAT32)
     return 4;
   if(format == FORMAT_FLOAT16)
@@ -865,10 +861,8 @@ inline void storeSh(int format, float* srcBuffer, uint32_t srcIndex, void* dstBu
 void GaussianSplatting::initDataBuffers(void)
 {
   auto       startTime  = std::chrono::high_resolution_clock::now();
-
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
-  //
   VkCommandBuffer    cmd                  = m_app->createTempCmdBuffer();
   VkBufferUsageFlags hostBufferUsageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
   VkMemoryPropertyFlags hostMemoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -1007,7 +1001,7 @@ void GaussianSplatting::initDataBuffers(void)
 
     // memory statistics
     m_modelMemoryStats.srcSh0  = bufferSize;
-    m_modelMemoryStats.odevSh0 = bufferSize;  
+    m_modelMemoryStats.odevSh0 = bufferSize;
     m_modelMemoryStats.devSh0  = bufferSize;
   }
 
@@ -1090,7 +1084,7 @@ void GaussianSplatting::initDataBuffers(void)
       }
     }
     END_PAR_LOOP()
-    
+
     auto      endShTime   = std::chrono::high_resolution_clock::now();
     long long buildShTime = std::chrono::duration_cast<std::chrono::milliseconds>(endShTime - startShTime).count();
     std::cout << "Sh data updated in " << buildShTime << "ms" << std::endl;
@@ -1112,7 +1106,6 @@ void GaussianSplatting::initDataBuffers(void)
     m_modelMemoryStats.devShOther  = bufferSize;
   }
 
-  //
   // sync with end of copy to device
   VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
   barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1121,7 +1114,6 @@ void GaussianSplatting::initDataBuffers(void)
                        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
                        0, 1, &barrier, 0, NULL, 0, NULL);
 
-  //
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
   // update statistics totals
@@ -1180,7 +1172,7 @@ void GaussianSplatting::deinitTexture(nvvk::Texture& texture)
 
 void GaussianSplatting::initDataTextures(void)
 {
-  auto       startTime  = std::chrono::high_resolution_clock::now();
+  auto startTime = std::chrono::high_resolution_clock::now();
 
   const auto splatCount = (uint32_t)m_splatSet.positions.size() / 3;
 
@@ -1228,10 +1220,10 @@ void GaussianSplatting::initDataTextures(void)
       const auto stride6 = splatIdx * 6;
       glm::vec3  scale{std::exp(m_splatSet.scale[stride3 + 0]), std::exp(m_splatSet.scale[stride3 + 1]),
                       std::exp(m_splatSet.scale[stride3 + 2])};
-      
-      glm::quat rotation{m_splatSet.rotation[stride4 + 0], m_splatSet.rotation[stride4 + 1], m_splatSet.rotation[stride4 + 2],
-                         m_splatSet.rotation[stride4 + 3] };
-      rotation   = glm::normalize(rotation);
+
+      glm::quat rotation{m_splatSet.rotation[stride4 + 0], m_splatSet.rotation[stride4 + 1],
+                         m_splatSet.rotation[stride4 + 2], m_splatSet.rotation[stride4 + 3]};
+      rotation = glm::normalize(rotation);
 
       // computes the covariance
       const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
@@ -1309,8 +1301,7 @@ void GaussianSplatting::initDataTextures(void)
     int paddedSphericalHarmonicsComponentCount = sphericalHarmonicsComponentCount;
     while(paddedSphericalHarmonicsComponentCount % 4 != 0)
       paddedSphericalHarmonicsComponentCount++;
-    
-    //
+
     glm::ivec2 mapSize =
         computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
 
@@ -1366,23 +1357,23 @@ void GaussianSplatting::initDataTextures(void)
     // place the result in the dedicated texture map
     if(m_defines.shFormat == FORMAT_FLOAT32)
     {
-      initTexture(mapSize.x, mapSize.y, bufferSize, data,
-                  VK_FORMAT_R32G32B32A32_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+      initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R32G32B32A32_SFLOAT,
+                  m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
     }
     else if(m_defines.shFormat == FORMAT_FLOAT16)
     {
-      initTexture(mapSize.x, mapSize.y, bufferSize, data,
-                  VK_FORMAT_R16G16B16A16_SFLOAT, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+      initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R16G16B16A16_SFLOAT,
+                  m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
     }
     else if(m_defines.shFormat == FORMAT_UINT8)
     {
-      initTexture(mapSize.x, mapSize.y, bufferSize, data,
-                  VK_FORMAT_R8G8B8A8_UNORM, m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
+      initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R8G8B8A8_UNORM,
+                  m_alloc->acquireSampler(sampler_info), m_sphericalHarmonicsMap);
     }
-    
+
     // memory statistics
     m_modelMemoryStats.srcShOther  = (uint32_t)m_splatSet.f_rest.size() * sizeof(float);
-    m_modelMemoryStats.odevShOther = (uint32_t)m_splatSet.f_rest.size() * formatSize(m_defines.shFormat);  
+    m_modelMemoryStats.odevShOther = (uint32_t)m_splatSet.f_rest.size() * formatSize(m_defines.shFormat);
     m_modelMemoryStats.devShOther  = bufferSize;
   }
 
@@ -1411,7 +1402,6 @@ void GaussianSplatting::deinitDataTextures()
   deinitTexture(m_sphericalHarmonicsMap);
 }
 
-
 void GaussianSplatting::benchmarkAdvance()
 {
   m_benchmarkId++;
@@ -1419,8 +1409,8 @@ void GaussianSplatting::benchmarkAdvance()
   std::cout << "BENCHMARK_ADV " << m_benchmarkId << " {" << std::endl;
   std::cout << " Memory Scene; Host used \t" << m_modelMemoryStats.srcAll << "; Device Used \t" << m_modelMemoryStats.odevAll
             << "; Device Allocated \t" << m_modelMemoryStats.devAll << "; (bytes)" << std::endl;
-  std::cout << " Memory Rendering; Host used \t" << m_renderMemoryStats.hostTotal << "; Device Used \t" << m_renderMemoryStats.deviceUsedTotal
-            << "; Device Allocated \t" << m_renderMemoryStats.deviceAllocTotal << "; (bytes)" << std::endl;
+  std::cout << " Memory Rendering; Host used \t" << m_renderMemoryStats.hostTotal << "; Device Used \t"
+            << m_renderMemoryStats.deviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.deviceAllocTotal
+            << "; (bytes)" << std::endl;
   std::cout << "}" << std::endl;
-
 }

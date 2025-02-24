@@ -110,11 +110,10 @@ struct FrameInfo
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 
-// not used
+// TODO will be used for model transformation
 struct PushConstant
 {
   mat4 transfo;
-  vec4 color;
 };
 
 // indirect parameters for
