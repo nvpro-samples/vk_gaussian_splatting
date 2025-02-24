@@ -127,8 +127,9 @@ struct IndirectParams
   uint32_t firstIndex    DEFAULT(0);  // allways zero
   uint32_t vertexOffset  DEFAULT(0);  // allways zero
   uint32_t firstInstance DEFAULT(0);  // allways zero
+
   // for vkCmdDrawMeshTasksIndirectEXT
-  uint32_t groupCountX DEFAULT(0);  // Will be incremented by distance the compute shader
+  uint32_t groupCountX DEFAULT(0);  // Will be incremented by the distance compute shader
   uint32_t groupCountY DEFAULT(1);  // Allways one workgroup on Y
   uint32_t groupCountZ DEFAULT(1);  // Allways one workgroup on Z
 };

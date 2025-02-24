@@ -160,7 +160,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
   }
 
-  // read back to m_indirect for statistics display in the UI
+  // read back to m_indirectReadback for statistics display in the UI
   readBackIndirectParameters(cmd);
 
   updateRenderingMemoryStatistics(cmd, splatCount);
@@ -371,7 +371,8 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     else
     {
       // run the workgroups
-      vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, 5 * sizeof(uint32_t), 1, sizeof(VkDrawIndexedIndirectCommand));
+      vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, offsetof(shaderio::IndirectParams, groupCountX), 1,
+                                    sizeof(VkDrawIndexedIndirectCommand));
     }
   }
 }
