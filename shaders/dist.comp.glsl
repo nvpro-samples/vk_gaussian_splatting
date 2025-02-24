@@ -10,7 +10,7 @@ layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
   FrameInfo frameInfo;
 };
 
-layout(local_size_x = 256) in;
+layout(local_size_x = DISTANCE_COMPUTE_WORKGROUP_SIZE) in;
 
 layout(set = 0, binding = BINDING_DISTANCES_BUFFER, scalar) writeonly buffer _distances
 {
@@ -36,6 +36,8 @@ uint encodeMinMaxFp32(float val)
 void main()
 {
   const uint id = gl_GlobalInvocationID.x;
+ // each workgroup (but the last one if splat count is not a multiple)
+ // processes DISTANCE_COMPUTE_WORKGROUP_SIZE points 
   if(id >= frameInfo.splatCount)
     return;
 
@@ -61,7 +63,7 @@ void main()
   // stores the base index
   indices[instance_index] = id;
   // set the workgroup count for the mesh shading pipeline
-  if(instance_index % 32 == 0)
+  if(instance_index % RASTER_MESH_WORKGROUP_SIZE == 0)
   {
     atomicAdd(indirect.groupCountX, 1);
   }

@@ -48,26 +48,24 @@
 #version 450
 
 #extension GL_EXT_mesh_shader : require
-#extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_GOOGLE_include_directive : require
 #include "shaderio.h"
 #include "common.glsl"
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 128, max_primitives = 64) out;
+// Parallel Processing : Each global invocation (thread) processes one splat.
+// Batch Processing : The workgroup can process up to RASTER_MESH_WORKGROUP_SIZE splats(outputQuadCount)
+
+layout(local_size_x = RASTER_MESH_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 4 * RASTER_MESH_WORKGROUP_SIZE, max_primitives = 2 * RASTER_MESH_WORKGROUP_SIZE) out;
 
 // Per vertex output
 layout(location = 0) out vec2 outFragPos[];
 // Per primitive output
 layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
 
-// in order to manage alignment automatically we could write:
-// layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
-// but it may be less performant than aligning
-// attribute in the struct (see device_host.h comment)
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO) uniform _frameInfo
+// scalar prevents alignment issues
+layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
 {
   FrameInfo frameInfo;
 };
@@ -80,9 +78,9 @@ layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
 
 void main()
 {
-  const uint32_t baseIndex       = gl_GlobalInvocationID.x;
-  const int      splatCount      = frameInfo.splatCount;
-  const uint     outputQuadCount = min(32, splatCount - gl_WorkGroupID.x * 32);
+  const uint32_t baseIndex  = gl_GlobalInvocationID.x;
+  const int      splatCount = frameInfo.splatCount;
+  const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - gl_WorkGroupID.x * RASTER_MESH_WORKGROUP_SIZE);
 
   if(gl_LocalInvocationIndex == 0)
   {
@@ -103,13 +101,12 @@ void main()
 
     const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
-    const vec4 clipCenter  = frameInfo.projectionMatrix * viewCenter; 
+    const vec4 clipCenter               = frameInfo.projectionMatrix * viewCenter;
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
     const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
     if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
-       || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w
-       || clipCenter.z > clipCenter.w)
+       || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w || clipCenter.z > clipCenter.w)
     {
       // Early return to discard splat
       // emit same vertex to get degenerate triangle
@@ -135,69 +132,64 @@ void main()
     vec4 splatColor = fetchColor(splatIndex);
 
 #if SHOW_SH_ONLY == 1
-      splatColor.r = 0.5;
-      splatColor.g = 0.5;
-      splatColor.b = 0.5;
+    splatColor.r = 0.5;
+    splatColor.g = 0.5;
+    splatColor.b = 0.5;
 #endif
 
 #if MAX_SH_DEGREE >= 1
-      // SH coefficients for degree 1 (1,2,3)
-      vec3 shd1[3];
+    // SH coefficients for degree 1 (1,2,3)
+    vec3 shd1[3];
 #if MAX_SH_DEGREE >= 2
-      // SH coefficients for degree 2 (4 5 6 7 8)
-      vec3 shd2[5];
+    // SH coefficients for degree 2 (4 5 6 7 8)
+    vec3 shd2[5];
 #endif
 #if MAX_SH_DEGREE >= 3
-      // SH coefficients for degree 3 (9,10,11,12,13,14,15,16,17)
-      vec3 shd3[9];
+    // SH coefficients for degree 3 (9,10,11,12,13,14,15,16,17)
+    vec3 shd3[9];
 #endif
-      // fetch the data (only what is needed according to degree)
-      fetchSh(splatIndex, 
-        shd1 
+    // fetch the data (only what is needed according to degree)
+    fetchSh(splatIndex, shd1
 #if MAX_SH_DEGREE >= 2
-        , shd2
+            ,
+            shd2
 #endif
 #if MAX_SH_DEGREE >= 3
-        , shd3
+            ,
+            shd3
 #endif
-      );
+    );
 
-      const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-      const float x            = worldViewDir.x;
-      const float y            = worldViewDir.y;
-      const float z            = worldViewDir.z;
-      splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
+    const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+    const float x            = worldViewDir.x;
+    const float y            = worldViewDir.y;
+    const float z            = worldViewDir.z;
+    splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
 
 #if MAX_SH_DEGREE >= 2
-      const float xx = x * x;
-      const float yy = y * y;
-      const float zz = z * z;
-      const float xy = x * y;
-      const float yz = y * z;
-      const float xz = x * z;
+    const float xx = x * x;
+    const float yy = y * y;
+    const float zz = z * z;
+    const float xy = x * y;
+    const float yz = y * z;
+    const float xz = x * z;
 
-      splatColor.rgb += 
-        (SH_C2[0] * xy) * shd2[0] + 
-        (SH_C2[1] * yz) * shd2[1] + 
-        (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2] + 
-        (SH_C2[3] * xz) * shd2[3] + 
-        (SH_C2[4] * (xx - yy)) * shd2[4];
+    splatColor.rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
+                      + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
 #endif
 #if MAX_SH_DEGREE >= 3
-      // Degree 3 SH basis function terms
-      const float xyy = x * yy;
-      const float yzz = y * zz;
-      const float zxx = z * xx;
-      const float xyz = x * y * z;
+    // Degree 3 SH basis function terms
+    const float xyy = x * yy;
+    const float yzz = y * zz;
+    const float zxx = z * xx;
+    const float xyz = x * y * z;
 
-        // Degree 3 contributions
-      splatColor.rgb += 
-        SH_C3[0] * shd3[0] * (3.0 * x * x - y * y) * y + 
-        SH_C3[1] * shd3[1] * x * y * z
-                        + SH_C3[2] * shd3[2] * (4.0 * z * z - x * x - y * y) * y
-                        + SH_C3[3] * shd3[3] * z * (2.0 * z * z - 3.0 * x * x - 3.0 * y * y)
-                        + SH_C3[4] * shd3[4] * x * (4.0 * z * z - x * x - y * y) + 
-        SH_C3[5] * shd3[5] * (x * x - y * y) * z + SH_C3[6] * shd3[6] * x * (x * x - 3.0 * y * y);
+    // Degree 3 contributions
+    splatColor.rgb += SH_C3[0] * shd3[0] * (3.0 * x * x - y * y) * y + SH_C3[1] * shd3[1] * x * y * z
+                      + SH_C3[2] * shd3[2] * (4.0 * z * z - x * x - y * y) * y
+                      + SH_C3[3] * shd3[3] * z * (2.0 * z * z - 3.0 * x * x - 3.0 * y * y)
+                      + SH_C3[4] * shd3[4] * x * (4.0 * z * z - x * x - y * y)
+                      + SH_C3[5] * shd3[5] * (x * x - y * y) * z + SH_C3[6] * shd3[6] * x * (x * x - 3.0 * y * y);
 #endif
 #endif
 

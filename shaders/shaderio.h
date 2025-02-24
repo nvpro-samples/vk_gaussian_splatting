@@ -63,6 +63,13 @@
 #define ATTRIBUTE_LOC_POSITION 0
 #define ATTRIBUTE_LOC_SPLAT_INDEX 1
 
+// Distance shader workgroup size
+#define DISTANCE_COMPUTE_WORKGROUP_SIZE 256
+
+// Mesh shader workgroup size
+// This configuration is optimized for NVIDIA hardware
+#define RASTER_MESH_WORKGROUP_SIZE 32
+
 #ifdef __cplusplus
 #include <glm/glm.hpp>
 // used to assign fields defaults

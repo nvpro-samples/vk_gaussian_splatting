@@ -314,8 +314,7 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_dset->getPipeLayout(), 0, 1, m_dset->getSets(), 0, nullptr);
 
-    constexpr uint32_t localSize = 256;
-    vkCmdDispatch(cmd, (splatCount + localSize - 1) / localSize, 1, 1);
+    vkCmdDispatch(cmd, (splatCount + DISTANCE_COMPUTE_WORKGROUP_SIZE - 1) / DISTANCE_COMPUTE_WORKGROUP_SIZE, 1, 1);
 
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
                          &barrier, 0, NULL, 0, NULL);
@@ -345,17 +344,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     // overrides the pipeline setup for depth test/write
     vkCmdSetDepthTestEnable(cmd, (VkBool32)m_defines.opacityGaussianDisabled);
 
-    /* we do not use push_constant, everything passes though the frameInfo unifrom buffer
-          // transfo/color unused for the time beeing, could transform the whole 3DGS model
-          // if used, could also be placed in the FrameInfo or all the frameInfo placed in push_constant
-          m_pushConst.transfo = glm::mat4(1.0);                 // identity
-          m_pushConst.color   = glm::vec4(0.5, 0.5, 0.5, 1.0);  //
-          vkCmdPushConstants(cmd, m_dset->getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                             sizeof(DH::PushConstant), &m_pushConst);
-          */
-
     // display the quad as many times as we have visible splats
-
     const VkDeviceSize offsets{0};
     vkCmdBindIndexBuffer(cmd, m_quadIndices.buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdBindVertexBuffers(cmd, 0, 1, &m_quadVertices.buffer, &offsets);
@@ -380,7 +369,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX)
     {
       // run the workgroups
-      vkCmdDrawMeshTasksEXT(cmd, (m_frameInfo.splatCount + 31) / 32, 1, 1);
+      vkCmdDrawMeshTasksEXT(cmd, (m_frameInfo.splatCount + RASTER_MESH_WORKGROUP_SIZE - 1) / RASTER_MESH_WORKGROUP_SIZE, 1, 1);
     }
     else
     {
