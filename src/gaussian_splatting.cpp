@@ -873,6 +873,9 @@ void GaussianSplatting::initDataBuffers(void)
                                               | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
   VkMemoryPropertyFlags deviceMemoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
+  // set of buffer to be freed after command execution
+  std::vector<nvvk::Buffer> buffersToDestroy;
+
   // Centers
   {
     const uint32_t bufferSize = splatCount * 3 * sizeof(float);
@@ -893,9 +896,8 @@ void GaussianSplatting::initDataBuffers(void)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_centersDevice.buffer, 1, &bc);
 
-    // free host buffer (at next frame)
-    m_app->submitResourceFree(
-        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+    // free host buffer after command execution
+    buffersToDestroy.push_back(hostBuffer);
 
     // memory statistics
     m_modelMemoryStats.srcCenters  = bufferSize;
@@ -952,9 +954,8 @@ void GaussianSplatting::initDataBuffers(void)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_covariancesDevice.buffer, 1, &bc);
 
-    // free host buffer (at next frame)
-    m_app->submitResourceFree(
-        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+    // free host buffer after command execution
+    buffersToDestroy.push_back(hostBuffer);
 
     // memory statistics
     m_modelMemoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
@@ -996,9 +997,8 @@ void GaussianSplatting::initDataBuffers(void)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_colorsDevice.buffer, 1, &bc);
 
-    // free host buffer (at next frame)
-    m_app->submitResourceFree(
-        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+    // free host buffer after command execution
+    buffersToDestroy.push_back(hostBuffer);
 
     // memory statistics
     m_modelMemoryStats.srcSh0  = bufferSize;
@@ -1097,9 +1097,8 @@ void GaussianSplatting::initDataBuffers(void)
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
     vkCmdCopyBuffer(cmd, hostBuffer.buffer, m_sphericalHarmonicsDevice.buffer, 1, &bc);
 
-    // free host buffer (at next frame)
-    m_app->submitResourceFree(
-        [buffer = hostBuffer, alloc = m_alloc]() { alloc->destroy(const_cast<nvvk::Buffer&>(buffer)); });
+    // free host buffer after command execution
+    buffersToDestroy.push_back(hostBuffer);
 
     // memory statistics
     m_modelMemoryStats.srcShOther  = (uint32_t)m_splatSet.f_rest.size() * sizeof(float);
@@ -1116,6 +1115,12 @@ void GaussianSplatting::initDataBuffers(void)
                        0, 1, &barrier, 0, NULL, 0, NULL);
 
   m_app->submitAndWaitTempCmdBuffer(cmd);
+
+  // free temp buffers
+  for(auto& buffer : buffersToDestroy)
+  {
+    m_alloc->destroy(buffer);
+  }
 
   // update statistics totals
   m_modelMemoryStats.srcShAll  = m_modelMemoryStats.srcSh0 + m_modelMemoryStats.srcShOther;
