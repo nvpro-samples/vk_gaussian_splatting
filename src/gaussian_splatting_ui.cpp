@@ -78,7 +78,7 @@ void GaussianSplatting::initGui()
   m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
   //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono"); // TODO
   m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
-  // 
+  //
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT32, "Float 32");
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT16, "Float 16");
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_UINT8, "Uint8");
@@ -212,7 +212,7 @@ void GaussianSplatting::onUIRender()
 
   //
   namespace PE = ImGuiH::PropertyEditor;
-  
+
   if(ImGui::Begin("Settings"))
   {
     //
@@ -235,15 +235,15 @@ void GaussianSplatting::onUIRender()
       }
       PE::end();
     }
-    
+
     //
-    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+    if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
       PE::begin("##GLOB vsync ");
       bool vsync = m_app->isVsync();
-      if (PE::Checkbox("V-Sync", &vsync))
+      if(PE::Checkbox("V-Sync", &vsync))
         m_app->setVsync(vsync);
-      
+
       PE::end();
 
       PE::begin("##3DGS rendering");
@@ -253,12 +253,12 @@ void GaussianSplatting::onUIRender()
         resetRenderSettings();
         m_updateShaders = true;
       }
-      if (PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
+      if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
       {
-        if (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_AT_DIST)
+        if(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling == FRUSTUM_CULLING_AT_DIST)
         {
           m_defines.frustumCulling = FRUSTUM_CULLING_AT_RASTER;
-          m_updateShaders = true;
+          m_updateShaders          = true;
         }
       }
 
@@ -295,7 +295,7 @@ void GaussianSplatting::onUIRender()
       PE::SliderFloat("Frustum dilation", &m_frameInfo.frustumDilation, 0.0f, 1.0f, "%.1f");
 
       int alphaThres = 255 * m_frameInfo.alphaCullThreshold;
-      if (PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
+      if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
       {
         m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
       }
@@ -303,10 +303,10 @@ void GaussianSplatting::onUIRender()
       // we set a different size range for point and splat rendering
       PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
 
-      if( PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 3))
+      if(PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 3))
         m_updateShaders = true;
 
-      if (PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))
+      if(PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))
         m_updateShaders = true;
 
       if(PE::Checkbox("Disable splatting", &m_defines.pointCloudModeEnabled))
@@ -324,7 +324,8 @@ void GaussianSplatting::onUIRender()
       const int32_t rasterSplatCount =
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       const uint32_t wgCount = (m_selectedPipeline == PIPELINE_MESH) ?
-                                   ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
+                                   ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ?
+                                        m_indirectReadback.groupCountX :
                                         (m_frameInfo.splatCount + RASTER_MESH_WORKGROUP_SIZE - 1) / RASTER_MESH_WORKGROUP_SIZE) :
                                    0;
 
@@ -366,18 +367,17 @@ void GaussianSplatting::onUIRender()
     }
   }
   ImGui::End();
- 
+
   if(ImGui::Begin("Misc"))
   {
     if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
     {
       ImGuiH::CameraWidget();
     }
-  
   }
   ImGui::End();
 
-  if (ImGui::Begin("Memory Statistics"))
+  if(ImGui::Begin("Memory Statistics"))
   {
     if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
     {
