@@ -150,7 +150,7 @@ void GaussianSplatting::onUIRender()
     switch(m_plyLoader.getStatus())
     {
       case PlyAsyncLoader::State::E_LOADING: {
-        ImGui::Text(m_plyLoader.getFilename().c_str());
+        ImGui::Text("%s", m_plyLoader.getFilename().c_str());
         ImGui::ProgressBar(m_plyLoader.getProgress(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
         /*
         if(ImGui::Button("Cancel", ImVec2(120, 0)))
