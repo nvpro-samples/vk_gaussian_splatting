@@ -325,7 +325,7 @@ void GaussianSplatting::onUIRender()
           (m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
       const uint32_t wgCount = (m_selectedPipeline == PIPELINE_MESH) ?
                                    ((m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX) ? m_indirectReadback.groupCountX :
-                                                                                            (m_frameInfo.splatCount + 31) / 32) :
+                                        (m_frameInfo.splatCount + RASTER_MESH_WORKGROUP_SIZE - 1) / RASTER_MESH_WORKGROUP_SIZE) :
                                    0;
 
       if(ImGui::BeginTable("Stats", 3, ImGuiTableFlags_BordersOuter))
