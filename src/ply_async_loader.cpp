@@ -35,14 +35,14 @@ bool PlyAsyncLoader::loadScene(std::string filename, SplatSet& output)
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status != E_READY)
   {
-    return false; 
+    return false;
   }
 
   // setup load info and wakeup the thread
   m_filename = filename;
   m_output   = &output;
   m_loadCV.notify_all();
-  
+
   return true;
 }
 
@@ -50,8 +50,8 @@ bool PlyAsyncLoader::initialize()
 {
   // original state shall be shutdown
   std::unique_lock<std::mutex> lock(m_mutex);
-  if(m_status != E_SHUTDOWN) 
-    return false; // will unlock through lock destructor
+  if(m_status != E_SHUTDOWN)
+    return false;  // will unlock through lock destructor
   else
     lock.unlock();
 
@@ -70,7 +70,8 @@ bool PlyAsyncLoader::initialize()
       bool shutdown = m_shutdownRequested;
       lock.unlock();
       // if request is not a shutdown do the job
-      if ( !shutdown ){
+      if(!shutdown)
+      {
         // let's load
         std::unique_lock<std::mutex> lock(m_mutex);
         m_status = E_LOADING;
@@ -78,14 +79,14 @@ bool PlyAsyncLoader::initialize()
         if(m_output != nullptr && innerLoad(m_filename, *m_output))
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status = E_LOADED;
+          m_status   = E_LOADED;
           m_output   = nullptr;
           m_filename = "";
         }
         else
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status = E_FAILURE;
+          m_status   = E_FAILURE;
           m_output   = nullptr;
           m_filename = "";
         }
@@ -93,7 +94,7 @@ bool PlyAsyncLoader::initialize()
       else
       {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = E_SHUTDOWN;
+        m_status            = E_SHUTDOWN;
         m_shutdownRequested = false;
         m_output            = nullptr;
         m_filename          = "";
@@ -105,11 +106,13 @@ bool PlyAsyncLoader::initialize()
   return true;
 }
 
-void PlyAsyncLoader::cancel() {
+void PlyAsyncLoader::cancel()
+{
   // does nothing for the time beeing
 }
 
-PlyAsyncLoader::State PlyAsyncLoader::getStatus() {
+PlyAsyncLoader::State PlyAsyncLoader::getStatus()
+{
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_status;
 }
@@ -120,7 +123,7 @@ bool PlyAsyncLoader::reset()
   if(m_status == E_LOADED || m_status == E_FAILURE)
   {
     m_progress = 0.0;
-    m_status = E_READY;
+    m_status   = E_READY;
     return true;
   }
   else
@@ -152,13 +155,13 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
       output.positions.resize(numVerts * 3);
       output.scale.resize(numVerts * 3);
       output.rotation.resize(numVerts * 4);
-      output.opacity.resize(numVerts );
+      output.opacity.resize(numVerts);
       output.f_dc.resize(numVerts * 3);
       output.f_rest.resize(numVerts * 45);
       // load progress
-      const uint32_t total = numVerts*(3+3+4+1+3+45);
-      uint32_t loaded = 0;
-      
+      const uint32_t total  = numVerts * (3 + 3 + 4 + 1 + 3 + 45);
+      uint32_t       loaded = 0;
+
       // put that first so the loading progress looks better
       if(reader.find_properties(indices, 45, "f_rest_0", "f_rest_1", "f_rest_2", "f_rest_3", "f_rest_4", "f_rest_5",
                                 "f_rest_6", "f_rest_7", "f_rest_8", "f_rest_9", "f_rest_10", "f_rest_11", "f_rest_12",
@@ -176,7 +179,7 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
       {
         reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.positions.data());
         loaded += numVerts * 3;
-        setProgress(float(loaded)/float(total));
+        setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 1, "opacity"))
       {
@@ -206,13 +209,13 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
 
       gsFound = true;
     }
-    
+
     reader.next_element();
   }
 
   if(gsFound)
   {
-    auto endTime = std::chrono::high_resolution_clock::now();
+    auto      endTime  = std::chrono::high_resolution_clock::now();
     long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
     std::cout << "File loaded in " << loadTime << "ms" << std::endl;
   }

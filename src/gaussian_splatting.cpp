@@ -156,7 +156,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     vkCmdEndRendering(cmd);
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
   }
-    
+
   readBackIndirectParametersIfNeeded(cmd);
 
   updateRenderingMemoryStatistics(cmd, splatCount);
@@ -305,8 +305,7 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
 
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                         0, 1,
-                         &barrier, 0, NULL, 0, NULL);
+                         0, 1, &barrier, 0, NULL, 0, NULL);
   }
 
   // 3. invoke the radix sort from vrdx lib
@@ -314,15 +313,12 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
     auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
     vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, m_indirect.buffer,
-                                offsetof(shaderio::IndirectParams, instanceCount),
-                                m_splatDistancesDevice.buffer, 0, m_splatIndicesDevice.buffer, 0,
-                                m_vrdxStorageDevice.buffer, 0, 0, 0);
+                                offsetof(shaderio::IndirectParams, instanceCount), m_splatDistancesDevice.buffer, 0,
+                                m_splatIndicesDevice.buffer, 0, m_vrdxStorageDevice.buffer, 0, 0, 0);
 
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT
-                             | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT ,
-                         0, 1, &barrier, 0,
-                         NULL, 0, NULL);
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                         0, 1, &barrier, 0, NULL, 0, NULL);
   }
 }
 
@@ -374,7 +370,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
 
 void GaussianSplatting::collectReadBackValuesIfNeeded(void)
 {
-  if(m_indirectReadbackHost.buffer != VK_NULL_HANDLE && m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX && m_canCollectReadback )
+  if(m_indirectReadbackHost.buffer != VK_NULL_HANDLE && m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX && m_canCollectReadback)
   {
     uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectReadbackHost));
     std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(shaderio::IndirectParams));
@@ -778,8 +774,8 @@ void GaussianSplatting::initRendererBuffers()
 
   // for statistics readback
   m_indirectReadbackHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams),
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   m_dutil->DBG_NAME(m_indirect.buffer);
   m_dutil->DBG_NAME(m_indirectReadbackHost.buffer);

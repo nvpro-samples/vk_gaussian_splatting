@@ -108,7 +108,7 @@ public:  // Methods specializing IAppElement
   void onAttach(nvvkhl::Application* app) override;
 
   void onDetach() override;
-    
+
   void onResize(VkCommandBuffer cmd, const VkExtent2D& size) override;
 
   void onRender(VkCommandBuffer cmd) override;

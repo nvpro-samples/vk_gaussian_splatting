@@ -107,7 +107,7 @@ private:
   bool innerSort();
 
 private:
-  State      m_status = E_SHUTDOWN;
+  State       m_status = E_SHUTDOWN;
   std::thread m_sorter;
   // asked for shutdown
   bool m_shutdownRequested = false;

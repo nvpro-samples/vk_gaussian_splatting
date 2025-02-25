@@ -493,10 +493,10 @@ void GaussianSplatting::onUIRender()
       ImGui::Text("%s", formatMemorySize(0).c_str());
       ImGui::TableNextColumn();
       ImGui::Text("%s", formatMemorySize(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
-                      .c_str());
+                            .c_str());
       ImGui::TableNextColumn();
       ImGui::Text("%s", formatMemorySize(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
-                      .c_str());
+                            .c_str());
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
       ImGui::Text("Sub-total");
