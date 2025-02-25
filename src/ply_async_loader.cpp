@@ -140,7 +140,7 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
   miniply::PLYReader reader(filename.c_str());
   if(!reader.valid())
   {
-    std::cout << "Error: Failed to open file: " << filename << std::endl;
+    std::cout << "Error: ply loader failed to open file: " << filename << std::endl;
     return false;
   }
 
@@ -152,6 +152,11 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
     if(reader.element_is(miniply::kPLYVertexElement) && reader.load_element())
     {
       const uint32_t numVerts = reader.num_rows();
+      if(numVerts == 0)
+      {
+        std::cout << "Warning: ply loader skipping empty ply element " << std::endl;
+        continue; // move to next while iteration
+      }
       output.positions.resize(numVerts * 3);
       output.scale.resize(numVerts * 3);
       output.rotation.resize(numVerts * 4);
