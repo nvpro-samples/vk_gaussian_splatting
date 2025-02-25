@@ -216,7 +216,11 @@ private:  // Methods
   void drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t splatCount);
 
   // for statistics display in the UI
-  void readBackIndirectParameters(VkCommandBuffer cmd);
+  // copy form m_indirectReadbackHost updated at previous frame to m_indirectReadback
+  void collectReadBackValuesIfNeeded(void);
+  // for statistics display in the UI
+  // read back updated indirect parameters from m_indirect into m_indirectReadbackHost
+  void readBackIndirectParametersIfNeeded(VkCommandBuffer cmd);
 
   void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
 
@@ -288,9 +292,10 @@ private:  // Attributes
   glm::vec3 m_up;
 
   // IndirectParams structure defined in device_host.h
-  nvvk::Buffer             m_indirect;          // indirect parameter buffer
-  nvvk::Buffer             m_indirectHost;      // buffer for readback
-  shaderio::IndirectParams m_indirectReadback;  // readback values
+  nvvk::Buffer             m_indirect;              // indirect parameter buffer
+  nvvk::Buffer             m_indirectReadbackHost;  // buffer for readback
+  shaderio::IndirectParams m_indirectReadback;      // readback values
+  bool m_canCollectReadback = false;  // tells wether readback will be available in Host buffer at next frame
 
   //
   nvvk::Buffer m_quadVertices;  // Buffer of vertices for the splat quad

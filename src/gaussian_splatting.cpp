@@ -112,6 +112,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   const nvvk::DebugUtil::ScopedCmdLabel sdbg = m_dutil->DBG_SCOPE(cmd);
 
+  // collect readback results from previous frame if any
+  collectReadBackValuesIfNeeded();
+
   // 0 if not ready so the rendering does not
   // touch the splat set while loading
   uint32_t splatCount = 0;
@@ -159,9 +162,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     vkCmdEndRendering(cmd);
     nvvk::cmdBarrierImageLayout(cmd, m_gBuffers->getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
   }
-
-  // read back to m_indirectReadback for statistics display in the UI
-  readBackIndirectParameters(cmd);
+    
+  readBackIndirectParametersIfNeeded(cmd);
 
   updateRenderingMemoryStatistics(cmd, splatCount);
 }
@@ -198,17 +200,14 @@ void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const u
   vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(shaderio::FrameInfo), &m_frameInfo);
 
   // sync with end of copy to device
-  VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-  bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-  bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-  bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  bmb.buffer              = m_frameInfoBuffer.buffer;
-  bmb.size                = VK_WHOLE_SIZE;
+  VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+  barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
                            | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
-                       VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+                       0, 1, &barrier, 0, NULL, 0, NULL);
 }
 
 void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount)
@@ -268,16 +267,13 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
       VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = splatCount * sizeof(uint32_t)};
       vkCmdCopyBuffer(cmd, m_splatIndicesHost.buffer, m_splatIndicesDevice.buffer, 1, &bc);
       // sync with end of copy to device
-      VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-      bmb.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-      bmb.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
-      bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      bmb.buffer              = m_splatIndicesDevice.buffer;
-      bmb.size                = VK_WHOLE_SIZE;
+      VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT,
-                           VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
+                           0, 1, &barrier, 0, NULL, 0, NULL);
     }
   }
 }
@@ -313,7 +309,9 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
 
     vkCmdDispatch(cmd, (splatCount + DISTANCE_COMPUTE_WORKGROUP_SIZE - 1) / DISTANCE_COMPUTE_WORKGROUP_SIZE, 1, 1);
 
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                         0, 1,
                          &barrier, 0, NULL, 0, NULL);
   }
 
@@ -321,12 +319,15 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
   {
     auto timerSection = m_profiler->timeRecurring("GPU Sort", cmd);
 
-    vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, m_indirect.buffer, sizeof(uint32_t),
+    vrdxCmdSortKeyValueIndirect(cmd, m_gpuSorter, splatCount, m_indirect.buffer,
+                                offsetof(shaderio::IndirectParams, instanceCount),
                                 m_splatDistancesDevice.buffer, 0, m_splatIndicesDevice.buffer, 0,
                                 m_vrdxStorageDevice.buffer, 0, 0, 0);
 
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT, 0, 1, &barrier, 0,
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT
+                             | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT ,
+                         0, 1, &barrier, 0,
                          NULL, 0, NULL);
   }
 }
@@ -377,32 +378,35 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
   }
 }
 
-void GaussianSplatting::readBackIndirectParameters(VkCommandBuffer cmd)
+void GaussianSplatting::collectReadBackValuesIfNeeded(void)
 {
-  if(m_indirectHost.buffer != VK_NULL_HANDLE)
+  if(m_indirectReadbackHost.buffer != VK_NULL_HANDLE && m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX && m_canCollectReadback )
+  {
+    uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectReadbackHost));
+    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(shaderio::IndirectParams));
+    m_alloc->unmap(m_indirectReadbackHost);
+  }
+}
+
+void GaussianSplatting::readBackIndirectParametersIfNeeded(VkCommandBuffer cmd)
+{
+  if(m_indirectReadbackHost.buffer != VK_NULL_HANDLE && m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX)
   {
     auto timerSection = m_profiler->timeRecurring("Indirect readback", cmd);
 
+    // ensures m_indirect buffer modified by GPU sort is available for transfer
+    VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask   = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask   = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &barrier, 0,
+                         NULL, 0, NULL);
+
     // copy from device to host buffer
     VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = sizeof(shaderio::IndirectParams)};
-    vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectHost.buffer, 1, &bc);
+    vkCmdCopyBuffer(cmd, m_indirect.buffer, m_indirectReadbackHost.buffer, 1, &bc);
 
-    // sync with end of copy to host, GPU timeline,
-    // value will be available between now and next frame
-    VkBufferMemoryBarrier bmb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    bmb.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-    bmb.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
-    bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bmb.buffer              = m_indirectHost.buffer;
-    bmb.size                = VK_WHOLE_SIZE;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_DEPENDENCY_DEVICE_GROUP_BIT, 0, nullptr, 1, &bmb, 0, nullptr);
-
-    // copy to main memory (this copy the value from last frame, CPU timeline)
-    uint32_t* hostBuffer = static_cast<uint32_t*>(m_alloc->map(m_indirectHost));
-    std::memcpy((void*)&m_indirectReadback, (void*)hostBuffer, sizeof(shaderio::IndirectParams));
-    m_alloc->unmap(m_indirectHost);
+    m_canCollectReadback = true;
   }
 }
 
@@ -452,6 +456,7 @@ void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, con
 
 void GaussianSplatting::deinitAll()
 {
+  m_canCollectReadback = false;
   vkDeviceWaitIdle(m_device);
   deinitScene();
   deinitDataTextures();
@@ -778,12 +783,12 @@ void GaussianSplatting::initRendererBuffers()
                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 
   // for statistics readback
-  m_indirectHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams),
+  m_indirectReadbackHost = m_alloc->createBuffer(sizeof(shaderio::IndirectParams),
                                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   m_dutil->DBG_NAME(m_indirect.buffer);
-  m_dutil->DBG_NAME(m_indirectHost.buffer);
+  m_dutil->DBG_NAME(m_indirectReadbackHost.buffer);
 
   // We create a command buffer in order to perform the copy to VRAM
   VkCommandBuffer cmd = m_app->createTempCmdBuffer();
@@ -821,7 +826,7 @@ void GaussianSplatting::deinitRendererBuffers()
   m_alloc->destroy(const_cast<nvvk::Buffer&>(m_vrdxStorageDevice));
 
   m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirect));
-  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirectHost));
+  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_indirectReadbackHost));
 
   m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadVertices));
   m_alloc->destroy(const_cast<nvvk::Buffer&>(m_quadIndices));
