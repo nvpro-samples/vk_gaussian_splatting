@@ -155,7 +155,7 @@ bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
       if(numVerts == 0)
       {
         std::cout << "Warning: ply loader skipping empty ply element " << std::endl;
-        continue; // move to next while iteration
+        continue;  // move to next while iteration
       }
       output.positions.resize(numVerts * 3);
       output.scale.resize(numVerts * 3);
