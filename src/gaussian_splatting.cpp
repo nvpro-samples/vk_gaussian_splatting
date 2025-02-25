@@ -373,7 +373,7 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
     {
       // run the workgroups
       vkCmdDrawMeshTasksIndirectEXT(cmd, m_indirect.buffer, offsetof(shaderio::IndirectParams, groupCountX), 1,
-                                    sizeof(VkDrawIndexedIndirectCommand));
+                                    sizeof(VkDrawMeshTasksIndirectCommandEXT));
     }
   }
 }
