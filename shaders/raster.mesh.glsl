@@ -145,8 +145,8 @@ void main()
     vec3 shd2[5];
 #endif
 #if MAX_SH_DEGREE >= 3
-    // SH coefficients for degree 3 (9,10,11,12,13,14,15,16,17)
-    vec3 shd3[9];
+    // SH coefficients for degree 3 (9,10,11,12,13,14,15)
+    vec3 shd3[7];
 #endif
     // fetch the data (only what is needed according to degree)
     fetchSh(splatIndex, shd1

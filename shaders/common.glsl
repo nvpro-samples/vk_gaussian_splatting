@@ -119,7 +119,7 @@ void fetchSh(in uint  splatIndex,
              , out vec3 shd2[5]
 #endif
 #if MAX_SH_DEGREE >= 3
-             , out vec3 shd3[9]
+             , out vec3 shd3[7]
 #endif
 )
 {
@@ -230,7 +230,7 @@ void fetchSh(
   ,out vec3 shd2[5]
 #endif
 #if MAX_SH_DEGREE >= 3
-  ,out vec3 shd3[9]
+  ,out vec3 shd3[7]
 #endif
 )
 {

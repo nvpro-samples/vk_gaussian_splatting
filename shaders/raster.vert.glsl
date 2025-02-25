@@ -109,8 +109,8 @@ void main()
   vec3 shd2[5];
 #endif
 #if MAX_SH_DEGREE >= 3
-  // SH coefficients for degree 3 (9,10,11,12,13,14,15,16,17)
-  vec3 shd3[9];
+  // SH coefficients for degree 3 (9,10,11,12,13,14,15)
+  vec3 shd3[7];
 #endif
   // fetch the data (only what is needed according to degree)
   fetchSh(splatIndex, shd1
@@ -138,6 +138,20 @@ void main()
 
       splatColor.rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
                         + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
+#endif
+#if MAX_SH_DEGREE >= 3
+      // Degree 3 SH basis function terms
+      const float xyy = x * yy;
+      const float yzz = y * zz;
+      const float zxx = z * xx;
+      const float xyz = x * y * z;
+
+      // Degree 3 contributions
+      splatColor.rgb += SH_C3[0] * shd3[0] * (3.0 * x * x - y * y) * y + SH_C3[1] * shd3[1] * x * y * z
+                        + SH_C3[2] * shd3[2] * (4.0 * z * z - x * x - y * y) * y
+                        + SH_C3[3] * shd3[3] * z * (2.0 * z * z - 3.0 * x * x - 3.0 * y * y)
+                        + SH_C3[4] * shd3[4] * x * (4.0 * z * z - x * x - y * y)
+                        + SH_C3[5] * shd3[5] * (x * x - y * y) * z + SH_C3[6] * shd3[6] * x * (x * x - 3.0 * y * y);
 #endif
 #endif
 
