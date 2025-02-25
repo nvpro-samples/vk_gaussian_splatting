@@ -30,7 +30,7 @@
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) || _MSC_VER < 1930
 
 // Macro to start a parallel loop with a thread ID
 #define START_PAR_LOOP(SIZE, INDEX)                                                                                      \
