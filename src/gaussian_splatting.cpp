@@ -80,9 +80,9 @@ void GaussianSplatting::onDetach()
   deinitGbuffers();
 }
 
-void GaussianSplatting::onResize(uint32_t width, uint32_t height)
+void GaussianSplatting::onResize(VkCommandBuffer cmd, const VkExtent2D& size)
 {
-  initGbuffers({width, height});
+  initGbuffers({size.width, size.height});
 }
 
 void GaussianSplatting::initGbuffers(const glm::vec2& size)
