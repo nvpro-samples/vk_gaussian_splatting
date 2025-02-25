@@ -16,11 +16,11 @@ layout(set = 0, binding = BINDING_DISTANCES_BUFFER, scalar) writeonly buffer _di
 {
   uint32_t distances[];
 };
-layout(std430, set = 0, binding = BINDING_INDICES_BUFFER, scalar) writeonly buffer _indices
+layout(set = 0, binding = BINDING_INDICES_BUFFER, scalar) writeonly buffer _indices
 {
   uint32_t indices[];
 };
-layout(std430, set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) writeonly buffer _indirect
+layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) writeonly buffer _indirect
 {
   IndirectParams indirect;
 };
@@ -36,14 +36,14 @@ uint encodeMinMaxFp32(float val)
 void main()
 {
   const uint id = gl_GlobalInvocationID.x;
- // each workgroup (but the last one if splat count is not a multiple)
- // processes DISTANCE_COMPUTE_WORKGROUP_SIZE points 
+  // each workgroup (but the last one if splat count is not a multiple)
+  // processes DISTANCE_COMPUTE_WORKGROUP_SIZE points
   if(id >= frameInfo.splatCount)
     return;
 
-  vec4 pos = vec4(fetchCenter(id), 1.0);
-  pos      = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
-  pos      = pos / pos.w;
+  vec4 pos          = vec4(fetchCenter(id), 1.0);
+  pos               = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
+  pos               = pos / pos.w;
   const float depth = pos.z;
 
   // valid only when center is inside NDC clip space.
@@ -55,7 +55,7 @@ void main()
   if(abs(pos.x) > clip || abs(pos.y) > clip || pos.z < 0.f - frameInfo.frustumDilation || pos.z > 1.0)
     return;
 #endif
-  
+
   // increments the visible splat counter in the indirect buffer (second entry of the array)
   const uint instance_index = atomicAdd(indirect.instanceCount, 1);
   // stores the distance
