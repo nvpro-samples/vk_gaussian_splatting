@@ -25,12 +25,11 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
-//
+
 #include <glm/vec3.hpp>
-//
+
 #include "splat_set.h"
 
-//
 class SplatSorterAsync
 {
 public:

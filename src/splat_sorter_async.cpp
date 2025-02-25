@@ -17,14 +17,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-//
 #include "splat_sorter_async.h"
 #include "utilities.h"
-//
+
 // for parallel processing
 #include <algorithm>
 #include <execution>
-//
+// mathematics
+#include <cmath>
 #include <glm/vec4.hpp>
 
 bool SplatSorterAsync::initialize()
@@ -38,12 +38,11 @@ bool SplatSorterAsync::initialize()
 
   // starts the thread
   m_sorter = std::thread([this]() {
-    //
     std::unique_lock<std::mutex> lock(m_mutex);
     m_status = READY;
     lock.unlock();
-    //
-    while(true) 
+
+    while(true)
     {
       // wait to load new scene
       std::unique_lock<std::mutex> lock(m_mutex);
@@ -95,7 +94,7 @@ bool SplatSorterAsync::innerSort()
   // https://mathinsight.org/distance_point_plane
   const glm::vec4 plane(m_sortDir[0], m_sortDir[1], m_sortDir[2],
                         -m_sortDir[0] * m_sortCop[0] - m_sortDir[1] * m_sortCop[1] - m_sortDir[2] * m_sortCop[2]);
-  const float     divider = 1.0f / sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
+  const float     divider = 1.0f / std::sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
 
   const auto splatCount = (uint32_t)m_positions->size() / 3;
 
@@ -108,7 +107,7 @@ bool SplatSorterAsync::innerSort()
   {
     const auto pos = &((*m_positions)[splatIdx * 3]);
     // distance to plane
-    const float dist = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
+    const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
     distances[splatIdx] = dist;
     m_indices[splatIdx] = (uint32_t)splatIdx;
   }
@@ -120,12 +119,8 @@ bool SplatSorterAsync::innerSort()
   // comparison function working on the data <dist,idex>
   auto compare = [&](size_t i, size_t j) { return distances[i] > distances[j]; };
 
-// Sorting the array with respect to distance keys
-#if defined(SEQUENTIAL) || !defined(_WIN32)
-  std::sort(distArray.begin(), distArray.end(), compare);
-#else
+  // Sorting the array with respect to distance keys
   std::sort(std::execution::par_unseq, m_indices.begin(), m_indices.end(), compare);
-#endif
 
   auto time2 = std::chrono::high_resolution_clock::now();
   m_sortTime = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(time2 - time1).count();

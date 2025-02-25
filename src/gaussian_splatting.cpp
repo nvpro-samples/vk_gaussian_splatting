@@ -23,12 +23,6 @@
 #include "gaussian_splatting.h"
 #include "utilities.h"
 
-#include <execution>
-#include <ranges>
-
-#include <ppl.h>
-#include <algorithm>
-
 #include <nvh/misc.hpp>
 #include <glm/gtc/packing.hpp>  // Required for half-float operations
 
