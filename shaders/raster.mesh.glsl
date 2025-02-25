@@ -84,7 +84,13 @@ layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) buffer _indirect
 void main()
 {
   const uint32_t baseIndex  = gl_GlobalInvocationID.x;
-  const uint     splatCount = indirect.instanceCount;
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
+  // if culling is already performed we use the subset of splats
+  const uint splatCount = indirect.instanceCount;
+#else
+  // otherwise we use all the splats
+  const uint splatCount = frameInfo.splatCount;
+#endif
   const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - gl_WorkGroupID.x * RASTER_MESH_WORKGROUP_SIZE);
 
   if(gl_LocalInvocationIndex == 0)
