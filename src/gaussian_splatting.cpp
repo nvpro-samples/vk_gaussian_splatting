@@ -55,7 +55,7 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   std::vector<std::string> shaderSearchPaths;
   std::string              path = NVPSystem::exePath();
   shaderSearchPaths.push_back(NVPSystem::exePath());
-  shaderSearchPaths.push_back(std::string("GLSL_" PROJECT_NAME));
+  shaderSearchPaths.push_back(std::string("./GLSL_" PROJECT_NAME));
   shaderSearchPaths.push_back(NVPSystem::exePath() + std::string("GLSL_" PROJECT_NAME));
   shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "Shaders");
   shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "nvpro_core");
