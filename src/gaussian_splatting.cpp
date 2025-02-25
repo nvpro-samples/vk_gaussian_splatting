@@ -60,6 +60,8 @@ void GaussianSplatting::onAttach(nvvkhl::Application* app)
   shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "Shaders");
   shaderSearchPaths.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY) + "nvpro_core");
 
+  std::cout << "Add search path " << NVPSystem::exePath() + std::string("GLSL_" PROJECT_NAME) << std::endl;
+
   m_shaderManager.init(m_device, 1, 2);
   m_shaderManager.m_filetype        = nvh::ShaderFileManager::FILETYPE_GLSL;
   m_shaderManager.m_keepModuleSPIRV = true;
