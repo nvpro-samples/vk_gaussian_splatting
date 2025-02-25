@@ -75,11 +75,16 @@ layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
 {
   uint32_t indices[];
 };
+// to get the actual number of splats (after culling if any)
+layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) buffer _indirect
+{
+  IndirectParams indirect;
+};
 
 void main()
 {
   const uint32_t baseIndex  = gl_GlobalInvocationID.x;
-  const int      splatCount = frameInfo.splatCount;
+  const uint     splatCount = indirect.instanceCount;
   const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - gl_WorkGroupID.x * RASTER_MESH_WORKGROUP_SIZE);
 
   if(gl_LocalInvocationIndex == 0)
