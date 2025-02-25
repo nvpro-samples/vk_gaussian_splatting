@@ -111,7 +111,7 @@ void GaussianSplatting::onUIRender()
   }
 
   // do we need to load a new scenes ?
-  if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
+  if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
   {
     // reset if a scene already exists
     const auto splatCount = m_splatSet.positions.size() / 3;
@@ -149,7 +149,7 @@ void GaussianSplatting::onUIRender()
     // managment of async load
     switch(m_plyLoader.getStatus())
     {
-      case PlyAsyncLoader::Status::LOADING: {
+      case PlyAsyncLoader::State::E_LOADING: {
         ImGui::Text(m_plyLoader.getFilename().c_str());
         ImGui::ProgressBar(m_plyLoader.getProgress(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
         /*
@@ -162,7 +162,7 @@ void GaussianSplatting::onUIRender()
         */
       }
       break;
-      case PlyAsyncLoader::Status::FAILURE: {
+      case PlyAsyncLoader::State::E_FAILURE: {
         ImGui::Text("Error: invalid ply file");
         if(ImGui::Button("Ok", ImVec2(120, 0)))
         {
@@ -176,7 +176,7 @@ void GaussianSplatting::onUIRender()
         }
       }
       break;
-      case PlyAsyncLoader::Status::LOADED: {
+      case PlyAsyncLoader::State::E_LOADED: {
         initAll();
         // set ready for next load
         m_plyLoader.reset();
@@ -263,7 +263,7 @@ void GaussianSplatting::onUIRender()
       }
 
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
-      PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::SORTING ? "Sorting" : "Idled");
+      PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::E_SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 
       PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); });

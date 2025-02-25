@@ -32,13 +32,13 @@
 class PlyAsyncLoader
 {
 public:
-  enum Status
+  enum State
   {
-    SHUTDOWN,  // loader must be initialized (loading thread is not started)
-    READY,     // loader ready to load a new model
-    LOADING,   // loader is currently loading
-    LOADED,    // loader has finished loading, model is available. call reset before another load.
-    FAILURE    // an error eccured. call reset before another load.
+    E_SHUTDOWN,  // loader must be initialized (loading thread is not started)
+    E_READY,     // loader ready to load a new model
+    E_LOADING,   // loader is currently loading
+    E_LOADED,    // loader has finished loading, model is available. call reset before another load.
+    E_FAILURE    // an error eccured. call reset before another load.
   };
 
 public:
@@ -62,7 +62,7 @@ public:
   // non blocking, may have no effect
   void cancel();
   // return loader status
-  Status getStatus();
+  State getStatus();
   // Resets the loader to READY after LOADED or FAILURE
   // used to ack that the consumer has consumed the loaded model
   // loader must be reset to be able to launch a new load
@@ -99,7 +99,7 @@ private:
   // loading thread
   std::thread m_loader;
   // loader status
-  Status m_status = SHUTDOWN;
+  State m_status = E_SHUTDOWN;
   // ask to cancel a load
   bool m_cancelRequested = false;
   // ask for loader shutdown before destruction

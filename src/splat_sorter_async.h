@@ -33,13 +33,13 @@
 class SplatSorterAsync
 {
 public:
-  enum Status
+  enum State
   {
-    SHUTDOWN,  // must be initialized (loading thread is not started)
-    READY,     // ready to sort a set of points, call startSorting
-    SORTING,   // currently sorting the point set
-    SORTED,    // the result of a sort is available, consume before another load
-    FAILURE    // an error eccured. call consume before another load.
+    E_SHUTDOWN,  // must be initialized (loading thread is not started)
+    E_READY,     // ready to sort a set of points, call startSorting
+    E_SORTING,   // currently sorting the point set
+    E_SORTED,    // the result of a sort is available, consume before another load
+    E_FAILURE    // an error eccured. call consume before another load.
   };
 
 public:
@@ -56,7 +56,7 @@ public:
     m_sorter.join();
   }
   // return loader status
-  inline Status getStatus()
+  inline State getStatus()
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_status;
@@ -68,7 +68,7 @@ public:
   inline bool sortAsync(const glm::vec3& camDir, const glm::vec3& camCop, std::vector<float>& positions)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if(m_status != READY)
+    if(m_status != E_READY)
     {
       return false;
     }
@@ -89,9 +89,9 @@ public:
   inline bool consume(std::vector<uint32_t>& indices, double& distTime, double& sortTime)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if(m_status == SORTED || m_status == FAILURE)
+    if(m_status == E_SORTED || m_status == E_FAILURE)
     {
-      m_status = READY;
+      m_status = E_READY;
       distTime = m_distTime;
       sortTime = m_sortTime;
       indices.swap(m_indices);
@@ -107,7 +107,7 @@ private:
   bool innerSort();
 
 private:
-  Status      m_status = SHUTDOWN;
+  State      m_status = E_SHUTDOWN;
   std::thread m_sorter;
   // asked for shutdown
   bool m_shutdownRequested = false;

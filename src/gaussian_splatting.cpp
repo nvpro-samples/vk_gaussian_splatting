@@ -112,7 +112,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   // 0 if not ready so the rendering does not
   // touch the splat set while loading
   uint32_t splatCount = 0;
-  if(m_plyLoader.getStatus() == PlyAsyncLoader::Status::READY)
+  if(m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
   {
     splatCount = (uint32_t)m_splatSet.size();
   }
@@ -213,11 +213,11 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
   {
     // 1. Splatting/blending is on, we check for a newly sorted index table
     auto status = m_cpuSorter.getStatus();
-    if(status != SplatSorterAsync::SORTING)
+    if(status != SplatSorterAsync::E_SORTING)
     {
       // sorter is sleeping, we can work on shared data
       // we take into account the result of the sort
-      if(status == SplatSorterAsync::SORTED)
+      if(status == SplatSorterAsync::E_SORTED)
       {
         m_cpuSorter.consume(m_splatIndices, m_distTime, m_sortTime);
         newIndexAvailable = true;

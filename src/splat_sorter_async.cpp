@@ -31,7 +31,7 @@ bool SplatSorterAsync::initialize()
 {
   // original state shall be shutdown
   std::unique_lock<std::mutex> lock(m_mutex);
-  if(m_status != SHUTDOWN)
+  if(m_status != E_SHUTDOWN)
     return false;  // will unlock through lock destructor
   else
     lock.unlock();
@@ -39,7 +39,7 @@ bool SplatSorterAsync::initialize()
   // starts the thread
   m_sorter = std::thread([this]() {
     std::unique_lock<std::mutex> lock(m_mutex);
-    m_status = READY;
+    m_status = E_READY;
     lock.unlock();
 
     while(true)
@@ -54,25 +54,25 @@ bool SplatSorterAsync::initialize()
       {
         // let's load
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_status = SORTING;
+        m_status = E_SORTING;
         lock.unlock();
         if(innerSort())
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status         = SORTED;
+          m_status         = E_SORTED;
           m_startRequested = false;
         }
         else
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status         = FAILURE;
+          m_status         = E_FAILURE;
           m_startRequested = false;
         }
       }
       else
       {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status         = SHUTDOWN;
+        m_status         = E_SHUTDOWN;
         m_startRequested = false;
         return;
       }

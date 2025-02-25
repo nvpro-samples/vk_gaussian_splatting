@@ -33,7 +33,7 @@
 bool PlyAsyncLoader::loadScene(std::string filename, SplatSet& output)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-  if(m_status != READY)
+  if(m_status != E_READY)
   {
     return false; 
   }
@@ -50,7 +50,7 @@ bool PlyAsyncLoader::initialize()
 {
   // original state shall be shutdown
   std::unique_lock<std::mutex> lock(m_mutex);
-  if(m_status != SHUTDOWN) 
+  if(m_status != E_SHUTDOWN) 
     return false; // will unlock through lock destructor
   else
     lock.unlock();
@@ -59,7 +59,7 @@ bool PlyAsyncLoader::initialize()
   m_loader = std::thread([this]() {
     //
     std::unique_lock<std::mutex> lock(m_mutex);
-    m_status = READY;
+    m_status = E_READY;
     lock.unlock();
     //
     while(true)
@@ -73,19 +73,19 @@ bool PlyAsyncLoader::initialize()
       if ( !shutdown ){
         // let's load
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_status = LOADING;
+        m_status = E_LOADING;
         lock.unlock();
         if(m_output != nullptr && innerLoad(m_filename, *m_output))
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status = LOADED;
+          m_status = E_LOADED;
           m_output   = nullptr;
           m_filename = "";
         }
         else
         {
           std::lock_guard<std::mutex> lock(m_mutex);
-          m_status = FAILURE;
+          m_status = E_FAILURE;
           m_output   = nullptr;
           m_filename = "";
         }
@@ -93,7 +93,7 @@ bool PlyAsyncLoader::initialize()
       else
       {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status = SHUTDOWN;
+        m_status = E_SHUTDOWN;
         m_shutdownRequested = false;
         m_output            = nullptr;
         m_filename          = "";
@@ -109,7 +109,7 @@ void PlyAsyncLoader::cancel() {
   // does nothing for the time beeing
 }
 
-PlyAsyncLoader::Status PlyAsyncLoader::getStatus() {
+PlyAsyncLoader::State PlyAsyncLoader::getStatus() {
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_status;
 }
@@ -117,10 +117,10 @@ PlyAsyncLoader::Status PlyAsyncLoader::getStatus() {
 bool PlyAsyncLoader::reset()
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-  if(m_status == LOADED || m_status == FAILURE)
+  if(m_status == E_LOADED || m_status == E_FAILURE)
   {
     m_progress = 0.0;
-    m_status = READY;
+    m_status = E_READY;
     return true;
   }
   else
