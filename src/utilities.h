@@ -32,8 +32,8 @@
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-#define USE_NVH_PAR_BATCH
-//#define USE_NVH_IOTA
+// #define USE_NVH_PAR_BATCH
+#define USE_NVH_IOTA
 
 #if defined(USE_NVH_PAR_BATCH)
 
@@ -43,7 +43,7 @@
         SIZE, [&](int INDEX) {
 
 #define END_PAR_LOOP()                                                                                                 \
-        }, (uint32_t)std::thread::hardware_concurrency());                                                             \
+  }, (uint32_t)std::thread::hardware_concurrency());                                                                   \
   }
 
 #elif defined(USE_NVH_IOTA)
@@ -51,7 +51,7 @@
 #define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
   {                                                                                                                    \
     nvh::iota_view<uint64_t> items(0, SIZE);                                                                           \
-    std::for_each(std::execution::par_unseq, items.begin(), items.end(), [&](int INDEX) {                              \
+    std::for_each(std::execution::par_unseq, items.begin(), items.end(), [&](int INDEX) {
 
 #define END_PAR_LOOP()                                                                                                 \
   });                                                                                                                  \

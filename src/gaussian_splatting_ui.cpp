@@ -264,7 +264,7 @@ void GaussianSplatting::onUIRender()
 
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
       PE::Checkbox("Lazy CPU sorting", &m_cpuLazySort, "Perform sorting only if viewpoint changes");
-            
+
       PE::Text("CPU sorting state", m_cpuSorter.getStatus() == SplatSorterAsync::E_SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 

@@ -65,9 +65,9 @@ public:
   // position or orientation did change since last run
   // return false if sorter not in READY state or if camera did not move
   // positions must not be accessed while sorting
-  // if lazy is set, a new sort will be started only if viewpoint changed, 
-  // otherwise a new sort is systematically started if sorter is ready 
-  inline bool sortAsync(const glm::vec3& camDir, const glm::vec3& camCop, std::vector<float>& positions, bool lazy=true)
+  // if lazy is set, a new sort will be started only if viewpoint changed,
+  // otherwise a new sort is systematically started if sorter is ready
+  inline bool sortAsync(const glm::vec3& camDir, const glm::vec3& camCop, std::vector<float>& positions, bool lazy = true)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if(m_status != E_READY)
