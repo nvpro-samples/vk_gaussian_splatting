@@ -35,7 +35,6 @@
 // Macro to start a parallel loop with a thread ID
 #define START_PAR_LOOP(SIZE, INDEX)                                                                                      \
   {                                                                                                                      \
-    assert(THREAD_COUNT > 0);                                                                                            \
     std::vector<std::thread> _par_threads;                                                                               \
     uint32_t                 _par_start = 0, _par_end = 0;                                                               \
     uint32_t                 _par_num_threads = std::min((uint32_t)std::thread::hardware_concurrency(), (uint32_t)SIZE); \
@@ -72,7 +71,7 @@
     std::for_each(std::execution::par, __begin_, __end_, [&](int INDEX) {
 
 #define END_PAR_LOOP()                                                                                                 \
-  });                                                                                                                \
+  });                                                                                                                  \
   }
 
 #endif

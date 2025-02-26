@@ -459,17 +459,27 @@ void GaussianSplatting::deinitAll()
   resetRenderSettings();
   // reset camera to default
   CameraManip.setClipPlanes({0.1F, 2000.0F});
-  CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, 1.0F, 0.0F});
+  const glm::vec3 eye(0.0F, 0.0F, -2.0F);
+  const glm::vec3 center(0.F, 0.F, 0.F);
+  const glm::vec3 up(0.F, 1.F, 0.F);
+  CameraManip.setLookat(eye, center, up);
+  // record default cam for reset in UI
+  ImGuiH::SetHomeCamera({eye, center, up, CameraManip.getFov()});
 }
 
 void GaussianSplatting::initAll()
 {
   // resize the CPU sorter indices buffer
   m_splatIndices.resize(m_splatIndices.size());
-  // TODO: use BBox of point cloud to set far plane
+  // TODO: use BBox of point cloud to set far plane, eye and center
   CameraManip.setClipPlanes({0.1F, 2000.0F});
   // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-  CameraManip.setLookat({0.0F, 0.0F, -2.0F}, {0.F, 0.F, 0.F}, {0.0F, -1.0F, 0.0F});
+  const glm::vec3 eye(0.0F, 0.0F, -2.0F);
+  const glm::vec3 center(0.F, 0.F, 0.F);
+  const glm::vec3 up(0.F, -1.F, 0.F);
+  CameraManip.setLookat(eye, center, up);
+  // record default cam for reset in UI
+  ImGuiH::SetHomeCamera({eye, center, up, CameraManip.getFov()});
   // reset general parameters
   resetRenderSettings();
   // init a new setup
@@ -1138,10 +1148,10 @@ void GaussianSplatting::initDataBuffers(void)
 
 void GaussianSplatting::deinitDataBuffers()
 {
-  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_centersDevice));
-  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_colorsDevice));
-  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_covariancesDevice));
-  m_alloc->destroy(const_cast<nvvk::Buffer&>(m_sphericalHarmonicsDevice));
+  m_alloc->destroy(m_centersDevice);
+  m_alloc->destroy(m_colorsDevice);
+  m_alloc->destroy(m_covariancesDevice);
+  m_alloc->destroy(m_sphericalHarmonicsDevice);
 }
 
 ///////////////////
