@@ -198,6 +198,7 @@ private:  // Methods
   {
     m_frameInfo = {};
     m_defines   = {};
+    m_cpuLazySort = true;
   }
 
   // reset the memory usage stats
@@ -326,7 +327,8 @@ private:  // Attributes
 
   // CPU async sorting
   SplatSorterAsync      m_cpuSorter;
-  std::vector<uint32_t> m_splatIndices;  // the array of cpu sorted indices to use for rendering
+  bool                  m_cpuLazySort=true; // if true, sorting starts only if viewpoint changed
+  std::vector<uint32_t> m_splatIndices;     // the array of cpu sorted indices to use for rendering
   // GPU radix sort
   VrdxSorter m_gpuSorter = VK_NULL_HANDLE;
 

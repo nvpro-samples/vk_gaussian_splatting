@@ -263,7 +263,9 @@ void GaussianSplatting::onUIRender()
       }
 
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
-      PE::Text("CPU sorting ", m_cpuSorter.getStatus() == SplatSorterAsync::E_SORTING ? "Sorting" : "Idled");
+      PE::Checkbox("Lazy CPU sorting", &m_cpuLazySort, "Perform sorting only if viewpoint changes");
+            
+      PE::Text("CPU sorting state", m_cpuSorter.getStatus() == SplatSorterAsync::E_SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 
       PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); });
