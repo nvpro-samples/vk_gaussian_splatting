@@ -543,7 +543,7 @@ void GaussianSplatting::onUIMenu()
     {
       m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
     }
-    if(ImGui::MenuItem("Re Open", "", false, m_loadedSceneFilename != ""))
+    if(ImGui::MenuItem("Re Open", "F5", false, m_loadedSceneFilename != ""))
     {
       m_sceneToLoadFilename = m_loadedSceneFilename;
     }
@@ -595,7 +595,11 @@ void GaussianSplatting::onUIMenu()
   {
     v_sync = !v_sync;
   }
-
+  if(ImGui::IsKeyPressed(ImGuiKey_F5))
+  {
+    if(!m_recentFiles.empty())
+      m_sceneToLoadFilename = m_recentFiles[0];
+  }
   if(close_app)
   {
     m_app->close();
