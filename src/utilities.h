@@ -24,13 +24,40 @@
 #include <execution>
 #include <ranges>
 
+#include <nvh/parallel_work.hpp>
+
 // Example using the parallel loop macro
 // constexpr uint32_t N = 100;
 // START_PAR_LOOP( N, i)
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-#if !defined(_WIN32) || _MSC_VER < 1930
+#define USE_NVH_PAR_BATCH
+//#define USE_NVH_IOTA
+
+#if defined(USE_NVH_PAR_BATCH)
+
+#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
+  {                                                                                                                    \
+    nvh::parallel_batches<8192>(                                                                                       \
+        SIZE, [&](int INDEX) {
+
+#define END_PAR_LOOP()                                                                                                 \
+        }, (uint32_t)std::thread::hardware_concurrency());                                                             \
+  }
+
+#elif defined(USE_NVH_IOTA)
+
+#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
+  {                                                                                                                    \
+    nvh::iota_view<uint64_t> items(0, SIZE);                                                                           \
+    std::for_each(std::execution::par_unseq, items.begin(), items.end(), [&](int INDEX) {                              \
+
+#define END_PAR_LOOP()                                                                                                 \
+  });                                                                                                                  \
+  }
+
+#elif !defined(_WIN32) || _MSC_VER < 1930
 
 // Macro to start a parallel loop with a thread ID
 #define START_PAR_LOOP(SIZE, INDEX)                                                                                      \
