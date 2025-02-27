@@ -145,8 +145,6 @@ Performance Considerations
 
 This approach provides a viable fallback for low-end systems, albeit with some trade-offs in responsiveness and visual stability.
 
-> **Note**: With current implementation, Windows build uses fully multi-threaded processings, whereas Linux & other platforms builds do fall back to single-core sorting for the time being.
-
 ## Data flow using GPU based sorting
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
