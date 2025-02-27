@@ -351,13 +351,25 @@ Then run the benchmark using the following command:
 python benchmark.py <path_to_3dgs_dataset_root>
 ```
 
-The following charts presents the results of such a benchmark, when run on an `NVIDIA RTX 6000 Ada Generation`, drivers version 572.64.0, Intel(R) Core(TM) i9-14900K, 3200Mhz, 24 Cores, 32 Logical Processors.
+The following charts presents the results of such a benchmark, when run on an `NVIDIA RTX 6000 Ada Generation`, drivers version 572.64.0, Intel(R) Core(TM) i9-14900K, 3200Mhz, 24 Cores, 32 Logical Processors. The rendering resolution was 1544x783.
 
-![Image showing pipeline Performance Comparison - Mesh vs. Vertex](doc/histogram_shader_timers.png)   
+Settings: Storage=Buffers, Pipeline=Mesh, SH Format=**variable**, Rendering SH degree=3, Culling at distance stage.
 
-![Image showing Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8](doc/histogram_format_timers.png)
+![Image showing Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8](doc/histogram_format_timers_sh3.png)
 
 ![Image showing Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8](doc/histogram_format_memory.png)
+
+Settings: Storage=Buffers, Pipeline=**variable**, SH Format=float32, **Rendering SH degree=3**, Culling at distance stage.
+
+![Image showing pipeline Performance Comparison - Mesh vs. Vertex](doc/histogram_shader_timers_sh3.png)
+
+Settings: Storage=Buffers, Pipeline=**variable**, SH Format=float32, **Rendering SH degree=2**, Culling at distance stage.
+
+![Image showing pipeline Performance Comparison - Mesh vs. Vertex](doc/histogram_shader_timers_sh2.png)
+
+Settings: Storage=Buffers, Pipeline=**variable**, SH Format=float32, **Rendering SH degree=1**, Culling at distance stage.
+
+![Image showing pipeline Performance Comparison - Mesh vs. Vertex](doc/histogram_shader_timers_sh1.png)
 
 ## References
 

@@ -95,6 +95,7 @@ public:  // Methods specializing IAppElement
     benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
     benchmark->parameterLists().add("shformat|0=fp32 1=fp16 2=uint8", &m_defines.shFormat);
     benchmark->parameterLists().add("updateData|1=triggers an update of data buffers or textures, used for benchmarking", &m_updateData);
+    benchmark->parameterLists().add("maxShDegree|max sh degree used for rendering in [0,1,2,3]", &m_defines.maxShDegree);
     // reporting specialization
     benchmark->addPostBenchmarkAdvanceCallback([&]() { benchmarkAdvance(); });
   };
