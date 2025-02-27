@@ -20,10 +20,6 @@
 #ifndef _UTILITIES_H_
 #define _UTILITIES_H_
 
-#include <thread>
-#include <execution>
-#include <ranges>
-
 #include <nvh/parallel_work.hpp>
 
 // Example using the parallel loop macro
@@ -32,75 +28,13 @@
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-// #define USE_NVH_PAR_BATCH
-#define USE_NVH_IOTA
-
-#if defined(USE_NVH_PAR_BATCH)
-
 #define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
   {                                                                                                                    \
-    nvh::parallel_batches<8192>(                                                                                       \
-        SIZE, [&](int INDEX) {
+    nvh::parallel_batches_indexed<8192>(                                                                               \
+        SIZE, [&](int INDEX, int tidx) {
 
 #define END_PAR_LOOP()                                                                                                 \
   }, (uint32_t)std::thread::hardware_concurrency());                                                                   \
   }
-
-#elif defined(USE_NVH_IOTA)
-
-#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
-  {                                                                                                                    \
-    nvh::iota_view<uint64_t> items(0, SIZE);                                                                           \
-    std::for_each(std::execution::par_unseq, items.begin(), items.end(), [&](int INDEX) {
-
-#define END_PAR_LOOP()                                                                                                 \
-  });                                                                                                                  \
-  }
-
-#elif !defined(_WIN32) || _MSC_VER < 1930
-
-// Macro to start a parallel loop with a thread ID
-#define START_PAR_LOOP(SIZE, INDEX)                                                                                      \
-  {                                                                                                                      \
-    std::vector<std::thread> _par_threads;                                                                               \
-    uint32_t                 _par_start = 0, _par_end = 0;                                                               \
-    uint32_t                 _par_num_threads = std::min((uint32_t)std::thread::hardware_concurrency(), (uint32_t)SIZE); \
-    uint32_t                 _par_chunk_size  = (SIZE) / _par_num_threads;                                               \
-    uint32_t                 _par_remainder   = (SIZE) % _par_num_threads;                                               \
-    for(uint32_t _par_tid = 0; _par_tid < _par_num_threads; ++_par_tid)                                                  \
-    {                                                                                                                    \
-      _par_end = _par_start + _par_chunk_size + (_par_tid < _par_remainder ? 1 : 0);                                     \
-        _par_threads.emplace_back([&, _start=_par_start, _end=_par_end]() {                       \
-            for (uint32_t INDEX = _start; INDEX < _end; ++INDEX) {
-
-// Macro to end the parallel loop
-#define END_PAR_LOOP()                                                                                                 \
-  }                                                                                                                    \
-  });                                                                                                                  \
-  _par_start = _par_end;                                                                                               \
-  }                                                                                                                    \
-  for(auto& _par_thread : _par_threads)                                                                                \
-  {                                                                                                                    \
-    if(_par_thread.joinable())                                                                                         \
-    {                                                                                                                  \
-      _par_thread.join();                                                                                              \
-    }                                                                                                                  \
-  }                                                                                                                    \
-  }
-
-#else
-
-#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
-  {                                                                                                                    \
-    auto __range_ = std::views::iota(0, (int)SIZE);                                                                    \
-    auto __begin_ = std::ranges::begin(__range_);                                                                      \
-    auto __end_   = std::ranges::end(__range_);                                                                        \
-    std::for_each(std::execution::par, __begin_, __end_, [&](int INDEX) {
-
-#define END_PAR_LOOP()                                                                                                 \
-  });                                                                                                                  \
-  }
-
-#endif
 
 #endif
