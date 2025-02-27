@@ -70,7 +70,7 @@ The visualization workflow follows these main steps:
 The Data Format and Storage Panel allows users to configure how the model's data is stored in VRAM.
 *	**Storage** – Selects between **Data Buffers** and **Textures** for storing model attributes, including:
     *	Position
-    *	Color and Opacity (deduced from SH degree 0 at construction)
+    *	Color deduced from SH degree 0 at construction and Opacity 
     *	Covariance Matrix
     *	Spherical Harmonics (SH) Coefficients (for degrees higher than 0)
 

@@ -76,7 +76,7 @@ void GaussianSplatting::initGui()
   // m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX,  "Ray tracing", true);  // disabled for the time being, not implemented
   // Sorting method selector
   m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
-  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono"); // TODO
+  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono"); // TODO ?
   m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
   //
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT32, "Float 32");
@@ -210,12 +210,10 @@ void GaussianSplatting::onUIRender()
   if(!m_showUI)
     return;
 
-  //
   namespace PE = ImGuiH::PropertyEditor;
 
   if(ImGui::Begin("Settings"))
   {
-    //
     if(ImGui::CollapsingHeader("Data storage and format", ImGuiTreeNodeFlags_DefaultOpen))
     {
       PE::begin("##3DGS format");
@@ -225,18 +223,23 @@ void GaussianSplatting::onUIRender()
         m_defines.dataStorage = STORAGE_BUFFERS;
         m_defines.shFormat    = FORMAT_FLOAT32;
       }
-      if(PE::entry("Storage", [&]() { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); }))
+      if(PE::entry(
+             "Storage", [&]() { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); },
+             "Selects between Data Buffers and Textures for storing model attributes, including:\n"
+             "Position, Color and Opacity, Covariance Matrix\n"
+             "and Spherical Harmonics (SH) Coefficients (for degrees higher than 0)"))
       {
         m_updateData = true;
       }
-      if(PE::entry("SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &m_defines.shFormat); }))
+      if(PE::entry(
+             "SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &m_defines.shFormat); },
+             "Selects storage format for SH coefficient, balancing precision and memory usage"))
       {
         m_updateData = true;
       }
       PE::end();
     }
 
-    //
     if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
     {
       PE::begin("##GLOB vsync ");
@@ -260,6 +263,11 @@ void GaussianSplatting::onUIRender()
           m_defines.frustumCulling = FRUSTUM_CULLING_AT_RASTER;
           m_updateShaders          = true;
         }
+        if(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX && m_defines.frustumCulling != FRUSTUM_CULLING_AT_DIST)
+        {
+          m_defines.frustumCulling = FRUSTUM_CULLING_AT_DIST;
+          m_updateShaders          = true;
+        }
       }
 
       ImGui::BeginDisabled(m_frameInfo.sortingMethod == SORTING_GPU_SYNC_RADIX);
@@ -268,58 +276,76 @@ void GaussianSplatting::onUIRender()
       PE::Text("CPU sorting state", m_cpuSorter.getStatus() == SplatSorterAsync::E_SORTING ? "Sorting" : "Idled");
       ImGui::EndDisabled();
 
-      PE::entry("Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); });
+      PE::entry(
+          "Rasterization", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &m_selectedPipeline); },
+          "Selects the rendering pipeline, either Mesh Shader or Vertex Shader.");
 
       // Radio buttons for exclusive selection
-      PE::entry("Frustum culling", [&]() {
-        if(ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_NONE;
-          m_updateShaders          = true;
-        }
+      PE::entry(
+          "Frustum culling",
+          [&]() {
+            if(ImGui::RadioButton("Disabled", m_defines.frustumCulling == FRUSTUM_CULLING_NONE))
+            {
+              m_defines.frustumCulling = FRUSTUM_CULLING_NONE;
+              m_updateShaders          = true;
+            }
 
-        ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
-        if(ImGui::RadioButton("At distance stage", m_defines.frustumCulling == FRUSTUM_CULLING_AT_DIST))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_AT_DIST;
-          m_updateShaders          = true;
-        }
-        ImGui::EndDisabled();
+            ImGui::BeginDisabled(m_frameInfo.sortingMethod != SORTING_GPU_SYNC_RADIX);
+            if(ImGui::RadioButton("At distance stage", m_defines.frustumCulling == FRUSTUM_CULLING_AT_DIST))
+            {
+              m_defines.frustumCulling = FRUSTUM_CULLING_AT_DIST;
+              m_updateShaders          = true;
+            }
+            ImGui::EndDisabled();
 
-        if(ImGui::RadioButton("At raster stage", m_defines.frustumCulling == FRUSTUM_CULLING_AT_RASTER))
-        {
-          m_defines.frustumCulling = FRUSTUM_CULLING_AT_RASTER;
-          m_updateShaders          = true;
-        }
-        return true;
-      });
+            if(ImGui::RadioButton("At raster stage", m_defines.frustumCulling == FRUSTUM_CULLING_AT_RASTER))
+            {
+              m_defines.frustumCulling = FRUSTUM_CULLING_AT_RASTER;
+              m_updateShaders          = true;
+            }
+            return true;
+          },
+          "Defines where frustum culling is performed: in the distance compute shader or \n"
+          "at rasterization (in vertex or mesh shader). Culling can also be disabled for performance comparisons.");
 
-      PE::SliderFloat("Frustum dilation", &m_frameInfo.frustumDilation, 0.0f, 1.0f, "%.1f");
+      PE::SliderFloat("Frustum dilation", &m_frameInfo.frustumDilation, 0.0f, 1.0f, "%.1f", 0,
+                      "Adjusts the frustum culling bounds to account for the fact that visibility is tested \n"
+                      "only at the center of each splat, rather than its full elliptical shape. A positive \n"
+                      "value expands the frustum by the given percentage, reducing the risk of prematurely \n"
+                      "discarding splats near the frustum boundaries.");
 
       int alphaThres = 255 * m_frameInfo.alphaCullThreshold;
-      if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255))
+      if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255, "%d", 0, "Discard splats with low opacity (with low contribution)."))
       {
         m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
       }
 
       // we set a different size range for point and splat rendering
-      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f);
+      PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f,
+                      "%.3f", 0, "Adjusts the size of the splats for visualization purposes.");
 
-      if(PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 3))
+      if(PE::SliderInt("Maximum SH degree", (int*)&m_defines.maxShDegree, 0, 3, "%d", 0,
+                       "Sets the highest degree of Spherical Harmonics (SH) used for view-dependent effects."))
         m_updateShaders = true;
 
-      if(PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly))
+      if(PE::Checkbox("Show SH deg > 0 only", &m_defines.showShOnly,
+                      "Removes the base color from SH degree 0, applying only color deduced from \n"
+                      "higher-degree SH to a neutral gray. This helps visualize their contribution."))
         m_updateShaders = true;
 
-      if(PE::Checkbox("Disable splatting", &m_defines.pointCloudModeEnabled))
+      if(PE::Checkbox("Disable splatting", &m_defines.pointCloudModeEnabled,
+                      "Switches to point cloud mode, displaying only the splat centers. \n"
+                      "Other parameters such as Splat Scale still apply in this mode."))
         m_updateShaders = true;
 
-      if(PE::Checkbox("Disable opacity gaussian ", &m_defines.opacityGaussianDisabled))
+      if(PE::Checkbox("Disable opacity gaussian ", &m_defines.opacityGaussianDisabled,
+                      "Disables the alpha component of the Gaussians, making their full range visible.\n"
+                      "This helps analyze splat distribution and scales, especially when combined with Splat Scale adjustments."))
         m_updateShaders = true;
 
       PE::end();
     }
-    //
+
     if(ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen))
     {
       const int32_t totalSplatCount = (uint32_t)m_splatSet.size();
