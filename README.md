@@ -24,11 +24,11 @@ cd vk_gaussian_splatting
 cmake -S . -B build
 cmake --build build --config Release
 
-# Running, if nvprocore was not found in parent directory, 
+# Running, if nvpro-core was not found in parent directory, 
 # it was automatically downloaded by cmake at config
 ./bin_x64/Release/vk_gaussian_splatting.exe [path_to_ply]
 
-# Running, if nvprocore was found in parent directory
+# Running, if nvpro-core was found in parent directory
 ../bin_x64/Release/vk_gaussian_splatting.exe [path_to_ply]
 
 ```
@@ -94,8 +94,10 @@ Finally, the **SH format** selector controls the precision used for storing sphe
 The Rendering Panel provides controls to fine-tune the rendering process. Users can adjust the following parameters:
 *	**V-Sync** – Toggles vertical synchronization on or off. Disabling V-Sync is recommended when benchmarking to obtain accurate performance measurements in the Profiler Panel.
 *	**Sorting Method** – Chooses between GPU-based radix sort or CPU-based asynchronous sorting.
+*	**Lazy CPU Sorting** – When the CPU Sorting Method is selected, enabling this option will trigger a new sorting pass only when the viewpoint changes. Otherwise, sorting will continuously restart as soon as the previous sorting process completes.
 *	**Pipeline** – Selects the rendering pipeline, either Mesh Shader or Vertex Shader.
 *	**Frustum Culling** – Defines where frustum culling is performed: in the distance compute shader, vertex shader, or mesh shader. Culling can also be disabled for performance comparisons.
+*   **Frustum Dilation** – Adjusts the frustum culling bounds to account for the fact that visibility is tested only at the center of each splat, rather than its full elliptical shape. A positive value expands the frustum by the given percentage, reducing the risk of prematurely discarding splats near the frustum boundaries. More advanced culling methods are left for future work.
 *	**Splat Scale** – Adjusts the size of the splats for visualization purposes.
 *	**Spherical Harmonics Degree** – Sets the degree of Spherical Harmonics (SH) used for view-dependent effects:
     *	0: Disables per splat view dependence of color. Uses SH of degree 0 only.
