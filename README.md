@@ -77,12 +77,12 @@ The Data Format and Storage Panel allows users to configure how the model's data
 This **storage** option impacts memory access patterns and performance, allowing comparisons between different storage strategies. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
 *	**Data Buffer Mode** – Uses a separate buffer for each attribute type.
     *	This layout improves memory lookups during shader execution, as threads access attributes in sequential stages (e.g., first positions, then colors, etc.).
-    *  	Buffers are allocated and initialized by the [initDataBuffers](src/gaussian_splatting.cpp#L809) method.
+    *  	Buffers are allocated and initialized by the `initDataBuffers` method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp)).
 *	**Texture Mode** – Uses a separate texture map for each attribute type.
     *	All textures are 4092 pixels wide, with the height determined as a power of two based on the attribute's memory footprint.
     *	Linear storage in textures is suboptimal due to square-based cache for texel fetches, but data locality cannot be easily optimized as sorting is view-dependent.
     *	Future work could explore organizing data based on value proximity to leverage texture compression.
-    *   Textures are allocated and initialized by the [initDataTextures](src/gaussian_splatting.cpp#L1110) method.
+    *   Textures are allocated and initialized by the `initDataTextures` method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp)).
 
 Finally, the **SH format** selector controls the precision used for storing spherical harmonics (SH) coefficients.
 
@@ -149,7 +149,7 @@ This approach provides a viable fallback for low-end systems, albeit with some t
 
 ![image showing gaussian splatting rasterization pipelines with GPU sorting](doc/pipeline_gpu_sorting.png)
 
-When GPU-based sorting is enabled, the [processSortingOnGPU](src/gaussian_splatting.cpp#L125) method is invoked. This method adds the processings to the command buffer in three steps.
+When GPU-based sorting is enabled, the `processSortingOnGPU` method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp)) is invoked. This method adds the processings to the command buffer in three steps.
 
 ### Resetting the Indirect Parameters Buffer
 
