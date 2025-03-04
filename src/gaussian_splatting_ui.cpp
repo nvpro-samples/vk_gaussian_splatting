@@ -76,7 +76,6 @@ void GaussianSplatting::initGui()
   // m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX,  "Ray tracing", true);  // disabled for the time being, not implemented
   // Sorting method selector
   m_ui.enumAdd(GUI_SORTING, SORTING_GPU_SYNC_RADIX, "GPU radix sort");
-  //m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MONO, "CPU async std mono"); // TODO ?
   m_ui.enumAdd(GUI_SORTING, SORTING_CPU_ASYNC_MULTI, "CPU async std multi");
   //
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT32, "Float 32");
@@ -108,6 +107,16 @@ void GaussianSplatting::onUIRender()
 
     ImGui::End();
     ImGui::PopStyleVar();
+  }
+
+  // load a default scene if none was provided by command line
+  if(m_enableDefaultScene && m_loadedSceneFilename.empty() && m_sceneToLoadFilename.empty()
+     && m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
+  {
+    const std::vector<std::string> defaultSearchPaths = {NVPSystem::exePath() + PROJECT_DOWNLOAD_RELDIRECTORY,
+                                                         NVPSystem::exePath() + "media"};  // for INSTALL search path
+    m_sceneToLoadFilename = nvh::findFile("forest_1/forest_1.ply", defaultSearchPaths, true);
+    m_enableDefaultScene=false;
   }
 
   // do we need to load a new scenes ?

@@ -82,6 +82,9 @@ set(NVPRO_CORE_DIR ${BASE_DIRECTORY}/nvpro_core)
 
 _add_project_definitions(${PROJNAME})
 
+# Download the default scene
+download_files(FILENAMES forest_1.zip EXTRACT)
+
 # Set the install diectory in the project directory
 set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/_install" CACHE PATH "folder in which INSTALL will put everything needed to run the binaries" FORCE)
 

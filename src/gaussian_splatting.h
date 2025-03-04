@@ -92,6 +92,7 @@ public:  // Methods specializing IAppElement
     // Register command line arguments
     // Done in this class instead of in main() so private members can be registered for direct modification
     benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
+    benchmark->parameterLists().add("loadDefaultScene|0 disable the load of a default scene when no ply file is provided", &m_enableDefaultScene);
     benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
     benchmark->parameterLists().add("shformat|0=fp32 1=fp16 2=uint8", &m_defines.shFormat);
     benchmark->parameterLists().add("updateData|1=triggers an update of data buffers or textures, used for benchmarking", &m_updateData);
@@ -255,6 +256,8 @@ private:  // Attributes
   std::string m_sceneToLoadFilename;
   // name of the loaded scene if successfull
   std::string m_loadedSceneFilename;
+  // do we load a default scene at startup if none is provided through CLI
+  bool m_enableDefaultScene=true;
   // Recent files list
   std::vector<std::string> m_recentFiles;
   // scene loader
