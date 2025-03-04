@@ -42,10 +42,9 @@ int main(int argc, char** argv)
       auto* feature = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(pFeatureStruct);
       // enabling and not using it may cost a tiny bit of performance on NV hardware
       feature->meshShaderQueries = VK_FALSE;
-      // diable for the time beeing TODO need to understand
+      // disable for the time beeing TODO 
       feature->primitiveFragmentShadingRateMeshShader = VK_FALSE;
     }
-
   };
 
   // Create Vulkan context
