@@ -115,7 +115,7 @@ void GaussianSplatting::onUIRender()
   {
     const std::vector<std::string> defaultSearchPaths = {NVPSystem::exePath() + PROJECT_DOWNLOAD_RELDIRECTORY,
                                                          NVPSystem::exePath() + "media"};  // for INSTALL search path
-    m_sceneToLoadFilename = nvh::findFile("forest_1/forest_1.ply", defaultSearchPaths, true);
+    m_sceneToLoadFilename = nvh::findFile("flowers_1/flowers_1.ply", defaultSearchPaths, true);
     m_enableDefaultScene=false;
   }
 
