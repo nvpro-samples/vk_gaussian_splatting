@@ -26,6 +26,33 @@
 #include <nvh/misc.hpp>
 #include <glm/gtc/packing.hpp>  // Required for half-float operations
 
+GaussianSplatting::GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler>            profiler,
+                                     std::shared_ptr<nvvkhl::ElementBenchmarkParameters> benchmark)
+    // starts the splat sorting thread
+    : m_profiler(profiler)
+    , m_benchmark()
+{
+  // Register command line arguments
+  // Done in this class instead of in main() so private members can be registered for direct modification
+  benchmark->parameterLists().addFilename(".ply|load a ply file", &m_sceneToLoadFilename);
+  benchmark->parameterLists().add("pipeline|0=mesh 1=vert", &m_selectedPipeline);
+  benchmark->parameterLists().add("shformat|0=fp32 1=fp16 2=uint8", &m_defines.shFormat);
+  benchmark->parameterLists().add("updateData|1=triggers an update of data buffers or textures, used for benchmarking", &m_updateData);
+  benchmark->parameterLists().add("maxShDegree|max sh degree used for rendering in [0,1,2,3]", &m_defines.maxShDegree);
+#ifdef WITH_DEFAULT_SCENE_FEATURE
+  benchmark->parameterLists().add("loadDefaultScene|0 disable the load of a default scene when no ply file is provided",
+                                  &m_enableDefaultScene);
+#endif
+  // reporting specialization
+  benchmark->addPostBenchmarkAdvanceCallback([&]() { benchmarkAdvance(); });
+};
+
+GaussianSplatting::~GaussianSplatting(){
+    // all threads must be stopped,
+    // work done in onDetach(),
+    // could be done here, same result
+};
+
 void GaussianSplatting::onAttach(nvvkhl::Application* app)
 {
   initGui();

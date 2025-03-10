@@ -82,11 +82,19 @@ set(NVPRO_CORE_DIR ${BASE_DIRECTORY}/nvpro_core)
 
 _add_project_definitions(${PROJNAME})
 
-# Download the default scene
-download_files(FILENAMES flowers_1.zip EXTRACT)
-
 # Set the install diectory in the project directory
 set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/_install" CACHE PATH "folder in which INSTALL will put everything needed to run the binaries" FORCE)
+
+# set with -DDISABLE_DEFAULT_SCENE=ON on command line or use cmake-gui to set teh parameter
+# if default scene is not disabled at build using this option, one can still disable it by 
+# providing "-loadDefaultScene 0" to the sample command line
+option(DISABLE_DEFAULT_SCENE "If set to true the default scene is not downloaded by CMake, and the sample does not try to open it when starting up with no scene as parameter" OFF)
+
+# Download the default scene
+if (NOT DISABLE_DEFAULT_SCENE)
+  add_definitions(-DWITH_DEFAULT_SCENE_FEATURE)
+  download_files(FILENAMES flowers_1.zip EXTRACT)
+endif()
 
 #####################################################################################
 # additions from packages needed for this sample

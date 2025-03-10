@@ -109,6 +109,7 @@ void GaussianSplatting::onUIRender()
     ImGui::PopStyleVar();
   }
 
+#ifdef WITH_DEFAULT_SCENE_FEATURE
   // load a default scene if none was provided by command line
   if(m_enableDefaultScene && m_loadedSceneFilename.empty() && m_sceneToLoadFilename.empty()
      && m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
@@ -116,8 +117,9 @@ void GaussianSplatting::onUIRender()
     const std::vector<std::string> defaultSearchPaths = {NVPSystem::exePath() + PROJECT_DOWNLOAD_RELDIRECTORY,
                                                          NVPSystem::exePath() + "media"};  // for INSTALL search path
     m_sceneToLoadFilename = nvh::findFile("flowers_1/flowers_1.ply", defaultSearchPaths, true);
-    m_enableDefaultScene=false;
+    m_enableDefaultScene  = false;
   }
+#endif
 
   // do we need to load a new scenes ?
   if(!m_sceneToLoadFilename.empty() && m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
