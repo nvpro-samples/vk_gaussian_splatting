@@ -331,6 +331,10 @@ void GaussianSplatting::onUIRender()
         m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
       }
 
+      if(PE::Checkbox("Fragment shader barycentric", &m_defines.fragmentBarycentric,
+                      "Enables fragment shader barycentric to reduce vertex and mesh shaders outputs."))
+        m_updateShaders = true;
+
       // we set a different size range for point and splat rendering
       PE::SliderFloat("Splat scale", (float*)&m_frameInfo.splatScale, 0.1f, m_defines.pointCloudModeEnabled != 0 ? 10.0f : 2.0f,
                       "%.3f", 0, "Adjusts the size of the splats for visualization purposes.");

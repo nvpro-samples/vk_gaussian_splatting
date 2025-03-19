@@ -55,8 +55,10 @@
 layout(location = ATTRIBUTE_LOC_POSITION) in vec3 inPosition;
 layout(location = ATTRIBUTE_LOC_SPLAT_INDEX) in uint32_t inSplatIndex;
 
-layout(location = 0) out vec2 outFragPos;
-layout(location = 1) out vec4 outFragCol;
+layout(location = 0) out vec4 outFragCol;
+#if !USE_BARYCENTRIC
+layout(location = 1) out vec2 outFragPos;
+#endif
 
 // scalar prevents alignment issues
 layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
@@ -89,9 +91,11 @@ void main()
 #endif
 
   const vec2 fragPos = inPosition.xy;
+#if !USE_BARYCENTRIC
   // emit as early as possible
   // Scale the position data we send to the fragment shader
   outFragPos = fragPos * sqrt8;
+#endif
 
   vec4 splatColor = fetchColor(splatIndex);
 

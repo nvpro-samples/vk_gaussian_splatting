@@ -346,6 +346,7 @@ private:  // Attributes
     bool pointCloudModeEnabled   = false;
     int  shFormat                = FORMAT_FLOAT32;
     int  dataStorage             = STORAGE_BUFFERS;
+    bool fragmentBarycentric     = true;
   } m_defines;
 
   // Pipelines

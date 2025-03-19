@@ -49,12 +49,15 @@
 
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_fragment_shader_barycentric : require
 #include "shaderio.h"
 
 precision highp float;
 
-layout(location = 0) in vec2 inFragPos;
-layout(location = 1) perprimitiveEXT in flat vec4 inSplatCol;
+layout(location = 0) perprimitiveEXT in flat vec4 inSplatCol;
+#if !USE_BARYCENTRIC
+layout(location = 1) in vec2 inFragPos;
+#endif
 
 layout(location = 0) out vec4 outColor;
 
@@ -66,6 +69,12 @@ layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
 
 void main()
 {
+
+#if USE_BARYCENTRIC
+  // Use barycentric extension to find the position of the fragment
+  const float sqrt8 = sqrt(8.0);
+  vec2 inFragPos = (gl_BaryCoordEXT.x * vec2(-1,-1) +  gl_BaryCoordEXT.y * vec2(1,1) + gl_BaryCoordEXT.z * vec2(-1,1)) * sqrt8;
+#endif
 
   // Compute the positional squared distance from the center of the splat to the current fragment.
   const float A = dot(inFragPos, inFragPos);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,28 +13,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <gaussian_splatting.h>
 
-// create, setup and run an nvvkhl::Application 
+// create, setup and run an nvvkhl::Application
 // with a GaussianSplatting element.
 int main(int argc, char** argv)
 {
   // Vulkan creation context information (see nvvk::Context)
-  static VkPhysicalDeviceMeshShaderFeaturesNV meshFeaturesNV = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV};
+  static VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR baryFeaturesKHR = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR};
   static VkPhysicalDeviceMeshShaderFeaturesEXT meshFeaturesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
   nvvk::ContextCreateInfo vkSetup;
   vkSetup.setVersion(1, 3);
   vkSetup.addDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-  vkSetup.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesNV);
-  vkSetup.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesEXT);
-  vkSetup.addDeviceExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME); // for ImGui
+  vkSetup.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, false, &meshFeaturesEXT);
+  vkSetup.addDeviceExtension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, false, &baryFeaturesKHR);
+  vkSetup.addDeviceExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);  // for ImGui
   vkSetup.addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   nvvkhl::addSurfaceExtensions(vkSetup.instanceExtensions);
-  
+
   // from meshlettest.cpp sample
   vkSetup.fnDisableFeatures = [](VkStructureType sType, void* pFeatureStruct) {
     if(sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT)
@@ -42,7 +43,7 @@ int main(int argc, char** argv)
       auto* feature = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(pFeatureStruct);
       // enabling and not using it may cost a tiny bit of performance on NV hardware
       feature->meshShaderQueries = VK_FALSE;
-      // disable for the time beeing TODO 
+      // disable for the time beeing
       feature->primitiveFragmentShadingRateMeshShader = VK_FALSE;
     }
   };
@@ -53,12 +54,12 @@ int main(int argc, char** argv)
 
   // Application setup
   nvvkhl::ApplicationCreateInfo appSetup;
-  appSetup.name           = fmt::format("{}", PROJECT_NAME);
-  appSetup.vSync          = true;
-  appSetup.hasUndockableViewport          = true;
-  appSetup.instance       = vkContext.m_instance;
-  appSetup.device         = vkContext.m_device;
-  appSetup.physicalDevice = vkContext.m_physicalDevice;
+  appSetup.name                  = fmt::format("{}", PROJECT_NAME);
+  appSetup.vSync                 = true;
+  appSetup.hasUndockableViewport = true;
+  appSetup.instance              = vkContext.m_instance;
+  appSetup.device                = vkContext.m_device;
+  appSetup.physicalDevice        = vkContext.m_physicalDevice;
   appSetup.queues.push_back({vkContext.m_queueGCT.familyIndex, vkContext.m_queueGCT.queueIndex, vkContext.m_queueGCT.queue});
 
   // Setting up the layout of the application
@@ -77,14 +78,14 @@ int main(int argc, char** argv)
 
   // Create the application
   auto app = std::make_unique<nvvkhl::Application>(appSetup);
-  
+
   // create the profiler element
   auto profiler = std::make_shared<nvvkhl::ElementProfiler>(true);
   // Create the benchmarking framework
   auto benchmark = std::make_shared<nvvkhl::ElementBenchmarkParameters>(argc, argv);
   benchmark->setProfiler(profiler);
   // create the core of the sample
-  auto gaussianSplatting   = std::make_shared<GaussianSplatting>(profiler, benchmark);
+  auto gaussianSplatting = std::make_shared<GaussianSplatting>(profiler, benchmark);
 
   // Add all application elements including our sample specific gaussianSplatting
   app->addElement(gaussianSplatting);
@@ -100,4 +101,3 @@ int main(int argc, char** argv)
 
   return benchmark->errorCode();
 }
-
