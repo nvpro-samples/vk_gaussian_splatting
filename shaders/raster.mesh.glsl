@@ -59,10 +59,12 @@
 layout(local_size_x = RASTER_MESH_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 4 * RASTER_MESH_WORKGROUP_SIZE, max_primitives = 2 * RASTER_MESH_WORKGROUP_SIZE) out;
 
-// Per vertex output
-layout(location = 0) out vec2 outFragPos[];
 // Per primitive output
-layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
+layout(location = 0) perprimitiveEXT out vec4 outSplatCol[];
+// Per vertex output
+#if !USE_BARYCENTRIC
+layout(location = 1) out vec2 outFragPos[];
+#endif
 
 // scalar prevents alignment issues
 layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
@@ -132,12 +134,14 @@ void main()
     // the vertices of the quad
     const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
 
+#if !USE_BARYCENTRIC
     // emit per vertex attributes as early as possible
     [[unroll]] for(uint i = 0; i < 4; ++i)
     {
       // Scale the fragment position data we send to the fragment shader
       outFragPos[gl_LocalInvocationIndex * 4 + i] = positions[i].xy * sqrt8;
     }
+#endif
 
     // work on color
     vec4 splatColor = fetchColor(splatIndex);

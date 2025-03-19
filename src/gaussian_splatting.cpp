@@ -579,6 +579,7 @@ bool GaussianSplatting::initShaders(void)
   prepends += nvh::stringFormat("#define DATA_STORAGE %d\n", m_defines.dataStorage);
   prepends += nvh::stringFormat("#define SH_FORMAT %d\n", m_defines.shFormat);
   prepends += nvh::stringFormat("#define POINT_CLOUD_MODE %d\n", m_defines.pointCloudModeEnabled);
+  prepends += nvh::stringFormat("#define USE_BARYCENTRIC %d\n", m_defines.fragmentBarycentric);
 
   // generate the shader modules
   m_shaders.distShader   = m_shaderManager.createShaderModule(VK_SHADER_STAGE_COMPUTE_BIT, "dist.comp.glsl", prepends);
