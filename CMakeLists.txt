@@ -25,7 +25,6 @@ if(NOT BASE_DIRECTORY)
     )
 endif()
 if(EXISTS ${BASE_DIRECTORY}/nvpro_core/cmake/setup.cmake)
-  set(OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/bin_x64)
   include(${BASE_DIRECTORY}/nvpro_core/cmake/setup.cmake)
 else()
   # nvpro_core not found, will try to download.
