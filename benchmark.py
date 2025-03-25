@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
 import os
+import sys
 import argparse
 from collections import defaultdict
 import matplotlib.patches as mpatches  # Add this import for legend patches
@@ -279,8 +280,22 @@ def plot_cumulative_histogram_memory(
     print(f"Histogram saved as {filename}")
 
 
-if __name__ == "__main__":    
-    executable = os.path.abspath("bin_x64/Release/vk_gaussian_splatting.exe")
+if __name__ == "__main__":   
+    # Possible paths for the executable
+    paths = ["./bin_x64/Release/vk_gaussian_splatting.exe", "../bin_x64/Release/vk_gaussian_splatting.exe","./bin_x64/Release/vk_gaussian_splatting_app", "../bin_x64/Release/vk_gaussian_splatting_app"]
+    # Find the first existing path
+    xecutable = None
+    for path in paths:
+        if os.path.exists(path):
+            executable = os.path.abspath(path)
+            break  # Stop at the first found executable
+    if executable:
+        print(f"Using executable: {executable}")
+    else:
+        print("Executable not found.")
+        sys.exit(1) 
+
+    # path to the benchmark definition
     benchmark_file = os.path.abspath("benchmark.cfg")
     # Setup argument parsing for the base dataset path
     parser = argparse.ArgumentParser(description="Run benchmarks for 3D scenes.")
