@@ -10,19 +10,37 @@ set(Slang_DEFAULT_VERSION "2024.1.30")
 # Parse optional arguments
 set(Slang_VERSION ${Slang_DEFAULT_VERSION} CACHE INTERNAL "")
 
-# Download Slang SDK
+# Download Slang SDK.
+# We provide two URLs here since some users' proxies might break one or the other.
+# The "d4i3qtqj3r0z5.cloudfront.net" address is the public Omniverse Packman
+# server; it is not private.
 if(WIN32)
-    set(Slang_URL "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-windows-x86_64.zip")
+    set(Slang_URLS
+        "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-windows-x64-release.zip"
+        "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-windows-x86_64.zip"
+    )
 else()
-    set(Slang_URL "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-linux-x86_64.zip")
+    set(Slang_URLS
+        "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-linux-x86_64-release.zip"
+        "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-linux-x86_64.zip"
+    )
 endif()
 
 download_package(
   NAME Slang
-  URL ${Slang_URL}
+  URLS ${Slang_URLS}
   VERSION ${Slang_VERSION}
   LOCATION Slang_SOURCE_DIR
 )
+
+# On Linux, the Cloudfront download of Slang might not have the executable bit
+# set on its executables and DLLs. This causes find_program to fail. To fix this,
+# call chmod a+rwx on those directories:
+if(UNIX)
+  file(CHMOD_RECURSE ${Slang_SOURCE_DIR}/bin ${Slang_SOURCE_DIR}/lib
+       FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE GROUP_EXECUTE WORLD_READ WORLD_WRITE WORLD_EXECUTE
+  )
+endif()
 
 set(Slang_SDK ${Slang_SOURCE_DIR} CACHE PATH "Path to Slang SDK root directory")
 mark_as_advanced(Slang_SDK)
