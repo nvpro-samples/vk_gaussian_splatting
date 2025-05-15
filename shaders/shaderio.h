@@ -96,17 +96,16 @@ struct FrameInfo
   float inverseFocalAdjustment DEFAULT(1.0f);
 
   vec2 focal;
-  vec2 viewport;
+  // vec2 viewport;
+  vec2 basisViewport;
 
-  vec2                 basisViewport;
   float orthoZoom      DEFAULT(1.0f);  //
   int orthographicMode DEFAULT(0);     // disabled, in [0,1]
+  int splatCount       DEFAULT(0);     //
+  float splatScale     DEFAULT(1.0f);  // in {0.1, 2.0}
 
-  int splatCount        DEFAULT(0);     //
-  float splatScale      DEFAULT(1.0f);  // in {0.1, 2.0}
-  int sortingMethod     DEFAULT(SORTING_GPU_SYNC_RADIX);
-  float frustumDilation DEFAULT(0.2f);  // for frustum culling, 2% scale
-
+  int sortingMethod        DEFAULT(SORTING_GPU_SYNC_RADIX);
+  float frustumDilation    DEFAULT(0.2f);           // for frustum culling, 2% scale
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 };
 
