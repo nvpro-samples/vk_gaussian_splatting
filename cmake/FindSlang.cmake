@@ -10,21 +10,31 @@ set(Slang_DEFAULT_VERSION "2024.1.30")
 # Parse optional arguments
 set(Slang_VERSION ${Slang_DEFAULT_VERSION} CACHE INTERNAL "")
 
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCH_PROC)
+if(ARCH_PROC MATCHES "^(arm|aarch64)")
+    set(PACKMAN_ARCH "arm64")
+    set(GITHUB_ARCH "aarch64")
+elseif(ARCH_PROC MATCHES "^(x86_64|amd64|i[3-6]86)")
+    set(PACKMAN_ARCH "x64")
+    set(GITHUB_ARCH "x86_64")
+endif()
+
+if(WIN32)
+    set(PACKMAN_OS "windows")
+    set(GITHUB_OS "windows")
+else()
+    set(PACKMAN_OS "linux")
+    set(GITHUB_OS "linux")
+endif()
+
 # Download Slang SDK.
 # We provide two URLs here since some users' proxies might break one or the other.
 # The "d4i3qtqj3r0z5.cloudfront.net" address is the public Omniverse Packman
 # server; it is not private.
-if(WIN32)
-    set(Slang_URLS
-        "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-windows-x64-release.zip"
-        "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-windows-x86_64.zip"
-    )
-else()
-    set(Slang_URLS
-        "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-linux-x86_64-release.zip"
-        "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-linux-x86_64.zip"
-    )
-endif()
+set(Slang_URLS
+    "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-${PACKMAN_OS}-${PACKMAN_ARCH}-release.zip"
+    "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-${GITHUB_OS}-${GITHUB_ARCH}.zip"
+)
 
 download_package(
   NAME Slang
