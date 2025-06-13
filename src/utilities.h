@@ -20,7 +20,10 @@
 #ifndef _UTILITIES_H_
 #define _UTILITIES_H_
 
-#include <nvh/parallel_work.hpp>
+#include <filesystem>
+
+#include <nvutils/file_operations.hpp>
+#include <nvutils/parallel_work.hpp>
 
 // Example using the parallel loop macro
 // constexpr uint32_t N = 100;
@@ -28,13 +31,39 @@
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
-  {                                                                                                                    \
-    nvh::parallel_batches_indexed<8192>(                                                                               \
-        SIZE, [&](int INDEX, int tidx) {
+#define START_PAR_LOOP(SIZE, INDEX)                   \
+  {                                                   \
+    nvutils::parallel_batches_pooled<8192>(           \
+        SIZE, [&](uint64_t INDEX, uint64_t tidx) {
 
-#define END_PAR_LOOP()                                                                                                 \
-  }, (uint32_t)std::thread::hardware_concurrency());                                                                   \
+#define END_PAR_LOOP()                                \
+  }, (uint32_t)std::thread::hardware_concurrency());  \
   }
+
+namespace vk_gaussian_splatting {
+
+inline static std::vector<std::filesystem::path> getResourcesDirs()
+{
+  std::filesystem::path exePath = nvutils::getExecutablePath().parent_path();
+  return {
+      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_ROOT_DIRECTORY) / "_downloaded_resources"),
+      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_ROOT_DIRECTORY) / "resources"),
+      std::filesystem::absolute(exePath / "resources"),  //
+      std::filesystem::absolute(exePath)                 //
+  };
+}
+
+inline static std::vector<std::filesystem::path> getShaderDirs()
+{
+  std::filesystem::path exePath = nvutils::getExecutablePath().parent_path();
+  std::filesystem::path exeName = nvutils::getExecutablePath().stem();
+  return {
+      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_SOURCE_DIRECTORY) / "shaders"),
+      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_NAME) / "shaders"),
+      std::filesystem::absolute(exePath),
+  };
+}
+
+}  // namespace vk_gaussian_splatting
 
 #endif

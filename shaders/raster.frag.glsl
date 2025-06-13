@@ -85,7 +85,7 @@ void main()
   if(A > 8.0)
     discard;
 
-#ifdef DISABLE_OPACITY_GAUSSIAN
+#if DISABLE_OPACITY_GAUSSIAN
   const float opacity = 1.0;
 #else
   // Since the rendered splat is scaled by sqrt(8), the inverse covariance matrix that is part of

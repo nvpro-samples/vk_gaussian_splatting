@@ -25,6 +25,7 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <span>
 //
 #include <vulkan/vulkan_core.h>
 // mathematics
@@ -33,12 +34,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
-// for parallel processing
-#ifdef _WIN32
-#include <ppl.h>
-#include <execution>
-#include <algorithm>
-#endif
 // threading
 #include <thread>
 #include <condition_variable>
@@ -46,53 +41,64 @@
 // GPU radix sort
 #include <vk_radix_sort.h>
 //
-#include <imgui/imgui_camera_widget.h>
-#include <imgui/imgui_helper.h>
-#include <imgui/imgui_axis.hpp>
+#include <nvvk/context.hpp>
+#include <nvvk/debug_util.hpp>
+#include <nvvk/pipeline.hpp>
+
+#include <nvutils/logger.hpp>
+#include <nvutils/file_operations.hpp>
+
+#include <nvvk/helpers.hpp>
+#include <nvvk/gbuffers.hpp>
+#include <nvvk/resources.hpp>
+#include <nvvk/resource_allocator.hpp>
+#include <nvvk/staging.hpp>
+#include <nvvk/validation_settings.hpp>
+#include <nvvk/sampler_pool.hpp>
+#include <nvvk/profiler_vk.hpp>
+#include <nvvk/default_structs.hpp>
+
+#include <nvvkglsl/glsl.hpp>
+
+#include <nvapp/application.hpp>
+#include <nvapp/elem_camera.hpp>
+#include <nvapp/elem_profiler.hpp>
+#include <nvapp/elem_sequencer.hpp>
+#include <nvapp/elem_default_title.hpp>
+#include <nvapp/elem_default_menu.hpp>
 //
-#include <nvh/primitives.hpp>
-#include <nvvk/context_vk.hpp>
-#include <nvvk/renderpasses_vk.hpp>
-#include <nvvk/commands_vk.hpp>
-#include <nvvk/debug_util_vk.hpp>
-#include <nvvk/descriptorsets_vk.hpp>
-#include <nvvk/dynamicrendering_vk.hpp>
-#include <nvvk/extensions_vk.hpp>
-#include <nvvk/pipeline_vk.hpp>
-#include <nvvk/shaders_vk.hpp>
-#include <nvvk/shadermodulemanager_vk.hpp>
-#include "nvvk/commands_vk.hpp"
-#include "nvvk/images_vk.hpp"
-#include <nvvkhl/alloc_vma.hpp>
-#include <nvvkhl/application.hpp>
-#include <nvvkhl/element_benchmark_parameters.hpp>
-#include <nvvkhl/element_camera.hpp>
-#include <nvvkhl/element_gui.hpp>
-#include <nvvkhl/element_profiler.hpp>
-#include <nvvkhl/element_nvml.hpp>
-#include <nvvkhl/gbuffer.hpp>
-#include <nvvkhl/pipeline_container.hpp>
+#include <nvgui/camera.hpp>
+#include <nvgui/axis.hpp>
+#include <nvgui/enum_registry.hpp>
+#include <nvgui/property_editor.hpp>
+#include <nvgui/file_dialog.hpp>
+//
+#include <nvgpu_monitor/elem_gpu_monitor.hpp>
 
 // Shared between host and device
-#include "shaders/shaderio.h"
+#include "shaderio.h"
 
+#include "utilities.h"
 #include "splat_set.h"
 #include "ply_async_loader.h"
 #include "splat_sorter_async.h"
 
-//
-class GaussianSplatting : public nvvkhl::IAppElement
+namespace vk_gaussian_splatting {
+
+class GaussianSplatting : public nvapp::IAppElement
 {
 public:  // Methods specializing IAppElement
-  GaussianSplatting(std::shared_ptr<nvvkhl::ElementProfiler> profiler, std::shared_ptr<nvvkhl::ElementBenchmarkParameters> benchmark);
+  GaussianSplatting(nvutils::ProfilerManager* profilerManager, nvutils::ParameterRegistry* parameterRegistry, bool* benchmarkMode);
 
   ~GaussianSplatting() override;
 
-  void onAttach(nvvkhl::Application* app) override;
+  void onAttach(nvapp::Application* app) override;
 
   void onDetach() override;
 
   void onResize(VkCommandBuffer cmd, const VkExtent2D& size) override;
+
+  void onPreRender() override;
 
   void onRender(VkCommandBuffer cmd) override;
 
@@ -100,16 +106,15 @@ public:  // Methods specializing IAppElement
 
   void onUIMenu() override;
 
-  void onFileDrop(const char* filename) override { m_sceneToLoadFilename = filename; }
+  void onFileDrop(const std::filesystem::path& filename) override { m_sceneToLoadFilename = filename; }
 
   // handle recent files save/load at imgui level
   void registerRecentFilesHandler();
 
+  // Benchmarking, print extended info
+  void benchmarkAdvance();
+
 private:  // Methods
-  void initGbuffers(const glm::vec2& size);
-
-  void deinitGbuffers();
-
   // Initializes all that is related to the scene based
   // on current parameters. VRAM Data, shaders, pipelines.
   // Invoked on scene load success.
@@ -155,16 +160,18 @@ private:  // Methods
 
   void deinitRendererBuffers();
 
+  shaderc::SpvCompilationResult compileGlslShader(const std::string& filename, shaderc_shader_kind shaderKind);
+
   bool initShaders(void);
 
   void deinitShaders(void);
 
   // Create texture, upload data and assign sampler
   // sampler will be released by deinitTexture
-  void initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Texture& texture);
+  void initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Image& texture);
 
   // Destroy texture at once, texture must not be in use
-  void deinitTexture(nvvk::Texture& texture);
+  void deinitTexture(nvvk::Image& texture);
 
   // Utility function to compute the texture size according to the size of the data to be stored
   // By default use map of 4K Width and 1K height then adjust the height according to the data size
@@ -209,11 +216,6 @@ private:  // Methods
   void updateRenderingMemoryStatistics(VkCommandBuffer cmd, const uint32_t splatCount);
 
   ////////
-  // Benchmarking
-
-  void benchmarkAdvance();
-
-  ////////
   // UI
 
   // for multiple choice selectors in the UI
@@ -230,17 +232,27 @@ private:  // Methods
   void initGui(void);
 
   // methods to handle recent files in file menu
-  void addToRecentFiles(const std::string& filePath, int historySize = 20);
+  void addToRecentFiles(const std::filesystem::path& filePath, int historySize = 20);
+
+public:
+  // public so that it can be accessed by main
+  // Camera manipulatorr
+  std::shared_ptr<nvutils::CameraManipulator> cameraManip{};
 
 private:  // Attributes
+  // benchmark mode (enabled by command line), loadings will be synchronous and vsync off
+  bool* m_pBenchmarkEnabled = {};
+  // screenshot file name (used by benchmark)
+  std::filesystem::path m_screenshotFilename;
+
   // triggers a scene load at next frame when set to non empty string
-  std::string m_sceneToLoadFilename;
+  std::filesystem::path m_sceneToLoadFilename;
   // name of the loaded scene if successfull
-  std::string m_loadedSceneFilename;
+  std::filesystem::path m_loadedSceneFilename;
   // do we load a default scene at startup if none is provided through CLI
   bool m_enableDefaultScene = true;
   // Recent files list
-  std::vector<std::string> m_recentFiles;
+  std::vector<std::filesystem::path> m_recentFiles;
   // scene loader
   PlyAsyncLoader m_plyLoader;
   // loaded model
@@ -252,30 +264,31 @@ private:  // Attributes
   // hide/show ui elements
   bool m_showUI = true;
   // UI utility for choice menus
-  ImGuiH::Registry m_ui;
-  // cpu sorter feedback for ui
-  double m_distTime = 0.0;  // distance compute time in ms
-  double m_sortTime = 0.0;  // sorting compute time in ms
+  nvgui::EnumRegistry m_ui;
 
   //
-  nvvkhl::Application*                     m_app{nullptr};
-  std::shared_ptr<nvvkhl::ElementProfiler> m_profiler;
-  std::shared_ptr<nvvkhl::ElementProfiler> m_benchmark;
-  std::unique_ptr<nvvk::DebugUtil>         m_dutil;
-  std::shared_ptr<nvvkhl::AllocVma>        m_alloc;
+  nvapp::Application*         m_app{nullptr};
+  nvutils::ProfilerManager*   m_profilerManager;
+  nvutils::ParameterRegistry* m_parameterRegistry;
+  nvvk::StagingUploader       m_stagingUploader{};  // utility to upload buffers to device
+  nvvk::SamplerPool           m_samplerPool{};      // The sampler pool, used to create texture samplers
+  nvvk::ResourceAllocator     m_alloc;
 
-  glm::vec2                        m_viewSize    = {0, 0};
-  VkFormat                         m_colorFormat = VK_FORMAT_R8G8B8A8_UNORM;       // Color format of the image
-  VkFormat                         m_depthFormat = VK_FORMAT_X8_D24_UNORM_PACK32;  // Depth format of the depth buffer
-  VkClearColorValue                m_clearColor  = {{0.0F, 0.0F, 0.0F, 1.0F}};     // Clear color
-  VkDevice                         m_device      = VK_NULL_HANDLE;                 // Convenient sortcut to device
-  std::unique_ptr<nvvkhl::GBuffer> m_gBuffers;                                     // G-Buffers: color + depth
-  std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
+  nvutils::ProfilerTimeline* m_profilerTimeline{};
+  nvvk::ProfilerGpuTimer     m_profilerGpuTimer;
+
+  glm::vec2         m_viewSize    = {0, 0};
+  VkFormat          m_colorFormat = VK_FORMAT_R8G8B8A8_UNORM;    // Color format of the image
+  VkFormat          m_depthFormat = VK_FORMAT_UNDEFINED;         // Depth format of the depth buffer
+  VkClearColorValue m_clearColor  = {{0.0F, 0.0F, 0.0F, 1.0F}};  // Clear color
+  VkDevice          m_device      = VK_NULL_HANDLE;              // Convenient sortcut to device
+  nvvk::GBuffer     m_gBuffers;                                  // G-Buffers: color + depth
+  //std::unique_ptr<nvvk::DescriptorSetContainer> m_dset;                            // Descriptor set
 
   // camera info for current frame, updated by onRender
-  glm::vec3 m_eye;
-  glm::vec3 m_center;
-  glm::vec3 m_up;
+  glm::vec3 m_eye{};
+  glm::vec3 m_center{};
+  glm::vec3 m_up{};
 
   // IndirectParams structure defined in device_host.h
   nvvk::Buffer             m_indirect;              // indirect parameter buffer
@@ -295,11 +308,11 @@ private:  // Attributes
   bool m_updateData = false;
 
   // Data textures
-  VkSampler     m_sampler;  // texture sampler
-  nvvk::Texture m_centersMap;
-  nvvk::Texture m_colorsMap;
-  nvvk::Texture m_covariancesMap;
-  nvvk::Texture m_sphericalHarmonicsMap;
+  VkSampler   m_sampler;  // texture sampler (nearest)
+  nvvk::Image m_centersMap;
+  nvvk::Image m_colorsMap;
+  nvvk::Image m_covariancesMap;
+  nvvk::Image m_sphericalHarmonicsMap;
 
   // Data buffers
   nvvk::Buffer m_centersDevice;
@@ -324,15 +337,15 @@ private:  // Attributes
   nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
 
   // used to load and compile shaders
-  nvvk::ShaderModuleManager m_shaderManager;
+  nvvkglsl::GlslCompiler m_glslCompiler{};
 
   // The different shaders that are used in the pipelines
   struct Shaders
   {
-    nvvk::ShaderModuleID distShader;
-    nvvk::ShaderModuleID meshShader;
-    nvvk::ShaderModuleID vertexShader;
-    nvvk::ShaderModuleID fragmentShader;
+    VkShaderModule distShader{VK_NULL_HANDLE};
+    VkShaderModule meshShader{VK_NULL_HANDLE};
+    VkShaderModule vertexShader{VK_NULL_HANDLE};
+    VkShaderModule fragmentShader{VK_NULL_HANDLE};
   } m_shaders;
 
   // This fields will be transformed to compilation definitions
@@ -350,9 +363,15 @@ private:  // Attributes
   } m_defines;
 
   // Pipelines
-  VkPipeline          m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
-  VkPipeline          m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
-  VkPipeline          m_computePipeline{};                      // The compute pipeline to compute distances and cull
+  VkPipeline       m_graphicsPipeline     = VK_NULL_HANDLE;  // The graphic pipeline to render using vertex shaders
+  VkPipeline       m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to render using mesh shaders
+  VkPipeline       m_computePipeline{};                      // The compute pipeline to compute distances and cull
+  VkPipelineLayout m_pipelineLayout{};                       // Raster Pipelines layout
+
+  VkDescriptorSetLayout m_descriptorSetLayout{};  // Descriptor set layout
+  VkDescriptorSet       m_descriptorSet{};        // Raster Descriptor set
+  VkDescriptorPool      m_descriptorPool{};       // Raster Descriptor pool
+
   shaderio::FrameInfo m_frameInfo{};      // Frame parameters, sent to device using a uniform buffer
   nvvk::Buffer        m_frameInfoBuffer;  // uniform buffer to store frame info
 
@@ -416,4 +435,7 @@ private:  // Attributes
 
   } m_renderMemoryStats;
 };
+
+}  // namespace vk_gaussian_splatting
+
 #endif

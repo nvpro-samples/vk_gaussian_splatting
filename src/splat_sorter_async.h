@@ -28,7 +28,11 @@
 
 #include <glm/vec3.hpp>
 
+#include <nvvk/profiler_vk.hpp>
+
 #include "splat_set.h"
+
+namespace vk_gaussian_splatting {
 
 class SplatSorterAsync
 {
@@ -44,7 +48,7 @@ public:
 
 public:
   // starts the loader thread
-  bool initialize();
+  bool initialize(nvutils::ProfilerTimeline*);
   // stops the loader thread, cannot be re-used afterward
   inline void shutdown()
   {
@@ -88,14 +92,12 @@ public:
     return true;
   }
   // Fill indices with sorted values (call std::swap) and stats
-  inline bool consume(std::vector<uint32_t>& indices, double& distTime, double& sortTime)
+  inline bool consume(std::vector<uint32_t>& indices)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if(m_status == E_SORTED || m_status == E_FAILURE)
     {
       m_status = E_READY;
-      distTime = m_distTime;
-      sortTime = m_sortTime;
       indices.swap(m_indices);
       return true;
     }
@@ -119,6 +121,8 @@ private:
   std::mutex m_mutex;
   // corted wakeup condition
   std::condition_variable m_sortCV;
+  // profiling utility
+  nvutils::ProfilerTimeline* m_profiler;
 
   // input parameters
   glm::vec3           m_sortDir   = {0.0f, 0.0f, 0.0f};  // camera direction
@@ -131,5 +135,7 @@ private:
   double                m_distTime = 0;  // distance update timer
   double                m_sortTime = 0;  // distance sorting timer
 };
+
+}  // namespace vk_gaussian_splatting
 
 #endif

@@ -30,7 +30,9 @@
 //
 #include "ply_async_loader.h"
 
-bool PlyAsyncLoader::loadScene(std::string filename, SplatSet& output)
+using namespace vk_gaussian_splatting;
+
+bool PlyAsyncLoader::loadScene(std::filesystem::path filename, SplatSet& output)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status != E_READY)
@@ -132,12 +134,12 @@ bool PlyAsyncLoader::reset()
   }
 }
 
-bool PlyAsyncLoader::innerLoad(std::string filename, SplatSet& output)
+bool PlyAsyncLoader::innerLoad(std::filesystem::path filename, SplatSet& output)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 
   // Open the file
-  miniply::PLYReader reader(filename.c_str());
+  miniply::PLYReader reader(filename.string().c_str());
   if(!reader.valid())
   {
     std::cout << "Error: ply loader failed to open file: " << filename << std::endl;
