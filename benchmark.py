@@ -11,13 +11,13 @@ import matplotlib.patches as mpatches  # Add this import for legend patches
 import shutil
 
 def run_benchmark(executable, benchmark_file, scene_path, output_log):
-    command = [os.path.abspath(executable), "-benchmark", os.path.abspath(benchmark_file), scene_path]
+    command = [os.path.abspath(executable), "--size", "1920","1080", "--benchmark", "1", "--sequencefile", os.path.abspath(benchmark_file), scene_path]
     with open(output_log, "w", encoding="utf-8") as log_file:
         subprocess.run(command, stdout=log_file, stderr=subprocess.STDOUT, shell=True)
 
 def parse_benchmark(log_text, scene_name):
-    benchmark_pattern = re.compile(r'BENCHMARK (\d+) \"([^"]+)\" {')
-    timer_pattern = re.compile(r'Timer ([^;]+);\s+VK\s+(\d+); CPU\s+(\d+);')
+    benchmark_pattern = re.compile(r'ParameterSequence\s+(\d+)\s+"([^"]+)"\s*=')
+    timer_pattern = re.compile(r'Timer\s+"([^"]+)"\s*;\s*GPU;\s*avg\s+(\d+);.*?CPU;\s*avg\s+(\d+);')
     benchmark_adv_pattern = re.compile(r'BENCHMARK_ADV (\d+) {')
     memory_pattern = re.compile(r'Memory (\w+); Host used\s+(\d+); Device Used\s+(\d+); Device Allocated\s+(\d+);')
 
@@ -35,8 +35,8 @@ def parse_benchmark(log_text, scene_name):
         timers = {}
         for match in timer_pattern.finditer(benchmark_content):
             stage = match.group(1).strip()
-            vk_time = int(match.group(2))
-            cpu_time = int(match.group(3))
+            vk_time = float(match.group(2)) / 1000.0
+            cpu_time = float(match.group(3)) / 1000.0
             timers[stage] = {'VK': vk_time, 'CPU': cpu_time}
 
         benchmark_data[benchmark_id] = {
@@ -49,7 +49,7 @@ def parse_benchmark(log_text, scene_name):
 
     # Extract BENCHMARK_ADV sections
     benchmark_adv_sections = re.split(benchmark_adv_pattern, log_text)[1:]
-    
+
     for i in range(0, len(benchmark_adv_sections), 2):
         benchmark_id = int(benchmark_adv_sections[i])
         benchmark_content = benchmark_adv_sections[i+1]
@@ -252,7 +252,7 @@ def plot_cumulative_histogram_memory(
 
     for i, stage in enumerate(stages):
         for j, pipeline in enumerate(pipelines):
-            values = [scene_data[pipeline].get(stage, 0) for scene_data in all_data]
+            values = [scene_data[pipeline].get(stage, 0) / 1024 / 1024 for scene_data in all_data]
 
             # Adjust the offset for each bar within a group so that bars are well spaced
             position_offset = (j - (num_pipelines - 1) / 2) * (bar_width + 0.05)  # Add space between bars
@@ -282,7 +282,7 @@ def plot_cumulative_histogram_memory(
 
 if __name__ == "__main__":   
     # Possible paths for the executable
-    paths = ["./bin_x64/Release/vk_gaussian_splatting.exe", "../bin_x64/Release/vk_gaussian_splatting.exe","./bin_x64/Release/vk_gaussian_splatting_app", "../bin_x64/Release/vk_gaussian_splatting_app"]
+    paths = ["./_bin/Release/vk_gaussian_splatting.exe", "../_bin/Release/vk_gaussian_splatting.exe","./_bin/Release/vk_gaussian_splatting_app", "../_bin/Release/vk_gaussian_splatting_app"]
     # Find the first existing path
     xecutable = None
     for path in paths:
@@ -305,19 +305,19 @@ if __name__ == "__main__":
     
     # Define the scenes with the relative paths
     scenes = {
-        "bicycle 6.13M Splats": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply",
-        "bonsai 1.24M Splats": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply",
-        "counter 1.22M Splats": "counter/point_cloud/iteration_30000/point_cloud.ply",
-        "drjohnson 3.41M Splats": "drjohnson/point_cloud/iteration_30000/point_cloud.ply",
-        "flowers 3.64M Splats": "flowers/point_cloud/iteration_30000/point_cloud.ply",
-        "garden 5.83M Splats": "garden/point_cloud/iteration_30000/point_cloud.ply",
-        "kitchen 1.85M Splats": "kitchen/point_cloud/iteration_30000/point_cloud.ply",
-        "playroom 2.55M Splats": "playroom/point_cloud/iteration_30000/point_cloud.ply",
-        "room 1.59M Splats": "room/point_cloud/iteration_30000/point_cloud.ply",
-        "stump 4.96M Splats": "stump/point_cloud/iteration_30000/point_cloud.ply",
-        "train 1.03M Splats": "train/point_cloud/iteration_30000/point_cloud.ply",
-        "treehill 3.78M Splats": "treehill/point_cloud/iteration_30000/point_cloud.ply",
-        "truck 2.54M Splats": "truck/point_cloud/iteration_30000/point_cloud.ply"
+        "bicycle 6.13M Splats": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply"
+        ,"bonsai 1.24M Splats": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply"
+        ,"counter 1.22M Splats": "counter/point_cloud/iteration_30000/point_cloud.ply"
+        ,"drjohnson 3.41M Splats": "drjohnson/point_cloud/iteration_30000/point_cloud.ply"
+        ,"flowers 3.64M Splats": "flowers/point_cloud/iteration_30000/point_cloud.ply"
+        ,"garden 5.83M Splats": "garden/point_cloud/iteration_30000/point_cloud.ply"
+        ,"kitchen 1.85M Splats": "kitchen/point_cloud/iteration_30000/point_cloud.ply"
+        ,"playroom 2.55M Splats": "playroom/point_cloud/iteration_30000/point_cloud.ply"
+        ,"room 1.59M Splats": "room/point_cloud/iteration_30000/point_cloud.ply"
+        ,"stump 4.96M Splats": "stump/point_cloud/iteration_30000/point_cloud.ply"
+        ,"train 1.03M Splats": "train/point_cloud/iteration_30000/point_cloud.ply"
+        ,"treehill 3.78M Splats": "treehill/point_cloud/iteration_30000/point_cloud.ply"
+        ,"truck 2.54M Splats": "truck/point_cloud/iteration_30000/point_cloud.ply"
     }
     
     # Build the full paths by combining the dataset path and scene relative paths
@@ -358,7 +358,7 @@ if __name__ == "__main__":
     plot_cumulative_histogram_timers(
         all_results, 
         xlabel="Scene",
-        ylabel="Cumulative VK Time (microseconds)",
+        ylabel="Cumulative VK Time (milliseconds)",
         title="Pipeline Performance Comparison - Mesh vs. Vertex",
         pipelines = ["Mesh pipeline", "Vert pipeline"], 
         pipeline_names= ["Mesh", "Vert"],
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     plot_cumulative_histogram_timers(
         all_results, 
         xlabel="Scene",
-        ylabel="Cumulative VK Time (microseconds)",
+        ylabel="Cumulative VK Time (milliseconds)",
         title="Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8",
         pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
         pipeline_names= ["fp32", "fp16", "uint8"],
@@ -378,7 +378,7 @@ if __name__ == "__main__":
     plot_cumulative_histogram_memory(
         all_results, 
         xlabel="Scene",
-        ylabel="Cumulative VRAM usage (bytes)",
+        ylabel="Cumulative VRAM usage (Mega Bytes)",
         title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
         pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
         pipeline_names= ["fp32", "fp16", "uint8"],

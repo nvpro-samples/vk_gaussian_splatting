@@ -27,8 +27,12 @@
 #include <cmath>
 #include <glm/vec4.hpp>
 
-bool SplatSorterAsync::initialize()
+using namespace vk_gaussian_splatting;
+
+bool SplatSorterAsync::initialize(nvutils::ProfilerTimeline* profiler)
 {
+  m_profiler = profiler;
+
   // original state shall be shutdown
   std::unique_lock<std::mutex> lock(m_mutex);
   if(m_status != E_SHUTDOWN)
@@ -56,6 +60,7 @@ bool SplatSorterAsync::initialize()
         std::unique_lock<std::mutex> lock(m_mutex);
         m_status = E_SORTING;
         lock.unlock();
+       
         if(innerSort())
         {
           std::lock_guard<std::mutex> lock(m_mutex);
@@ -84,10 +89,13 @@ bool SplatSorterAsync::initialize()
 
 bool SplatSorterAsync::innerSort()
 {
+  assert(m_profiler);
+
   if(m_positions == nullptr)
     return false;
 
-  auto startTime = std::chrono::high_resolution_clock::now();
+  auto timer = m_profiler->asyncBeginSection("CPU Dist");
+
   // we do the sorting if needed
   // find plane passing through COP and with normal dir.
   // we use distance to plane instead of distance to COP as an approximation.
@@ -113,8 +121,9 @@ bool SplatSorterAsync::innerSort()
   }
   END_PAR_LOOP()
 
-  auto time1 = std::chrono::high_resolution_clock::now();
-  m_distTime = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(time1 - startTime).count();
+  m_profiler->asyncEndSection(timer);
+
+  timer = m_profiler->asyncBeginSection("CPU Sort");
 
   // comparison function working on the data <dist,idex>
   auto compare = [&](size_t i, size_t j) { return distances[i] > distances[j]; };
@@ -122,8 +131,7 @@ bool SplatSorterAsync::innerSort()
   // Sorting the array with respect to distance keys
   std::sort(std::execution::par_unseq, m_indices.begin(), m_indices.end(), compare);
 
-  auto time2 = std::chrono::high_resolution_clock::now();
-  m_sortTime = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(time2 - time1).count();
+  m_profiler->asyncEndSection(timer);
 
   return true;
 }

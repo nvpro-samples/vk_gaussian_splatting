@@ -1,6 +1,8 @@
 bin_x64/
 build/
+_bin/
 _install/
 _autogen/
 _benchmark/
+_downloaded_resources/
 generated/

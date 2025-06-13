@@ -17,13 +17,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// ImGUI ImVec maths
-#define IMGUI_DEFINE_MATH_OPERATORS
+#include <glm/glm.hpp>
+
 // clang-format off
 #define IM_VEC2_CLASS_EXTRA ImVec2(const glm::vec2& f) {x = f.x; y = f.y;} operator glm::vec2() const { return glm::vec2(x, y); }
 // clang-format on
 
+#include <chrono>
+#include <thread>
+#include <filesystem>
+
 #include <gaussian_splatting.h>
+
+using namespace vk_gaussian_splatting;
 
 std::string formatMemorySize(size_t sizeInBytes)
 {
@@ -86,15 +92,12 @@ void GaussianSplatting::initGui()
 void GaussianSplatting::onUIRender()
 {
 
-  if(!m_gBuffers)
-    return;
-
   {  // Rendering Viewport
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0F, 0.0F));
     ImGui::Begin("Viewport");
 
     // Display the G-Buffer image
-    ImGui::Image(m_gBuffers->getDescriptorSet(), ImGui::GetContentRegionAvail());
+    ImGui::Image((ImTextureID)m_gBuffers.getDescriptorSet(), ImGui::GetContentRegionAvail());
 
     {
       float  size        = 25.F;
@@ -102,7 +105,7 @@ void GaussianSplatting::onUIRender()
       ImVec2 window_size = ImGui::GetWindowSize();
       ImVec2 offset      = ImVec2(size * 1.1F, -size * 1.1F) * ImGui::GetWindowDpiScale();
       ImVec2 pos         = ImVec2(window_pos.x, window_pos.y + window_size.y) + offset;
-      ImGuiH::Axis(pos, CameraManip.getMatrix(), size);
+      nvgui::Axis(pos, cameraManip->getViewMatrix(), size);
     }
 
     ImGui::End();
@@ -114,9 +117,8 @@ void GaussianSplatting::onUIRender()
   if(m_enableDefaultScene && m_loadedSceneFilename.empty() && m_sceneToLoadFilename.empty()
      && m_plyLoader.getStatus() == PlyAsyncLoader::State::E_READY)
   {
-    const std::vector<std::string> defaultSearchPaths = {NVPSystem::exePath() + PROJECT_DOWNLOAD_RELDIRECTORY,
-                                                         NVPSystem::exePath() + "media"};  // for INSTALL search path
-    m_sceneToLoadFilename = nvh::findFile("flowers_1/flowers_1.ply", defaultSearchPaths, true);
+    const std::vector<std::filesystem::path> defaultSearchPaths = getResourcesDirs();
+    m_sceneToLoadFilename = nvutils::findFile("flowers_1/flowers_1.ply", defaultSearchPaths).string();
     m_enableDefaultScene  = false;
   }
 #endif
@@ -157,11 +159,22 @@ void GaussianSplatting::onUIRender()
   ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
   if(ImGui::BeginPopupModal("Loading", NULL, ImGuiWindowFlags_AlwaysAutoResize))
   {
+    // specific wait for benchmarking mode
+    // prevent display of loading jauge and frame advancing while loading
+    // ensure scene is loaded before moving to next frame
+    if(*m_pBenchmarkEnabled)
+    {
+      while(m_plyLoader.getStatus() == PlyAsyncLoader::State::E_LOADING)
+      {
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(100ms);
+      }
+    }
     // managment of async load
     switch(m_plyLoader.getStatus())
     {
       case PlyAsyncLoader::State::E_LOADING: {
-        ImGui::Text("%s", m_plyLoader.getFilename().c_str());
+        ImGui::Text("%s", m_plyLoader.getFilename().string().c_str());
         ImGui::ProgressBar(m_plyLoader.getProgress(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
         /*
         if(ImGui::Button("Cancel", ImVec2(120, 0)))
@@ -221,34 +234,37 @@ void GaussianSplatting::onUIRender()
   if(!m_showUI)
     return;
 
-  namespace PE = ImGuiH::PropertyEditor;
+  namespace PE = nvgui::PropertyEditor;
 
   if(ImGui::Begin("Settings"))
   {
     if(ImGui::CollapsingHeader("Data storage and format", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      PE::begin("##3DGS format");
-      if(PE::entry(
-             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::begin("##3DGS format"))
       {
-        m_defines.dataStorage = STORAGE_BUFFERS;
-        m_defines.shFormat    = FORMAT_FLOAT32;
+        if(PE::entry(
+               "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+        {
+          m_defines.dataStorage = STORAGE_BUFFERS;
+          m_defines.shFormat    = FORMAT_FLOAT32;
+          m_updateData          = true;
+        }
+        if(PE::entry(
+               "Storage", [&] { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); },
+               "Selects between Data Buffers and Textures for storing model attributes, including:\n"
+               "Position, Color and Opacity, Covariance Matrix\n"
+               "and Spherical Harmonics (SH) Coefficients (for degrees higher than 0)"))
+        {
+          m_updateData = true;
+        }
+        if(PE::entry(
+               "SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &m_defines.shFormat); },
+               "Selects storage format for SH coefficient, balancing precision and memory usage"))
+        {
+          m_updateData = true;
+        }
+        PE::end();
       }
-      if(PE::entry(
-             "Storage", [&]() { return m_ui.enumCombobox(GUI_STORAGE, "##ID", &m_defines.dataStorage); },
-             "Selects between Data Buffers and Textures for storing model attributes, including:\n"
-             "Position, Color and Opacity, Covariance Matrix\n"
-             "and Spherical Harmonics (SH) Coefficients (for degrees higher than 0)"))
-      {
-        m_updateData = true;
-      }
-      if(PE::entry(
-             "SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &m_defines.shFormat); },
-             "Selects storage format for SH coefficient, balancing precision and memory usage"))
-      {
-        m_updateData = true;
-      }
-      PE::end();
     }
 
     if(ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
@@ -265,6 +281,7 @@ void GaussianSplatting::onUIRender()
              "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRenderSettings();
+        m_updateData    = true;
         m_updateShaders = true;
       }
       if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &m_frameInfo.sortingMethod); }))
@@ -325,7 +342,7 @@ void GaussianSplatting::onUIRender()
                       "value expands the frustum by the given percentage, reducing the risk of prematurely \n"
                       "discarding splats near the frustum boundaries.");
 
-      int alphaThres = 255 * m_frameInfo.alphaCullThreshold;
+      int alphaThres = int(255.0 * m_frameInfo.alphaCullThreshold);
       if(PE::SliderInt("Alpha culling threshold", &alphaThres, 0, 255, "%d", 0, "Discard splats with low opacity (with low contribution)."))
       {
         m_frameInfo.alphaCullThreshold = (float)alphaThres / 255.0f;
@@ -374,7 +391,7 @@ void GaussianSplatting::onUIRender()
 
       if(ImGui::BeginTable("Stats", 3, ImGuiTableFlags_BordersOuter))
       {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 230.0f);
         ImGui::TableSetupColumn("Size short", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Size Fill", ImGuiTableColumnFlags_WidthStretch);
         // ImGui::TableHeadersRow();
@@ -401,11 +418,6 @@ void GaussianSplatting::onUIRender()
         ImGui::Text("%d", wgCount);
         ImGui::TableNextRow();
         ImGui::EndTable();
-
-        PE::begin("##Sorting statistics");
-        PE::Text("CPU Distances  (ms)", "%.3f", m_distTime);
-        PE::Text("CPU Sorting  (ms)", "%.3f", m_sortTime);
-        PE::end();
       }
     }
   }
@@ -415,7 +427,7 @@ void GaussianSplatting::onUIRender()
   {
     if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      ImGuiH::CameraWidget();
+      nvgui::CameraWidget(cameraManip);
     }
   }
   ImGui::End();
@@ -584,7 +596,7 @@ void GaussianSplatting::onUIMenu()
   {
     if(ImGui::MenuItem("Open file", ""))
     {
-      m_sceneToLoadFilename = NVPSystem::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
+      m_sceneToLoadFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY(.ply)");
     }
     if(ImGui::MenuItem("Re Open", "F5", false, m_loadedSceneFilename != ""))
     {
@@ -594,7 +606,7 @@ void GaussianSplatting::onUIMenu()
     {
       for(const auto& file : m_recentFiles)
       {
-        if(ImGui::MenuItem(file.c_str()))
+        if(ImGui::MenuItem(file.string().c_str()))
         {
           m_sceneToLoadFilename = file;
         }
@@ -654,7 +666,7 @@ void GaussianSplatting::onUIMenu()
   }
   if(s_showDemoPlot)
   {
-    ImPlot::ShowDemoWindow(&s_showDemoPlot);
+    // ImPlot::ShowDemoWindow(&s_showDemoPlot);
   }
 #endif  // !NDEBUG
 
@@ -665,7 +677,7 @@ void GaussianSplatting::onUIMenu()
 }
 
 
-void GaussianSplatting::addToRecentFiles(const std::string& filePath, int historySize)
+void GaussianSplatting::addToRecentFiles(const std::filesystem::path& filePath, int historySize)
 {
   auto it = std::find(m_recentFiles.begin(), m_recentFiles.end(), filePath);
   if(it != m_recentFiles.end())
@@ -695,7 +707,7 @@ void GaussianSplatting::registerRecentFilesHandler()
     buf->appendf("[%s][Data]\n", handler->TypeName);
     for(const auto& file : self->m_recentFiles)
     {
-      buf->appendf("File=%s\n", file.c_str());
+      buf->appendf("File=%s\n", file.string().c_str());
     }
     buf->append("\n");
   };

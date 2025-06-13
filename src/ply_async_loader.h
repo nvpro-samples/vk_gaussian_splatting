@@ -25,10 +25,11 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
-//
+
 #include "splat_set.h"
 
-//
+namespace vk_gaussian_splatting {
+
 class PlyAsyncLoader
 {
 public:
@@ -57,7 +58,7 @@ public:
   // triggers the load of a new scene
   // return false if loader not in idled state
   // output must not be accessed if status is not LOADED or READY (after reset)
-  bool loadScene(std::string filename, SplatSet& output);
+  bool loadScene(std::filesystem::path filename, SplatSet& output);
   // cancel scene loading if possible
   // non blocking, may have no effect
   void cancel();
@@ -69,7 +70,7 @@ public:
   // thread safe
   bool reset();
   // return the filename currently beeing loaded, "" otherwise
-  [[nodiscard]] inline std::string getFilename()
+  [[nodiscard]] inline std::filesystem::path getFilename()
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_filename;
@@ -86,7 +87,7 @@ public:
 
 private:
   // actually loads the scene
-  bool innerLoad(std::string filename, SplatSet& output);
+  bool innerLoad(std::filesystem::path filename, SplatSet& output);
 
   // in {0.0,1.0}
   void setProgress(float progress)
@@ -110,11 +111,13 @@ private:
   mutable std::condition_variable m_loadCV;
 
   // the ply pathname
-  std::string m_filename = "";
+  std::filesystem::path m_filename = "";
   // the output data storage
   SplatSet* m_output = nullptr;
   // the loading percentage
   float m_progress = 0.0f;
 };
+
+}  // namespace vk_gaussian_splatting
 
 #endif

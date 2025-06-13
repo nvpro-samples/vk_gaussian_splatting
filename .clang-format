@@ -1,67 +1,184 @@
-﻿BasedOnStyle: LLVM
-AccessModifierOffset: '-2'
-AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: 'true'
-AlignConsecutiveDeclarations: 'true'
-AlignOperands: 'true'
-AlignTrailingComments: 'true'
-AllowAllParametersOfDeclarationOnNextLine: 'false'
-AllowShortBlocksOnASingleLine: 'false'
-AllowShortCaseLabelsOnASingleLine: 'false'
-AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: 'false'
-AllowShortLoopsOnASingleLine: 'false'
-AlwaysBreakAfterReturnType: None
-AlwaysBreakBeforeMultilineStrings: 'true'
-AlwaysBreakTemplateDeclarations: 'true'
-BinPackArguments: 'true'
-BinPackParameters: 'false'
-ExperimentalAutoDetectBinPacking: 'false'
-BreakBeforeBinaryOperators: NonAssignment
-BreakBeforeBraces: Custom
-BreakBeforeTernaryOperators: 'false'
-BreakConstructorInitializersBeforeComma: 'true'
-ColumnLimit: '120'
-ConstructorInitializerAllOnOneLineOrOnePerLine: 'false'
-Cpp11BracedListStyle: 'true'
-IndentCaseLabels: 'true'
-IndentWidth: '2'
-KeepEmptyLinesAtTheStartOfBlocks: 'true'
+
+
+---
 Language: Cpp
-MaxEmptyLinesToKeep: '2'
-NamespaceIndentation: None
-ObjCSpaceBeforeProtocolList: 'true'
-PointerAlignment: Left
-SpaceAfterCStyleCast: 'false'
-SpaceBeforeAssignmentOperators: 'true'
-SpaceBeforeParens: Never
-SpaceInEmptyParentheses: 'false'
-SpacesBeforeTrailingComments: '2'
-SpacesInAngles: 'false'
-SpacesInCStyleCastParentheses: 'false'
-SpacesInParentheses: 'false'
-SpacesInSquareBrackets: 'false'
-Standard: Cpp11
-TabWidth: '2'
-UseTab: Never
-SortIncludes: 'false'
-ReflowComments: 'false'
+BasedOnStyle: LLVM
+
+# Indentation and alignment
+AccessModifierOffset: '-2'                # Offset for access modifiers (e.g., public, private).
+AlignAfterOpenBracket: Align              # Align parameters after an open bracket.
+AlignConsecutiveAssignments: 'true'       # Align consecutive assignments for better readability.
+AlignConsecutiveDeclarations: 'true'      # Align consecutive variable declarations.
+AlignOperands: 'true'                     # Align operands in expressions.
+AlignTrailingComments: 'true'             # Align trailing comments to the same column.
+
+# Function and parameter formatting
+AllowAllParametersOfDeclarationOnNextLine: 'false'  # Do not allow all parameters on the next line.
+AllowShortBlocksOnASingleLine: 'false'              # Do not allow short blocks to be on a single line.
+AllowShortCaseLabelsOnASingleLine: 'false'          # Do not allow short case labels to be on a single line.
+AllowShortFunctionsOnASingleLine: Inline            # Allow short functions to be inlined.
+AllowShortIfStatementsOnASingleLine: 'false'        # Do not allow short if statements to be on a single line.
+AllowShortLoopsOnASingleLine: 'false'               # Do not allow short loops to be on a single line.
+
+# Line breaking and wrapping
+AlwaysBreakAfterReturnType: None                    # Do not force breaking after the return type.
+AlwaysBreakBeforeMultilineStrings: 'true'           # Break before multiline strings.
+AlwaysBreakTemplateDeclarations: 'true'            # Always break template declarations.
+BinPackArguments: 'true'                            # Allow bin-packing of function arguments.
+BinPackParameters: 'false'                          # Do not bin-pack function parameters.
+ExperimentalAutoDetectBinPacking: 'false'           # Disable experimental auto-detection of bin-packing.
+BreakBeforeBinaryOperators: NonAssignment           # Break before binary operators except for assignments.
+BreakBeforeBraces: Custom                           # Use custom brace-breaking rules (defined below).
+BreakBeforeTernaryOperators: 'false'                # Do not break before ternary operators.
+BreakConstructorInitializersBeforeComma: 'true'     # Break constructor initializers before commas.
+
+# Column and line limits
+ColumnLimit: '120'                                  # Maximum column width for code.
+ConstructorInitializerAllOnOneLineOrOnePerLine: 'false'  # Do not force all constructor initializers on one line or one per line.
+Cpp11BracedListStyle: 'true'                        # Use C++11 braced list style.
+IndentCaseLabels: 'true'                            # Indent case labels in switch statements.
+IndentWidth: '2'                                    # Indentation width.
+KeepEmptyLinesAtTheStartOfBlocks: 'true'            # Keep empty lines at the start of blocks.
+MaxEmptyLinesToKeep: '2'                            # Maximum number of consecutive empty lines to keep.
+
+# Namespace and pointer formatting
+NamespaceIndentation: None                          # Do not indent inside namespaces.
+PointerAlignment: Left                              # Align pointers to the left.
+
+# Spacing rules
+SpaceAfterCStyleCast: 'false'                       # Do not add a space after C-style casts.
+SpaceBeforeAssignmentOperators: 'true'             # Add a space before assignment operators.
+SpaceBeforeParens: Never                            # Do not add a space before parentheses.
+SpaceInEmptyParentheses: 'false'                   # Do not add spaces in empty parentheses.
+SpacesBeforeTrailingComments: '2'                  # Add two spaces before trailing comments.
+SpacesInAngles: 'false'                             # Do not add spaces inside angle brackets.
+SpacesInCStyleCastParentheses: 'false'             # Do not add spaces inside C-style cast parentheses.
+SpacesInParentheses: 'false'                       # Do not add spaces inside parentheses.
+SpacesInSquareBrackets: 'false'                    # Do not add spaces inside square brackets.
+
+# Standards and tabs
+Standard: Cpp11                                     # Use C++11 standard.
+TabWidth: '2'                                       # Tab width for alignment.
+UseTab: Never                                       # Do not use tabs for indentation.
+
+# Include and comment formatting
+SortIncludes: 'false'                               # Do not sort include statements.
+ReflowComments: 'false'                             # Do not reflow comments.
+
+# Brace wrapping rules
 BraceWrapping: {
- AfterClass: 'true'
- AfterControlStatement: 'true'
- AfterEnum: 'true'
- AfterFunction: 'true'
- AfterNamespace: 'false' 
- AfterStruct: 'true'
- AfterUnion: 'true'
- BeforeCatch: 'true'
- BeforeElse: 'true'
- IndentBraces: 'false'
+  AfterClass: 'true'                                # Add a line break after class opening braces.
+  AfterControlStatement: 'true'                    # Add a line break after control statement braces.
+  AfterEnum: 'true'                                 # Add a line break after enum opening braces.
+  AfterFunction: 'true'                             # Add a line break after function opening braces.
+  AfterNamespace: 'false'                          # Do not add a line break after namespace opening braces.
+  AfterStruct: 'true'                              # Add a line break after struct opening braces.
+  AfterUnion: 'true'                               # Add a line break after union opening braces.
+  BeforeCatch: 'true'                              # Add a line break before catch blocks.
+  BeforeElse: 'true'                               # Add a line break before else blocks.
+  IndentBraces: 'false'                            # Do not indent braces.
 }
-PenaltyExcessCharacter: 1
-PenaltyBreakBeforeFirstCallParameter: 40
-PenaltyBreakFirstLessLess: 1
-PenaltyBreakComment: 30
-PenaltyBreakString: 30
-PenaltyReturnTypeOnItsOwnLine: 9999
-BreakStringLiterals: false
+
+# Penalty settings for line breaking
+PenaltyExcessCharacter: 1                          # Penalty for exceeding the column limit.
+PenaltyBreakBeforeFirstCallParameter: 40           # Penalty for breaking before the first call parameter.
+PenaltyBreakFirstLessLess: 1                       # Penalty for breaking before the first '<<' operator.
+PenaltyBreakComment: 30                            # Penalty for breaking comments.
+PenaltyBreakString: 30                             # Penalty for breaking strings.
+PenaltyReturnTypeOnItsOwnLine: 9999                # High penalty for placing return type on its own line.
+
+# Miscellaneous
+BreakStringLiterals: false                         # Do not break string literals.
+
+
+
+---
+Language: CSharp
+BasedOnStyle: LLVM
+
+# Indentation and alignment
+AccessModifierOffset: '-2'                # Offset for access modifiers (e.g., public, private).
+AlignAfterOpenBracket: Align              # Align parameters after an open bracket.
+AlignConsecutiveAssignments: 'true'       # Align consecutive assignments for better readability.
+AlignConsecutiveDeclarations: 'true'      # Align consecutive variable declarations.
+AlignOperands: 'true'                     # Align operands in expressions.
+AlignTrailingComments: 'true'             # Align trailing comments to the same column.
+
+# Function and parameter formatting
+AllowAllParametersOfDeclarationOnNextLine: 'false'  # Do not allow all parameters on the next line.
+AllowShortBlocksOnASingleLine: 'false'              # Do not allow short blocks to be on a single line.
+AllowShortCaseLabelsOnASingleLine: 'false'          # Do not allow short case labels to be on a single line.
+AllowShortFunctionsOnASingleLine: Inline            # Allow short functions to be inlined.
+AllowShortIfStatementsOnASingleLine: 'false'        # Do not allow short if statements to be on a single line.
+AllowShortLoopsOnASingleLine: 'false'               # Do not allow short loops to be on a single line.
+
+# Line breaking and wrapping
+AlwaysBreakAfterReturnType: None                    # Do not force breaking after the return type.
+AlwaysBreakBeforeMultilineStrings: 'true'           # Break before multiline strings.
+AlwaysBreakTemplateDeclarations: 'true'            # Always break template declarations.
+BinPackArguments: 'true'                            # Allow bin-packing of function arguments.
+BinPackParameters: 'false'                          # Do not bin-pack function parameters.
+ExperimentalAutoDetectBinPacking: 'false'           # Disable experimental auto-detection of bin-packing.
+BreakBeforeBinaryOperators: NonAssignment           # Break before binary operators except for assignments.
+BreakBeforeBraces: Custom                           # Use custom brace-breaking rules (defined below).
+BreakBeforeTernaryOperators: 'false'                # Do not break before ternary operators.
+BreakConstructorInitializersBeforeComma: 'true'     # Break constructor initializers before commas.
+
+# Column and line limits
+ColumnLimit: '120'                                  # Maximum column width for code.
+ConstructorInitializerAllOnOneLineOrOnePerLine: 'false'  # Do not force all constructor initializers on one line or one per line.
+Cpp11BracedListStyle: 'true'                        # Use C++11 braced list style.
+IndentCaseLabels: 'true'                            # Indent case labels in switch statements.
+IndentWidth: '2'                                    # Indentation width.
+KeepEmptyLinesAtTheStartOfBlocks: 'true'            # Keep empty lines at the start of blocks.
+MaxEmptyLinesToKeep: '2'                            # Maximum number of consecutive empty lines to keep.
+
+# Namespace and pointer formatting
+NamespaceIndentation: None                          # Do not indent inside namespaces.
+PointerAlignment: Left                              # Align pointers to the left.
+
+# Spacing rules
+SpaceAfterCStyleCast: 'false'                       # Do not add a space after C-style casts.
+SpaceBeforeAssignmentOperators: 'true'             # Add a space before assignment operators.
+SpaceBeforeParens: Never                            # Do not add a space before parentheses.
+SpaceInEmptyParentheses: 'false'                   # Do not add spaces in empty parentheses.
+SpacesBeforeTrailingComments: '2'                  # Add two spaces before trailing comments.
+SpacesInAngles: 'false'                             # Do not add spaces inside angle brackets.
+SpacesInCStyleCastParentheses: 'false'             # Do not add spaces inside C-style cast parentheses.
+SpacesInParentheses: 'false'                       # Do not add spaces inside parentheses.
+SpacesInSquareBrackets: 'false'                    # Do not add spaces inside square brackets.
+
+# Standards and tabs
+Standard: Cpp11                                     # Use C++11 standard.
+TabWidth: '2'                                       # Tab width for alignment.
+UseTab: Never                                       # Do not use tabs for indentation.
+
+# Include and comment formatting
+SortIncludes: 'false'                               # Do not sort include statements.
+ReflowComments: 'false'                             # Do not reflow comments.
+
+# Brace wrapping rules
+BraceWrapping: {
+  AfterClass: 'true'                                # Add a line break after class opening braces.
+  AfterControlStatement: 'true'                    # Add a line break after control statement braces.
+  AfterEnum: 'true'                                 # Add a line break after enum opening braces.
+  AfterFunction: 'true'                             # Add a line break after function opening braces.
+  AfterNamespace: 'false'                          # Do not add a line break after namespace opening braces.
+  AfterStruct: 'true'                              # Add a line break after struct opening braces.
+  AfterUnion: 'true'                               # Add a line break after union opening braces.
+  BeforeCatch: 'true'                              # Add a line break before catch blocks.
+  BeforeElse: 'true'                               # Add a line break before else blocks.
+  IndentBraces: 'false'                            # Do not indent braces.
+}
+
+# Penalty settings for line breaking
+PenaltyExcessCharacter: 1                          # Penalty for exceeding the column limit.
+PenaltyBreakBeforeFirstCallParameter: 40           # Penalty for breaking before the first call parameter.
+PenaltyBreakFirstLessLess: 1                       # Penalty for breaking before the first '<<' operator.
+PenaltyBreakComment: 30                            # Penalty for breaking comments.
+PenaltyBreakString: 30                             # Penalty for breaking strings.
+PenaltyReturnTypeOnItsOwnLine: 9999                # High penalty for placing return type on its own line.
+
+# Miscellaneous
+BreakStringLiterals: false                         # Do not break string literals.
+
