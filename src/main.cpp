@@ -117,7 +117,7 @@ int main(int argc, char** argv)
   }
 
   // Application setup
-  appInfo.name                  = fmt::format("{}", PROJECT_NAME);
+  appInfo.name                  = TARGET_NAME;
   appInfo.instance              = vkContext.getInstance();
   appInfo.device                = vkContext.getDevice();
   appInfo.physicalDevice        = vkContext.getPhysicalDevice();
