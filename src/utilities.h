@@ -31,13 +31,13 @@
 //   std::cout << "Processing index " << i << "\n";
 // END_PAR_LOOP()
 
-#define START_PAR_LOOP(SIZE, INDEX)                   \
-  {                                                   \
+#define START_PAR_LOOP(SIZE, INDEX)                                                                                    \
+  {                                                                                                                    \
     nvutils::parallel_batches_pooled<8192>(           \
         SIZE, [&](uint64_t INDEX, uint64_t tidx) {
 
-#define END_PAR_LOOP()                                \
-  }, (uint32_t)std::thread::hardware_concurrency());  \
+#define END_PAR_LOOP()                                                                                                 \
+  }, (uint32_t)std::thread::hardware_concurrency());                                                                   \
   }
 
 namespace vk_gaussian_splatting {
@@ -46,8 +46,7 @@ inline static std::vector<std::filesystem::path> getResourcesDirs()
 {
   std::filesystem::path exePath = nvutils::getExecutablePath().parent_path();
   return {
-      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_ROOT_DIRECTORY) / "_downloaded_resources"),
-      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_ROOT_DIRECTORY) / "resources"),
+      std::filesystem::absolute(exePath / TARGET_EXE_TO_ROOT_DIRECTORY / "_downloaded_resources"),
       std::filesystem::absolute(exePath / "resources"),  //
       std::filesystem::absolute(exePath)                 //
   };
@@ -58,8 +57,8 @@ inline static std::vector<std::filesystem::path> getShaderDirs()
   std::filesystem::path exePath = nvutils::getExecutablePath().parent_path();
   std::filesystem::path exeName = nvutils::getExecutablePath().stem();
   return {
-      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_EXE_TO_SOURCE_DIRECTORY) / "shaders"),
-      std::filesystem::absolute(exePath / std::filesystem::path(PROJECT_NAME) / "shaders"),
+      std::filesystem::absolute(exePath / TARGET_EXE_TO_SOURCE_DIRECTORY / "shaders"),
+      std::filesystem::absolute(exePath / TARGET_NAME "_files" / "shaders"),
       std::filesystem::absolute(exePath),
   };
 }
