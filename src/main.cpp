@@ -17,7 +17,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <gaussian_splatting.h>
+#include <gaussian_splatting_ui.h>
 
 using namespace vk_gaussian_splatting;
 
@@ -26,6 +26,7 @@ using namespace vk_gaussian_splatting;
 int main(int argc, char** argv)
 {
   nvutils::Logger::getInstance().breakOnError(false);
+  //nvutils::Logger::getInstance().setLogLevel(nvutils::Logger::LogLevel::eDEBUG);
 
   nvutils::ProfilerManager              profilerManager;
   nvutils::ParameterRegistry            parameterRegistry;
@@ -40,8 +41,9 @@ int main(int argc, char** argv)
   nvvk::ContextInitInfo        vkSetup;    // Information to create the Vulkan context
   nvapp::Application           application;
   nvapp::ApplicationCreateInfo appInfo;  // Information to create the application
+  bool                         benchmarkMode = false;
 
-  // ------------------------------
+  /////////////////////////////////
   // Parse the command line to get the application creation information
   // those parameter will have no effect if changed via benchmark script
   // see GaussianSplatting constructor for other options
@@ -49,16 +51,20 @@ int main(int argc, char** argv)
   parameterRegistry.add({"vsync"}, &appInfo.vSync);
   parameterRegistry.add({"verbose", "Verbose output of the Vulkan context"}, &vkSetup.verbose);
   parameterRegistry.add({"validation", "Enable validation layers"}, &vkSetup.enableValidationLayers);
-  bool benchmarkMode = false;
   parameterRegistry.add({"benchmark", "Enable benchmarking, prevents async loadings and turns off vsync"}, &benchmarkMode);
 
+  registerCommandLineParameters(&parameterRegistry);
+
+  /////////////////////////////////
   // Create elements of the application, including the core of the sample (gaussianSplatting)
-  auto gaussianSplatting = std::make_shared<GaussianSplatting>(&profilerManager, &parameterRegistry, &benchmarkMode);
+
+  // The GaussianSplattingUI includes the core GaussianSplatting class by inheritance
+  auto gaussianSplatting = std::make_shared<GaussianSplattingUI>(&profilerManager, &parameterRegistry, &benchmarkMode);
 
   // add a few more parameters to registry and parser to handle sequencer settings
   sequencerInfo.registerScriptParameters(parameterRegistry, parameterParser);
 
-  // extends benchmark reporting output with memory consumption information
+  // extends reporting output with memory consumption information
   sequencerInfo.postCallbacks.emplace_back([&]() { gaussianSplatting->benchmarkAdvance(); });
 
   // After the creation of the elements we have more parameters in the registry than before (from gaussianSplatting).
@@ -66,13 +72,15 @@ int main(int argc, char** argv)
   parameterParser.add(parameterRegistry);
   // commandline parsing
   parameterParser.parse(argc, argv);
+  // backup the default applications parameters, including those modified by command line
+  storeDefaultParameters();
   // set more verbose for benchmark usage later on
   parameterParser.setVerbose(true);
 
   // this element requires sequencerInfo that is potentially updated by parameterParser
   auto elemSequencer = std::make_shared<nvapp::ElementSequencer>(sequencerInfo);
 
-  //--------------------------------------------------------------------------------------------------
+  /////////////////////////////////
   // Vulkan creation context information
   vkSetup.enableAllFeatures = true;
 
@@ -96,6 +104,25 @@ int main(int argc, char** argv)
   vkSetup.deviceExtensions.emplace_back(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, &baryFeaturesKHR, true);
   vkSetup.deviceExtensions.emplace_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);  // for ImGui
 
+
+  // Activate the ray tracing extension
+  VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeature = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+  vkSetup.deviceExtensions.emplace_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, &accelFeature, true);  // To build acceleration structures
+  VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeature = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR};
+  vkSetup.deviceExtensions.emplace_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, &rtPipelineFeature, false);  // To use vkCmdTraceRaysKHR
+  vkSetup.deviceExtensions.emplace_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);  // Required by ray tracing pipeline
+
+  VkPhysicalDeviceShaderClockFeaturesKHR clockFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR};
+  vkSetup.deviceExtensions.emplace_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, &clockFeatures);
+
+  VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV serFeatures = {
+      .sType                       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_NV,
+      .rayTracingInvocationReorder = VK_TRUE,
+  };
+  vkSetup.deviceExtensions.emplace_back(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, &serFeatures, false);
+
   if(!appInfo.headless)
   {
     nvvk::addSurfaceExtensions(vkSetup.instanceExtensions);
@@ -116,6 +143,7 @@ int main(int argc, char** argv)
     return 1;
   }
 
+  /////////////////////////////////
   // Application setup
   appInfo.name                  = TARGET_NAME;
   appInfo.instance              = vkContext.getInstance();
@@ -128,16 +156,22 @@ int main(int argc, char** argv)
   // Setting up the layout of the application
   appInfo.dockSetup = [](ImGuiID viewportID) {
     // right side panel container
-    ImGuiID settingID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Right, 0.25F, nullptr, &viewportID);
-    ImGui::DockBuilderDockWindow("Settings", settingID);
-    ImGui::DockBuilderDockWindow("Misc", settingID);
+    ImGuiID assetsID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Right, 0.20F, nullptr, &viewportID);
+    ImGui::DockBuilderDockWindow("Assets", assetsID);
+    ImGuiID propertiesID = ImGui::DockBuilderSplitNode(assetsID, ImGuiDir_Down, 0.75F, nullptr, &assetsID);
+    ImGui::DockBuilderDockWindow("Properties", propertiesID);
 
     // bottom panel container
-    ImGuiID memoryID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Down, 0.35F, nullptr, &viewportID);
+    ImGuiID memoryID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Down, 0.40F, nullptr, &viewportID);
     ImGui::DockBuilderDockWindow("Memory Statistics", memoryID);
     ImGuiID profilerID = ImGui::DockBuilderSplitNode(memoryID, ImGuiDir_Right, 0.33F, nullptr, &memoryID);
     ImGui::DockBuilderDockWindow("Profiler", profilerID);
+    ImGuiID renderingID = ImGui::DockBuilderSplitNode(profilerID, ImGuiDir_Down, 0.30F, nullptr, &profilerID);
+    ImGui::DockBuilderDockWindow("Rendering Statistics", renderingID);
   };
+
+  //
+  gaussianSplatting->guiRegisterIniFileHandlers();
 
   // Initializes the application
   application.init(appInfo);
@@ -146,7 +180,6 @@ int main(int argc, char** argv)
   // onAttach will be invoked on elements at this stage
   application.addElement(elemSequencer);
   application.addElement(gaussianSplatting);
-
   application.addElement(std::make_shared<nvapp::ElementDefaultWindowTitle>("", fmt::format("({})", "GLSL")));
 
   auto elemCamera = std::make_shared<nvapp::ElementCamera>();
@@ -174,7 +207,6 @@ int main(int argc, char** argv)
   }
 
   //
-  gaussianSplatting->registerRecentFilesHandler();
   application.run();
 
   // Cleanup

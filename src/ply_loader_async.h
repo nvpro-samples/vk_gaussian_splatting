@@ -25,12 +25,13 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
+#include <filesystem>
 
 #include "splat_set.h"
 
 namespace vk_gaussian_splatting {
 
-class PlyAsyncLoader
+class PlyLoaderAsync
 {
 public:
   enum State

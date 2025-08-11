@@ -70,6 +70,21 @@ layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
 void main()
 {
 
+#if WIREFRAME
+  // Compute the fragment position in world space using barycentric coordinates
+  const float u = gl_BaryCoordEXT.x;
+  const float v = gl_BaryCoordEXT.y;
+  const float w = 1.0 - u - v;
+
+  // Define wireframe thickness threshold
+  float threshold = 0.02;
+  if(u < threshold || v < threshold || w < threshold)
+  {
+    outColor = vec4(1.0, 0.0, 0.0, 1.0);  // wireframe color
+    return;
+  }
+#endif
+
 #if USE_BARYCENTRIC
   // Use barycentric extension to find the position of the fragment
   const float sqrt8 = sqrt(8.0);

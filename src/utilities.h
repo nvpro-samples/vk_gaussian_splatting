@@ -21,6 +21,9 @@
 #define _UTILITIES_H_
 
 #include <filesystem>
+#include <fmt/format.h>
+#include <glm/vec3.hpp>
+#include <glm/gtx/transform.hpp>
 
 #include <nvutils/file_operations.hpp>
 #include <nvutils/parallel_work.hpp>
@@ -61,6 +64,66 @@ inline static std::vector<std::filesystem::path> getShaderDirs()
       std::filesystem::absolute(exePath / TARGET_NAME "_files" / "shaders"),
       std::filesystem::absolute(exePath),
   };
+}
+
+static std::string formatMemorySize(size_t sizeInBytes)
+{
+  static const std::string units[]     = {"B", "KB", "MB", "GB"};
+  static const size_t      unitSizes[] = {1, 1024, 1024 * 1024, 1024 * 1024 * 1024};
+
+  uint32_t currentUnit = 0;
+  for(uint32_t i = 1; i < 4; i++)
+  {
+    if(sizeInBytes < unitSizes[i])
+    {
+      break;
+    }
+    currentUnit++;
+  }
+
+  float size = float(sizeInBytes) / float(unitSizes[currentUnit]);
+
+  return fmt::format("{:.3} {}", size, units[currentUnit]);
+}
+
+static std::string formatSize(size_t sizeValue)
+{
+  static const std::string units[]     = {"", "K", "M", "G"};
+  static const size_t      unitSizes[] = {1, 1000, 1000 * 1000, 1000 * 1000 * 1000};
+
+  uint32_t currentUnit = 0;
+  for(uint32_t i = 1; i < 4; i++)
+  {
+    if(sizeValue < unitSizes[i])
+    {
+      break;
+    }
+    currentUnit++;
+  }
+
+  float size = float(sizeValue) / float(unitSizes[currentUnit]);
+
+  return fmt::format("{:.3} {}", size, units[currentUnit]);
+}
+
+static void computeTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& translation, glm::mat4& transform, glm::mat4& transformInv)
+{
+  transform = glm::mat4(1.0f);  // Identity matrix
+
+  // Apply transformations in Scale -> Rotate -> Translate order
+  // 1. Apply translation
+  transform = glm::translate(transform, translation);
+
+  // 2. Apply rotations (note: glm::radians converts degrees to radians)
+  transform = glm::rotate(transform, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+  transform = glm::rotate(transform, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+  transform = glm::rotate(transform, glm::radians(rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+
+  // 3. Apply scaling
+  transform = glm::scale(transform, scale);
+
+  //
+  transformInv = glm::inverse(transform);
 }
 
 }  // namespace vk_gaussian_splatting

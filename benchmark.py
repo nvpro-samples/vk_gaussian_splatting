@@ -11,7 +11,7 @@ import matplotlib.patches as mpatches  # Add this import for legend patches
 import shutil
 
 def run_benchmark(executable, benchmark_file, scene_path, output_log):
-    command = [os.path.abspath(executable), "--size", "1920","1080", "--benchmark", "1", "--sequencefile", os.path.abspath(benchmark_file), scene_path]
+    command = [os.path.abspath(executable), "--size", "1920", "1080", "--benchmark", "1", "--sequencefile", os.path.abspath(benchmark_file), scene_path]
     with open(output_log, "w", encoding="utf-8") as log_file:
         subprocess.run(command, stdout=log_file, stderr=subprocess.STDOUT, shell=True)
 
@@ -127,8 +127,9 @@ def plot_cumulative_histogram_timers(
     xlabel,
     pipelines, 
     pipeline_names,  
-    stages=["GPU Dist", "GPU Sort", "Rendering"], 
-    filename="histogram_timers.png"
+    stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+    filename="histogram_timers.png",
+    stage_colors = [color_set["black"], color_set["dark_green"], color_set["green"]]
 ):
     scene_groups = defaultdict(list)
 
@@ -163,9 +164,6 @@ def plot_cumulative_histogram_timers(
     
     # Adjust bar width to ensure space between bars within each group
     bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
-
-    # Define colors for stages
-    stage_colors = [color_set["black"], color_set["dark_green"], color_set["green"]]
     
     # Stack bars
     bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
@@ -199,6 +197,87 @@ def plot_cumulative_histogram_timers(
     plt.savefig(filename)
     print(f"Histogram saved as {filename}")
 
+def plot_histogram_timers(
+    benchmarks, 
+    title,
+    ylabel,
+    xlabel,
+    pipelines, 
+    pipeline_names,  
+    stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+    filename="histogram_timers.png",
+    stage_colors = [color_set["light_green"], color_set["green"], color_set["dark_green"], color_set["black"]],
+    legend = [],
+):
+    scene_groups = defaultdict(list)
+
+    # Group the results by scene and pipeline
+    for benchmark in benchmarks:
+        scene_name = benchmark["scene"]
+        benchmark_name = benchmark["name"]
+        timers = benchmark["timers"]
+        
+        if benchmark_name in pipelines and isinstance(timers, dict):
+            scene_groups[scene_name].append((benchmark_name, timers))
+    
+    all_data = []
+    x_labels = []
+    width = 0.35  # Base bar width
+
+    # Flatten data for all scenes and pipelines
+    for scene, results in scene_groups.items():
+        scene_data = {pipeline: {stage: 0 for stage in stages} for pipeline in pipelines}
+        for benchmark_name, timers in results:
+            for stage in stages:
+                scene_data[benchmark_name][stage] += timers.get(stage, {}).get("VK", 0)
+        all_data.append(scene_data)
+        x_labels.append(scene)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Adjust the space between groups by reducing the range of index values
+    index = np.arange(len(x_labels)) * 0.5  # Multiply index by factor to reduce spacing between groups
+    num_pipelines = len(pipelines)
+    
+    # Adjust bar width to ensure space between bars within each group
+    bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
+    
+    # Stack bars
+    bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
+
+    for i, stage in enumerate(stages):
+        for j, pipeline in enumerate(pipelines):
+            values = [scene_data[pipeline].get(stage, 0) for scene_data in all_data]
+
+            # Adjust the offset for each bar within a group so that bars are well spaced
+            position_offset = (j - (num_pipelines - 1) / 2) * (bar_width + 0.05)  # Add space between bars
+
+            ax.bar(index + position_offset, values, bar_width, color=stage_colors[j], bottom=bottom_values[pipeline])
+            bottom_values[pipeline] += np.array(values)
+
+    # Customize plot
+    ax.set_xlabel(xlabel) 
+    ax.set_ylabel(ylabel) 
+    ax.set_title(title)   
+
+    # Format x-ticks with pipeline short names
+    ax.set_xticks(index)
+    ax.set_xticklabels([f"{scene}\n({', '.join(pipeline_names)})" for scene in x_labels], 
+                       rotation=45, ha="right")
+
+    # Create legend for stages    
+    if len(legend) == 0:
+        legend = pipelines
+    
+    legend_handles = [mpatches.Patch(color=stage_colors[i], label=pipeline) for i, pipeline in enumerate(legend)]
+    ax.legend(handles=legend_handles, title="Setup", loc='upper right')
+
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(filename)
+    print(f"Histogram saved as {filename}")
+
 def plot_cumulative_histogram_memory(
     benchmarks, 
     title,
@@ -207,7 +286,8 @@ def plot_cumulative_histogram_memory(
     pipelines, 
     pipeline_names,  
     stages=["Scene", "Rendering"], 
-    filename="histogram_memory.png"
+    filename="histogram_memory.png",
+    stage_colors = [color_set["dark_green"], color_set["green"], color_set["light_green"]]
 ):
     scene_groups = defaultdict(list)
 
@@ -243,9 +323,6 @@ def plot_cumulative_histogram_memory(
     
     # Adjust bar width to ensure space between bars within each group
     bar_width = width * 0.8 / num_pipelines  # Reduce width slightly and divide by number of pipelines
-
-    # Define colors for stages
-    stage_colors = [color_set["dark_green"], color_set["green"], color_set["light_green"]]
     
     # Stack bars
     bottom_values = {pipeline: np.zeros(len(x_labels)) for pipeline in pipelines}
@@ -284,7 +361,7 @@ if __name__ == "__main__":
     # Possible paths for the executable
     paths = ["./_bin/Release/vk_gaussian_splatting.exe", "../_bin/Release/vk_gaussian_splatting.exe","./_bin/Release/vk_gaussian_splatting_app", "../_bin/Release/vk_gaussian_splatting_app"]
     # Find the first existing path
-    xecutable = None
+    executable = None
     for path in paths:
         if os.path.exists(path):
             executable = os.path.abspath(path)
@@ -295,15 +372,19 @@ if __name__ == "__main__":
         print("Executable not found.")
         sys.exit(1) 
 
-    # path to the benchmark definition
-    benchmark_file = os.path.abspath("benchmark.cfg")
     # Setup argument parsing for the base dataset path
     parser = argparse.ArgumentParser(description="Run benchmarks for 3D scenes.")
+    parser.add_argument("benchmark", type=str, help="path to the benchmark .cfg file")
+    parser.add_argument("dataset", type=str, choices=["3DGS", "3DGRT"], help="Dataset to use")
     parser.add_argument("dataset_path", type=str, help="Base path to the dataset")
-    
+    parser.add_argument("csv_name", type=str, help="Name of the output csv file")
+
     args = parser.parse_args()
-    
-    # Define the scenes with the relative paths
+
+    # path to the benchmark definition
+    benchmark_file = os.path.abspath(args.benchmark)
+
+    # Define the scenes from 3DGS with the relative paths
     scenes = {
         "bicycle 6.13M Splats": "bicycle/bicycle/point_cloud/iteration_30000/point_cloud.ply"
         ,"bonsai 1.24M Splats": "bonsai/bonsai/point_cloud/iteration_30000/point_cloud.ply"
@@ -320,10 +401,26 @@ if __name__ == "__main__":
         ,"truck 2.54M Splats": "truck/point_cloud/iteration_30000/point_cloud.ply"
     }
     
+    # Define the scenes from 3DGUT with the relative paths
+    rt_scenes = {
+        "bicycle 1M Splats": "bicycle_exported.ply"
+        ,"bonsai 1M Splats": "bonsai_exported.ply"
+        ,"counter 1M Splats": "counter_exported.ply"
+        ,"flowers 1M Splats": "flowers_exported.ply"
+        ,"garden 1M Splats": "garden_exported.ply"
+        ,"kitchen 1M Splats": "kitchen_exported.ply"
+        ,"room 1M Splats": "room_exported.ply"
+        ,"stump 1M Splats": "stump_exported.ply"
+        ,"treehill 1M Splats": "treehill_exported.ply"
+    }
+
+    # Select the appropriate scenes based on the dataset argument
+    selected_scenes = scenes if args.dataset == "3DGS" else rt_scenes
+
     # Build the full paths by combining the dataset path and scene relative paths
     full_scene_paths = {
         scene_name: os.path.join(args.dataset_path, relative_path)
-        for scene_name, relative_path in scenes.items()
+        for scene_name, relative_path in selected_scenes.items()
     }
     
     # Prepare the benchmark directory and output files
@@ -340,7 +437,7 @@ if __name__ == "__main__":
         run_benchmark(executable, benchmark_file, scene_path, output_log)
 
         # Rename the generated screen shots
-        for img_file in ["mesh_screenshot.png", "vert_screenshot.png"]:
+        for img_file in ["mesh_screenshot.png", "vert_screenshot.png", "3dgrt_screenshot.png"]:
             if os.path.exists(img_file):
                 new_name = f"{output_prefix}_{img_file}"
                 shutil.move(img_file, new_name)
@@ -353,36 +450,79 @@ if __name__ == "__main__":
         results = parse_benchmark(log_text, scene_name)
         all_results.extend(results)
     
-    save_to_csv(all_results)
+    save_to_csv(all_results, args.csv_name)
 
-    plot_cumulative_histogram_timers(
-        all_results, 
-        xlabel="Scene",
-        ylabel="Cumulative VK Time (milliseconds)",
-        title="Pipeline Performance Comparison - Mesh vs. Vertex",
-        pipelines = ["Mesh pipeline", "Vert pipeline"], 
-        pipeline_names= ["Mesh", "Vert"],
-        stages=["GPU Dist", "GPU Sort", "Rendering"], 
-        filename="histogram_shader_timers.png")
+    if args.dataset == "3DGS":
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Pipeline Performance Comparison - Mesh vs. Vertex - SH Format uint 8",
+            pipelines = ["Mesh pipeline uint8", "Vert pipeline uint8"], 
+            pipeline_names= ["Mesh", "Vert"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            filename="05_histogram_shader_timers_uint8.png")
 
-    plot_cumulative_histogram_timers(
-        all_results, 
-        xlabel="Scene",
-        ylabel="Cumulative VK Time (milliseconds)",
-        title="Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8",
-        pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
-        pipeline_names= ["fp32", "fp16", "uint8"],
-        stages=["GPU Dist", "GPU Sort", "Rendering"], 
-        filename="histogram_format_timers.png")
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Pipeline Performance Comparison - Mesh vs. Vertex - SH Format float 16",
+            pipelines = ["Mesh pipeline fp16", "Vert pipeline fp16"], 
+            pipeline_names= ["Mesh", "Vert"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            filename="04_histogram_shader_timers_fp16.png")
 
-    plot_cumulative_histogram_memory(
-        all_results, 
-        xlabel="Scene",
-        ylabel="Cumulative VRAM usage (Mega Bytes)",
-        title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
-        pipelines = ["Mesh pipeline", "Mesh pipeline fp16", "Mesh pipeline uint8"],
-        pipeline_names= ["fp32", "fp16", "uint8"],
-        stages=["Scene", "Rendering"], 
-        filename="histogram_format_memory.png")
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Pipeline Performance Comparison - Mesh vs. Vertex - SH Format float 32",
+            pipelines = ["Mesh pipeline fp32", "Vert pipeline fp32"], 
+            pipeline_names= ["Mesh", "Vert"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            filename="03_histogram_shader_timers_fp32.png")
+
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Mesh Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8",
+            pipelines = ["Mesh pipeline fp32", "Mesh pipeline fp16", "Mesh pipeline uint8"],
+            pipeline_names= ["fp32", "fp16", "uint8"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            filename="00_histogram_format_timers_mesh.png")
+
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Vertex Pipeline Performance Comparison - SH storage formats in float 32, float 16 and uint 8",
+            pipelines = ["Vert pipeline fp32", "Vert pipeline fp16", "Vert pipeline uint8"],
+            pipeline_names= ["fp32", "fp16", "uint8"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            filename="01_histogram_format_timers_vertex.png")
+
+        plot_cumulative_histogram_memory(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VRAM usage (Mega Bytes)",
+            title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
+            pipelines = ["Mesh pipeline fp32", "Mesh pipeline fp16", "Mesh pipeline uint8"],
+            pipeline_names= ["fp32", "fp16", "uint8"],
+            stages=["Scene", "Rendering"], 
+            filename="06_histogram_format_memory.png")
+
+    if args.dataset == "3DGRT":
+        plot_histogram_timers(
+            all_results, 
+            xlabel="Scene",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Raytracing (3DGRT) Pipeline Performance Comparison Using Acceleration Structures Variants",
+            pipelines = ["3DGRT - sh uint8 - inst. off - comp. on", "3DGRT - sh uint8 - inst. off - comp. off", "3DGRT - sh uint8 - inst. on - comp. on", "3DGRT - sh uint8 - inst. on - comp. on - useAABB"],
+            pipeline_names= ["A", "B", "C", "D"],
+            stages=["Raytracing"], 
+            legend=["A - TLAS inst. off, BLAS comp. on", "B - TLAS inst. off, BLAS comp. off", "C - TLAS inst. on, BLAS comp. on", "D - TLAS inst. on, Use AABB"],
+            filename="07_histogram_as_format_timers_3dgrt.png")
 
     print("CSV and histogram generation complete.")

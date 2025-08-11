@@ -50,6 +50,7 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_EXT_control_flow_attributes : require
 #extension GL_GOOGLE_include_directive : require
+
 #include "shaderio.h"
 #include "common.glsl"
 
@@ -72,6 +73,11 @@ layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
   FrameInfo frameInfo;
 };
 
+layout(push_constant) uniform _PushConstantRaster
+{
+  PushConstant pcRaster;
+};
+
 // sorted indices
 layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
 {
@@ -85,7 +91,7 @@ layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) buffer _indirect
 
 void main()
 {
-  const uint32_t baseIndex  = gl_GlobalInvocationID.x;
+  const uint32_t baseIndex = gl_GlobalInvocationID.x;
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
   // if culling is already performed we use the subset of splats
   const uint splatCount = indirect.instanceCount;
@@ -112,9 +118,43 @@ void main()
     // work on splat position
     const vec3 splatCenter = fetchCenter(splatIndex);
 
-    const mat4 transformModelViewMatrix = frameInfo.viewMatrix;
+    const mat4 transformModelViewMatrix = frameInfo.viewMatrix * pcRaster.modelMatrix;
     const vec4 viewCenter               = transformModelViewMatrix * vec4(splatCenter, 1.0);
     const vec4 clipCenter               = frameInfo.projectionMatrix * viewCenter;
+
+    // Fetches are done as early as possible.
+    // Moving those after culling statments will reduce the performance
+    // This is not true in the vertex shader version since discards does not follow same mechanism
+    
+    // work on color
+    vec4 splatColor = fetchColor(splatIndex);
+
+#if SHOW_SH_ONLY == 1
+    splatColor.r = 0.5;
+    splatColor.g = 0.5;
+    splatColor.b = 0.5;
+#endif
+
+    // fetch radiance from SH coefs > degree 0
+    // const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+    const vec3 worldViewDir = normalize(splatCenter - vec3(pcRaster.modelMatrixInverse * vec4(frameInfo.cameraPosition, 1.0)));
+
+    splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
+
+    // alpha based culling
+    if(splatColor.a < frameInfo.alphaCullThreshold)
+    {
+      // Early return to discard splat
+      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      return;
+    }
+
+    // emit per primitive color as early as possible for perf reasons
+    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
+    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
     const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
@@ -142,86 +182,6 @@ void main()
       outFragPos[gl_LocalInvocationIndex * 4 + i] = positions[i].xy * sqrt8;
     }
 #endif
-
-    // work on color
-    vec4 splatColor = fetchColor(splatIndex);
-
-#if SHOW_SH_ONLY == 1
-    splatColor.r = 0.5;
-    splatColor.g = 0.5;
-    splatColor.b = 0.5;
-#endif
-
-#if MAX_SH_DEGREE >= 1
-    // SH coefficients for degree 1 (1,2,3)
-    vec3 shd1[3];
-#if MAX_SH_DEGREE >= 2
-    // SH coefficients for degree 2 (4 5 6 7 8)
-    vec3 shd2[5];
-#endif
-#if MAX_SH_DEGREE >= 3
-    // SH coefficients for degree 3 (9,10,11,12,13,14,15)
-    vec3 shd3[7];
-#endif
-    // fetch the data (only what is needed according to degree)
-    fetchSh(splatIndex, shd1
-#if MAX_SH_DEGREE >= 2
-            ,
-            shd2
-#endif
-#if MAX_SH_DEGREE >= 3
-            ,
-            shd3
-#endif
-    );
-
-    const vec3  worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-    const float x            = worldViewDir.x;
-    const float y            = worldViewDir.y;
-    const float z            = worldViewDir.z;
-    splatColor.rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
-
-#if MAX_SH_DEGREE >= 2
-    const float xx = x * x;
-    const float yy = y * y;
-    const float zz = z * z;
-    const float xy = x * y;
-    const float yz = y * z;
-    const float xz = x * z;
-
-    splatColor.rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
-                      + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
-#endif
-#if MAX_SH_DEGREE >= 3
-    // Degree 3 SH basis function terms
-    const float xyy = x * yy;
-    const float yzz = y * zz;
-    const float zxx = z * xx;
-    const float xyz = x * y * z;
-
-    // Degree 3 contributions
-    splatColor.rgb += SH_C3[0] * shd3[0] * (3.0 * x * x - y * y) * y + SH_C3[1] * shd3[1] * x * y * z
-                      + SH_C3[2] * shd3[2] * (4.0 * z * z - x * x - y * y) * y
-                      + SH_C3[3] * shd3[3] * z * (2.0 * z * z - 3.0 * x * x - 3.0 * y * y)
-                      + SH_C3[4] * shd3[4] * x * (4.0 * z * z - x * x - y * y)
-                      + SH_C3[5] * shd3[5] * (x * x - y * y) * z + SH_C3[6] * shd3[6] * x * (x * x - 3.0 * y * y);
-#endif
-#endif
-
-    // alpha based culling
-    if(splatColor.a < frameInfo.alphaCullThreshold)
-    {
-      // Early return to discard splat
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      return;
-    }
-
-    // emit per primitive color as early as possible for perf reasons
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
 
     // Fetch and construct the 3D covariance matrix
     const mat3 Vrk = fetchCovariance(splatIndex);

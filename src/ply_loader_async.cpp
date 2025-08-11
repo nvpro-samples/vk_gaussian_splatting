@@ -28,11 +28,11 @@
 #include "miniply.h"
 
 //
-#include "ply_async_loader.h"
+#include "ply_loader_async.h"
 
 using namespace vk_gaussian_splatting;
 
-bool PlyAsyncLoader::loadScene(std::filesystem::path filename, SplatSet& output)
+bool PlyLoaderAsync::loadScene(std::filesystem::path filename, SplatSet& output)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status != E_READY)
@@ -48,7 +48,7 @@ bool PlyAsyncLoader::loadScene(std::filesystem::path filename, SplatSet& output)
   return true;
 }
 
-bool PlyAsyncLoader::initialize()
+bool PlyLoaderAsync::initialize()
 {
   // original state shall be shutdown
   std::unique_lock<std::mutex> lock(m_mutex);
@@ -108,18 +108,18 @@ bool PlyAsyncLoader::initialize()
   return true;
 }
 
-void PlyAsyncLoader::cancel()
+void PlyLoaderAsync::cancel()
 {
   // does nothing for the time beeing
 }
 
-PlyAsyncLoader::State PlyAsyncLoader::getStatus()
+PlyLoaderAsync::State PlyLoaderAsync::getStatus()
 {
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_status;
 }
 
-bool PlyAsyncLoader::reset()
+bool PlyLoaderAsync::reset()
 {
   std::lock_guard<std::mutex> lock(m_mutex);
   if(m_status == E_LOADED || m_status == E_FAILURE)
@@ -134,7 +134,7 @@ bool PlyAsyncLoader::reset()
   }
 }
 
-bool PlyAsyncLoader::innerLoad(std::filesystem::path filename, SplatSet& output)
+bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 

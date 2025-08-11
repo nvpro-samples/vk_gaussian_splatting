@@ -22,6 +22,8 @@
 #if DATA_STORAGE == STORAGE_TEXTURES
 // textures map describing the 3DGS model
 layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
+layout(set = 0, binding = BINDING_SCALES_TEXTURE) uniform sampler2D scalesTexture;
+layout(set = 0, binding = BINDING_ROTATIONS_TEXTURE) uniform sampler2D rotationsTexture;
 layout(set = 0, binding = BINDING_COLORS_TEXTURE) uniform sampler2D colorsTexture;
 layout(set = 0, binding = BINDING_COVARIANCES_TEXTURE) uniform sampler2D covariancesTexture;
 layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmonicsTexture;
@@ -30,6 +32,14 @@ layout(set = 0, binding = BINDING_SH_TEXTURE) uniform sampler2D sphericalHarmoni
 layout(set = 0, binding = BINDING_CENTERS_BUFFER) buffer _centersBuffer
 {
   float centersBuffer[];
+};
+layout(set = 0, binding = BINDING_SCALES_BUFFER) buffer _scalesBuffer
+{
+  float scalesBuffer[];
+};
+layout(set = 0, binding = BINDING_ROTATIONS_BUFFER) buffer _rotationsBuffer
+{
+  float rotationsBuffer[];
 };
 layout(set = 0, binding = BINDING_COLORS_BUFFER) buffer _colorsBuffer
 {
@@ -97,6 +107,47 @@ vec3 fetchCenter(in uint splatIndex)
 #endif
 
 #if DATA_STORAGE == STORAGE_TEXTURES
+// fetch scale value from texture map
+vec3 fetchScale(in uint splatIndex)
+{
+  return vec3(texelFetch(scalesTexture, getDataPos(splatIndex, 1, 0, textureSize(scalesTexture, 0)), 0));
+}
+#else
+// fetch scale value from data buffer
+vec3 fetchScale(in uint splatIndex)
+{
+  return vec3(scalesBuffer[splatIndex * 3 + 0], scalesBuffer[splatIndex * 3 + 1], scalesBuffer[splatIndex * 3 + 2]);
+}
+#endif
+
+#if DATA_STORAGE == STORAGE_TEXTURES
+// fetch rotation value from texture map
+vec4 fetchRotation(in uint splatIndex)
+{
+  return texelFetch(rotationsTexture, getDataPos(splatIndex, 1, 0, textureSize(rotationsTexture, 0)), 0);
+}
+#else
+// fetch rotation value from data buffer
+vec4 fetchRotation(in uint splatIndex)
+{
+  return vec4(rotationsBuffer[splatIndex * 4 + 0], rotationsBuffer[splatIndex * 4 + 1],
+              rotationsBuffer[splatIndex * 4 + 2], rotationsBuffer[splatIndex * 4 + 3]);
+}
+#endif
+
+/*
+// fetch opacity value from texture map
+float fetchOpacity(in uint splatIndex)
+{
+#if DATA_STORAGE == STORAGE_TEXTURES
+  // TODO this is wrong
+  return texelFetch(opacityTexture, getDataPos(splatIndex, 1, 0, textureSize(opacityTexture, 0));
+#else
+  return opacityBuffer[splatIndex];
+#endif
+}*/
+
+#if DATA_STORAGE == STORAGE_TEXTURES
 // fetchColor replaces fetchSH0 since non view dependent color is precomputed on CPU
 vec4 fetchColor(in uint splatIndex)
 {
@@ -116,16 +167,18 @@ vec4 fetchColor(in uint splatIndex)
 void fetchSh(in uint  splatIndex,
              out vec3 shd1[3]
 #if MAX_SH_DEGREE >= 2
-             , out vec3 shd2[5]
+             ,
+             out vec3 shd2[5]
 #endif
 #if MAX_SH_DEGREE >= 3
-             , out vec3 shd3[7]
+             ,
+             out vec3 shd3[7]
 #endif
 )
 {
   const float SphericalHarmonics8BitCompressionRange = 2.0;
   const vec3  vec8BitSHShift                         = vec3(SphericalHarmonics8BitCompressionRange / 2.0);
-  
+
   const uint stride = 12;  // 12 for degree 3, 6 for degree 2
   // fetching degree 1
   const vec4 sampledSH0123 =
@@ -196,7 +249,7 @@ void fetchSh(in uint  splatIndex,
 
   const vec3 sh9  = sampledSH24252627.rgb;
   const vec3 sh10 = vec3(sampledSH24252627.a, sampledSH28293031.rg);
-  const vec3 sh11 = vec3(sampledSH28293031.ba, sampledSH32333435.r );
+  const vec3 sh11 = vec3(sampledSH28293031.ba, sampledSH32333435.r);
   const vec3 sh12 = sampledSH32333435.gba;
   const vec3 sh13 = sampledSH36373839.rgb;
   const vec3 sh14 = vec3(sampledSH36373839.a, sampledSH404142.rg);
@@ -220,17 +273,18 @@ void fetchSh(in uint  splatIndex,
   shd3[6] = sh15 * SphericalHarmonics8BitCompressionRange - vec8BitSHShift;
 #endif
 #endif
-
 }
 #else
 // fetch from data buffers
-void fetchSh(
-  in uint splatIndex ,out vec3 shd1[3] 
+void fetchSh(in uint  splatIndex,
+             out vec3 shd1[3]
 #if MAX_SH_DEGREE >= 2
-  ,out vec3 shd2[5]
+             ,
+             out vec3 shd2[5]
 #endif
 #if MAX_SH_DEGREE >= 3
-  ,out vec3 shd3[7]
+             ,
+             out vec3 shd3[7]
 #endif
 )
 {
@@ -392,3 +446,69 @@ mat3 fetchCovariance(in uint splatIndex)
               cov3D_M22_M23_M33.y, cov3D_M11_M12_M13.z, cov3D_M22_M23_M33.y, cov3D_M22_M23_M33.z);
 }
 #endif
+
+vec3 fetchViewDependentRadiance(in uint splatIndex, in vec3 worldViewDir)
+{
+  // contribution is null if MAX_SH_DEGREE < 1
+  vec3 rgb = vec3(0.0, 0.0, 0.0);
+
+#if MAX_SH_DEGREE >= 1
+  // SH coefficients for degree 1 (1,2,3)
+  vec3 shd1[3];
+#if MAX_SH_DEGREE >= 2
+  // SH coefficients for degree 2 (4 5 6 7 8)
+  vec3 shd2[5];
+#endif
+#if MAX_SH_DEGREE >= 3
+  // SH coefficients for degree 3 (9,10,11,12,13,14,15)
+  vec3 shd3[7];
+#endif
+  // fetch the data (only what is needed according to degree)
+  fetchSh(splatIndex, shd1
+#if MAX_SH_DEGREE >= 2
+          ,
+          shd2
+#endif
+#if MAX_SH_DEGREE >= 3
+          ,
+          shd3
+#endif
+  );
+
+  const float x = worldViewDir.x;
+  const float y = worldViewDir.y;
+  const float z = worldViewDir.z;
+
+  // Degree 1 contributions
+  rgb += SH_C1 * (-shd1[0] * y + shd1[1] * z - shd1[2] * x);
+
+#if MAX_SH_DEGREE >= 2
+  const float xx = x * x;
+  const float yy = y * y;
+  const float zz = z * z;
+  const float xy = x * y;
+  const float yz = y * z;
+  const float xz = x * z;
+
+  // Degree 2 contributions
+  rgb += (SH_C2[0] * xy) * shd2[0] + (SH_C2[1] * yz) * shd2[1] + (SH_C2[2] * (2.0 * zz - xx - yy)) * shd2[2]
+         + (SH_C2[3] * xz) * shd2[3] + (SH_C2[4] * (xx - yy)) * shd2[4];
+#endif
+#if MAX_SH_DEGREE >= 3
+
+  const float xyy = x * yy;
+  const float yzz = y * zz;
+  const float zxx = z * xx;
+  const float xyz = x * y * z;
+
+  // Degree 3 contributions
+  rgb += SH_C3[0] * shd3[0] * (3.0 * x * x - y * y) * y + SH_C3[1] * shd3[1] * x * y * z
+         + SH_C3[2] * shd3[2] * (4.0 * z * z - x * x - y * y) * y
+         + SH_C3[3] * shd3[3] * z * (2.0 * z * z - 3.0 * x * x - 3.0 * y * y)
+         + SH_C3[4] * shd3[4] * x * (4.0 * z * z - x * x - y * y) + SH_C3[5] * shd3[5] * (x * x - y * y) * z
+         + SH_C3[6] * shd3[6] * x * (x * x - 3.0 * y * y);
+#endif
+#endif
+
+  return rgb;
+}
