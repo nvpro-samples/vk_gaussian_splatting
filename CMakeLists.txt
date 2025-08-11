@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.6...3.31)
 
-get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+# get_filename_component(PROJECT_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+set(PROJECT_NAME "vk_gaussian_splatting")
 Project(${PROJECT_NAME} LANGUAGES C CXX)
 
 # Add the cmake folder to the module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(NvproCore2 REQUIRED)
 
-# set with -DDISABLE_DEFAULT_SCENE=ON on command line or use cmake-gui to set teh parameter
+# set with -DDISABLE_DEFAULT_SCENE=ON on command line or use cmake-gui to set the parameter
 # if default scene is not disabled at build using this option, one can still disable it by 
 # providing "-loadDefaultScene 0" to the sample command line
 option(DISABLE_DEFAULT_SCENE "If set to true the default scene is not downloaded by CMake, and the sample does not try to open it when starting up with no scene as parameter" OFF)
@@ -16,6 +17,31 @@ option(DISABLE_DEFAULT_SCENE "If set to true the default scene is not downloaded
 if (NOT DISABLE_DEFAULT_SCENE)
   add_definitions(-DWITH_DEFAULT_SCENE_FEATURE)
   download_files(FILENAMES flowers_1.zip EXTRACT)
+endif()
+
+# set with -DDISABLE_MESH_ASSETS_DOWNLOAD=ON on command line or use cmake-gui to set the parameter
+option(DISABLE_MESH_ASSETS_DOWNLOAD "If set to true the test mesh assets are not downloaded by CMake" OFF)
+
+if (NOT DISABLE_MESH_ASSETS_DOWNLOAD)
+  download_files(
+    FILENAMES 
+     armadillo.obj    
+     xyzrgb_dragon.obj
+     beast.obj        
+     happy.obj        
+     horse.obj        
+     lucy.obj         
+     nefertiti.obj    
+     teapot.obj       
+   URLS 
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/armadillo.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/xyzrgb_dragon.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/beast.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/happy.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/horse.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/lucy.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/nefertiti.obj
+     https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data/teapot.obj)
 endif()
 
 #####################################################################################

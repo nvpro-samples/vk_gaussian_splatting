@@ -29,6 +29,11 @@ layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
   FrameInfo frameInfo;
 };
 
+layout(push_constant) uniform _PushConstantRaster
+{
+  PushConstant pcRaster;
+};
+
 layout(local_size_x = DISTANCE_COMPUTE_WORKGROUP_SIZE) in;
 
 layout(set = 0, binding = BINDING_DISTANCES_BUFFER, scalar) writeonly buffer _distances
@@ -61,7 +66,8 @@ void main()
     return;
 
   vec4 pos          = vec4(fetchCenter(id), 1.0);
-  pos               = frameInfo.projectionMatrix * frameInfo.viewMatrix * pos;
+  // TODO compute the mvpMatrix on the CPU
+  pos               = frameInfo.projectionMatrix * frameInfo.viewMatrix * pcRaster.modelMatrix * pos;
   pos               = pos / pos.w;
   const float depth = pos.z;
 
