@@ -6,7 +6,7 @@
 
 We envision this project as a **testbed** to explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]** and related evolutions. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the **Vulkan API**.
 
-This new version of the sample introduces two new pipelines, a **ray tracing** and a **hybrid** one in addition to the original **rasterization** one. Since the documentation is getting more elaborated, we reorganized and splitted the documentation as described hereafter. *For a good general understanding we strongly recommend to read those pages in order*.
+This new version of the sample introduces two new pipelines, a **ray tracing** and a **hybrid** one in addition to the original **rasterization** one. Since the documentation is getting more elaborated, we reorganized and split the documentation as described hereafter. *For a good general understanding we strongly recommend to read those pages in order*.
 
 1. The present **readme.md**, will get you **up and running** with the software, point out where to **get sample scenes** and how to **open your first scene**. It also centralizes the bibliographic references for all the sub pages.
 2. The [Vulkan Gaussian Splatting Overview](./doc/overview_of_vk_gaussian_splatting.md) page will drive you through the different elements of the user interface and the functionalities of the software. *Some important points are introduced in this page*.
@@ -114,7 +114,7 @@ The system also provides a means to run automatic benchmarks, which are detailed
 
 [[Morgenstern2024](https://fraunhoferhhi.github.io/Self-Organizing-Gaussians/)] **Compact 3D Scene Representation via Self-Organizing Gaussian Grids**. Wieland Morgenstern, Florian Barthel, Anna Hilsmann, Peter Eisert. ECCV 2024.
 
-[[Wu2024](https://research.nvidia.com/labs/toronto-ai/3DGUT/)] Wu, Q., Esturo, J.M., Mirzaei, A., Moënne-Loccoz, N., & Gojcic, Z. (2024). **3DGUT: Enabling Distorted Cameras and Secondary Rays in Gaussian Splatting**. ArXiv, abs/2412.12507. CVPR 2025.
+[[Wu2024](https://research.nvidia.com/labs/toronto-ai/3DGUT/)] **3DGUT: Enabling Distorted Cameras and Secondary Rays in Gaussian Splatting**. Wu, Q., Esturo, J.M., Mirzaei, A., Moënne-Loccoz, N., & Gojcic, Z. (2024). ArXiv, abs/2412.12507. CVPR 2025.
 
 [[3DGRUT](https://github.com/nv-tlabs/3dgrut)] This repository provides the official implementations of 3D Gaussian Ray Tracing (3DGRT)[Moënne-Loccoz2024] and 3D Gaussian Unscented Transform (3DGUT)[Wu2024]. 
 

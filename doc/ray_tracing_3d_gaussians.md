@@ -40,7 +40,7 @@ To compute the ordered set of particle intersections for a given ray, one could 
 
 To overcome this issue, [Moënne-Loccoz2024] proposes using the **any hit shader** instead of the **closest hit shader** to reduce the number of rays traced by the ray generation shader.
 
-The Ray Payload (also known as Per Ray Data - PRD) is used to exchange data between the **hit shader** and the **ray generation shader** (using `rayPayloadEXT`/`rayPayloadInEXT`). Instead of storing the result of one intersection as one would do when using a closest hit, a sorted array of $K$ intersections is stored in the payload. For each intersection, the any hit shader tests if the new particle intersection (which may come in any order) should be inserted in the array using simple bubble sort insertion. The farther intersection of the array might be discarded in the process. After tracing one ray, the payload array contains a subset of $k \leq K$ nearest particles sorted front to back. The **ray generation shader** computes the particle response using a 3D Gaussian and the particle properties, and performs the compositing of the computed radiances for each intersected particle. It then reruns the tracing of a new ray starting from the last intersected particle of the previous run if needed (if $minTransmittance$ is not reached and $k = K$). And so on.
+The Ray Payload (also known as Per Ray Data - PRD) is used to exchange data between the **hit shader** and the **ray generation shader** (using `rayPayloadEXT`/`rayPayloadInEXT`). Instead of storing the result of one intersection as one would do when using a closest hit, a sorted array of $K$ intersections is stored in the payload. For each intersection, the any hit shader tests if the new particle intersection (which may come in any order) should be inserted in the array using simple insertion sort. The farther intersection of the array might be discarded in the process. After tracing one ray, the payload array contains a subset of $k \leq K$ nearest particles sorted front to back. The **ray generation shader** computes the particle response using a 3D Gaussian and the particle properties, and performs the compositing of the computed radiances for each intersected particle. It then reruns the tracing of a new ray starting from the last intersected particle of the previous run if needed (if $minTransmittance$ is not reached and $k = K$). And so on.
 
 ![Raytracing 3D gaussians using the any hit shader](./pipeline_ray_tracing_example.png)
 
@@ -62,6 +62,8 @@ The example of the above diagram is developed hereafter:
 
 The parameters to control the generation of the ray tracing acceleration structures are found in the Properties panel of "**Assets > Radiance Fields > SplatSet**".
 
+![Acceleration structures variants](./raytracing_acceleration_structures.png)
+
 The particle primitives can be described using the two approaches mentioned above:
 * **Use AABBs**: *Enabled* activates the use of a procedural intersection shader.
 * **Use AABBs**: *Disabled* activates the use of an Icosahedron 3D Mesh and built-in TTU intersection.
@@ -70,11 +72,11 @@ The ray acceleration structures (AS) can be built with different approaches:
 * **Use TLAS Instances**: *Enabled* will generate ASs where the geometry of a single unit particle is stored in a Bottom Level Acceleration Structure (BLAS) and where the Top Level Acceleration Structure (TLAS) contains as many instances of the BLAS as there are particles, each instance having an associated transformation matrix. 
 * **Use TLAS Instances**: *Disabled* will generate ASs where the geometry of all the particles transformed in global coordinates is stored in a Bottom Level Acceleration Structure (BLAS) and where the Top Level Acceleration Structure (TLAS) contains a single instance of this BLAS.
 
-Finally, the **BLAS compaction** option allows compressing the BLAS, which leads to more compact BLAS in memory and also to better ray tracing performance.
-
-> **Attention**: *Activating* **Use AABBs** *together with deactivating* **Use TLAS Instances** leads to BLAS containing massive AABB overlap, due to the fact that AABBs of particles transformed to their world coordinates can become very large. This configuration leads to extremely slow ray tracing performance, possibly leading to a Device Lost error. This is not the case when using instances since there is only one AABB that is then transformed by the instance matrix into a non-axis-aligned box.
-
 ![AABB mode with or without TLAS instances](./aabbs_instances_on_off.png)
+
+*Activating* **Use AABBs** *together with deactivating* **Use TLAS Instances** leads to BLAS containing massive AABB overlap, due to the fact that AABBs of particles transformed to their world coordinates can become very large. This configuration leads to extremely slow ray tracing performance, possibly leading to a Device Lost error. This is not the case when using instances since there is only one AABB that is then transformed by the instance matrix into a non-axis-aligned box. **This combination is thus disabled in the GUI**.
+
+Finally, the **BLAS compaction** option allows compressing the BLAS, which leads to more compact BLAS in memory and also to better ray tracing performance.
 
 ## Compositing with 3D Meshes and Secondary Rays
 
