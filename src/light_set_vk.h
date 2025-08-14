@@ -57,7 +57,7 @@ public:
   // must be invoked after adding/removing light or reseting all lights
   void updateBuffer();
 
-  // return teh number of lights in the set
+  // return the number of lights in the set
   uint64_t size() { return numLights; }
 
   // add a new light to the light set and returns its index

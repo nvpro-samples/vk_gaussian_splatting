@@ -88,7 +88,7 @@ Those options have strong impact on performance and memory consumption. They are
 
 The **Mesh Models** entry in the asset manager allows importing 3D meshes from .obj files along with their material definitions defined in accompanying .mtl files. Note that texture maps are not yet supported. To import a mesh, use the **Import** button and select an .obj file.
 
-Some interesting .obj fiels are automatically downloaded by the CMake and can be found in the **_downloaded_resources** folder of the repository.
+Some interesting .obj files are automatically downloaded by the CMake and can be found in the **_downloaded_resources** folder of the repository.
 
 Once imported, a mesh can be selected in the asset tree which shows its transform and materials properties in the **Properties** panel. 
 
