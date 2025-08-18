@@ -60,7 +60,7 @@ bool SplatSorterAsync::initialize(nvutils::ProfilerTimeline* profiler)
         std::unique_lock<std::mutex> lock(m_mutex);
         m_status = E_SORTING;
         lock.unlock();
-       
+
         if(innerSort())
         {
           std::lock_guard<std::mutex> lock(m_mutex);
@@ -113,7 +113,9 @@ bool SplatSorterAsync::innerSort()
   // compute distances in parallel
   START_PAR_LOOP(distances.size(), splatIdx)
   {
-    const auto pos = &((*m_positions)[splatIdx * 3]);
+    const glm::vec4 pos =
+        m_transform
+        * glm::vec4((*m_positions)[splatIdx * 3], (*m_positions)[splatIdx * 3 + 1], (*m_positions)[splatIdx * 3 + 2], 1.0f);
     // distance to plane
     const float dist    = std::abs(plane[0] * pos[0] + plane[1] * pos[1] + plane[2] * pos[2] + plane[3]) * divider;
     distances[splatIdx] = dist;
