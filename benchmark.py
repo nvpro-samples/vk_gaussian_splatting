@@ -56,7 +56,7 @@ def parse_benchmark(log_text, scene_name):
 
         memory_data = {}
         for match in memory_pattern.finditer(benchmark_content):
-            memory_type = match.group(1).strip()  # "Scene" or "Rendering"
+            memory_type = match.group(1).strip()  # "Scene", "Rasterization" or "Raytracing"
             host_used = int(match.group(2))
             device_used = int(match.group(3))
             device_allocated = int(match.group(4))
@@ -510,7 +510,7 @@ if __name__ == "__main__":
             title="Memory Consumption Comparison - SH storage formats in float 32, float 16 and uint 8",
             pipelines = ["Mesh pipeline fp32", "Mesh pipeline fp16", "Mesh pipeline uint8"],
             pipeline_names= ["fp32", "fp16", "uint8"],
-            stages=["Scene", "Rendering"], 
+            stages=["Scene", "Rasterization"], 
             filename="06_histogram_format_memory.png")
 
     if args.dataset == "3DGRT":
@@ -524,5 +524,15 @@ if __name__ == "__main__":
             stages=["Raytracing"], 
             legend=["A - TLAS inst. off, BLAS comp. on", "B - TLAS inst. off, BLAS comp. off", "C - TLAS inst. on, BLAS comp. on", "D - TLAS inst. on, Use AABB"],
             filename="07_histogram_as_format_timers_3dgrt.png")
+        
+        plot_cumulative_histogram_memory(
+            all_results, 
+            xlabel="Scene (A - TLAS inst. off, BLAS comp. on; B - TLAS inst. off, BLAS comp. off; C - TLAS inst. on, BLAS comp. on; D - TLAS inst. on, Use AABB)",
+            ylabel="Cumulative VRAM usage (Mega Bytes)",
+            title="Raytracing (3DGRT) Memory Consumption Comparison Using Acceleration Structures Variants",
+            pipelines = ["3DGRT - sh uint8 - inst. off - comp. on", "3DGRT - sh uint8 - inst. off - comp. off", "3DGRT - sh uint8 - inst. on - comp. on", "3DGRT - sh uint8 - inst. on - comp. on - useAABB"],
+            pipeline_names= ["A", "B", "C", "D"],
+            stages=["Scene", "Raytracing"], 
+            filename="08_histogram_as_format_memory_3dgrt.png")
 
     print("CSV and histogram generation complete.")

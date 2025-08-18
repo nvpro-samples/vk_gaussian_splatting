@@ -107,6 +107,10 @@ The following charts presents the results of such a benchmark, when run on an `N
 
 ![Raytracing (3DGRT) Pipeline Performance Comparison Using Acceleration Structures Variants](histogram_as_format_timers_3dgrt.png) 
 
+Note that in the following histogram, the results are essentially identical for each model because they all feature 1 million splats in the provided 3DGRT dataset.
+
+![Raytracing (3DGRT) Memory Consumption Comparison Using Acceleration Structures Variants](histogram_as_format_memory_3dgrt.png) 
+
 ## Acknowledgment
 
 Thanks to Qi Wu (@wilsonCernWq) for generating the 3DGRT dataset for us. Thanks to Nicolas Moënne-Loccoz (@moennen) for the great discussions around 3DGRT.
