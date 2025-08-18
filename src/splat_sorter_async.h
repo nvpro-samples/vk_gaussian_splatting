@@ -27,6 +27,7 @@
 #include <mutex>
 
 #include <glm/vec3.hpp>
+#include <glm/mat4x4.hpp>
 
 #include <nvvk/profiler_vk.hpp>
 
@@ -71,7 +72,7 @@ public:
   // positions must not be accessed while sorting
   // if lazy is set, a new sort will be started only if viewpoint changed,
   // otherwise a new sort is systematically started if sorter is ready
-  inline bool sortAsync(const glm::vec3& camDir, const glm::vec3& camCop, std::vector<float>& positions, bool lazy = true)
+  inline bool sortAsync(const glm::vec3& camDir, const glm::vec3& camCop, std::vector<float>& positions, glm::mat4& transform, bool lazy = true)
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     if(m_status != E_READY)
@@ -86,6 +87,7 @@ public:
     m_sortCop        = camCop;
     m_startRequested = true;
     m_positions      = &positions;
+    m_transform      = transform;
     // wakeup the thread
     m_sortCV.notify_all();
 
@@ -127,6 +129,7 @@ private:
   // input parameters
   glm::vec3           m_sortDir   = {0.0f, 0.0f, 0.0f};  // camera direction
   glm::vec3           m_sortCop   = {0.0f, 0.0f, 0.0f};  // camera position
+  glm::mat4           m_transform = glm::mat4(1.0);      // model transform, defaults to identity
   std::vector<float>* m_positions = nullptr;             // points positions provided by caller
 
   std::vector<float> distances;  // points distances, internal buffer
