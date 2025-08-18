@@ -340,6 +340,8 @@ protected:
   // Rendering (sorting and splatting) related memory usage statistics
   struct RenderMemoryStats
   {
+    // Rasterization
+
     uint32_t usedUboFrameInfo = 0;  // used = alloc all the time
     uint32_t usedIndirect     = 0;  // used = alloc all the time, for the active pipeline
 
@@ -351,7 +353,21 @@ protected:
     uint32_t allocDistances    = 0;
     uint32_t usedDistances     = 0;
     uint32_t allocVdrxInternal = 0;  // used is unknown
+    
+    uint32_t rasterHostTotal        = 0;
+    uint32_t rasterDeviceUsedTotal  = 0;
+    uint32_t rasterDeviceAllocTotal = 0;
 
+    // RTX
+
+    uint32_t rtxUsedTlas = 0;
+    uint32_t rtxUsedBlas = 0;
+
+    uint32_t rtxHostTotal        = 0;
+    uint32_t rtxDeviceUsedTotal = 0;
+    uint32_t rtxDeviceAllocTotal = 0;
+
+    // Totals
     uint32_t hostTotal        = 0;
     uint32_t deviceUsedTotal  = 0;
     uint32_t deviceAllocTotal = 0;

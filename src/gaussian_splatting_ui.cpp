@@ -60,8 +60,8 @@ GaussianSplattingUI::GaussianSplattingUI(nvutils::ProfilerManager*   profilerMan
                          {".png"}, &m_screenshotFilename);
 };
 
-GaussianSplattingUI::~GaussianSplattingUI() {
-  // Nothiung to do here
+GaussianSplattingUI::~GaussianSplattingUI(){
+    // Nothiung to do here
 };
 
 void GaussianSplattingUI::onAttach(nvapp::Application* app)
@@ -926,12 +926,14 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   if(PE::Checkbox("V-Sync", &vsync))
     m_app->setVsync(vsync);
 
-  if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
+  if(PE::entry(
+         "Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
   {
     m_requestUpdateShaders = true;
   }
 
-  if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+  if(PE::entry(
+         "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
   {
     resetRenderSettings();
     m_requestUpdateShaders   = true;
@@ -939,7 +941,8 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   }
 
   ImGui::BeginDisabled(prmSelectedPipeline != PIPELINE_RTX);
-  if(PE::entry("Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
+  if(PE::entry(
+         "Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
   {
     m_requestUpdateShaders = true;
   }
@@ -1145,7 +1148,8 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format"))
     {
-      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetDataParameters();
         m_requestUpdateSplatData = true;
@@ -1171,7 +1175,8 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format RTX"))
     {
-      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRtxDataParameters();
         m_requestUpdateSplatAs = true;
@@ -1240,8 +1245,8 @@ void GaussianSplattingUI::guiDrawMeshMaterialProperties()
     auto& material = materials[i];
     ImGui::PushID(i);
     PE::Text("Name", m_meshSetVk.meshes[objIndex].matNames[i]);
-    needMaterialUpdate |=
-        PE::entry("Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
+    needMaterialUpdate |= PE::entry(
+        "Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
     needMaterialUpdate |= PE::ColorEdit3("ambient", glm::value_ptr(material.ambient));
     needMaterialUpdate |= PE::ColorEdit3("diffuse", glm::value_ptr(material.diffuse));
     needMaterialUpdate |= PE::ColorEdit3("specular", glm::value_ptr(material.specular));
@@ -1278,7 +1283,8 @@ void GaussianSplattingUI::guiDrawCameraProperties()
     changed |= ImGui::IsItemDeactivatedAfterEdit();
     PE::InputFloat3("Up", &camera.up.x, "%.5f", 0, "Up vector interest");
     changed |= ImGui::IsItemDeactivatedAfterEdit();
-    if(PE::entry("Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
+    if(PE::entry(
+           "Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
     {
       camera.up = y_is_up ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
       changed   = true;
@@ -1467,135 +1473,177 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
 
 void GaussianSplattingUI::guiDrawMemoryStatisticsWindow()
 {
+  ImGuiTableFlags commonFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_SpanAllColumns;
+  ImGuiTableFlags itemFlags   = commonFlags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+  ImGuiTableFlags totalFlags  = commonFlags | ImGuiTreeNodeFlags_DefaultOpen;
+
   if(ImGui::Begin("Memory Statistics"))
   {
-    if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
+    if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_RowBg))
     {
-      ImGui::TableSetupColumn("Model", ImGuiTableColumnFlags_WidthStretch);
+      // to draw horizontal line for specific rows.
+      ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+      ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("Host used", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("Device used", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("Device allocated", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableHeadersRow();
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
-      ImGui::Text("Centers");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcCenters).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevCenters).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devCenters).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("Covariances");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcCov).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevCov).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devCov).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("SH degree 0");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcSh0).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevSh0).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devSh0).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("SH degree 1,2,3");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcShOther).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevShOther).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devShOther).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("SH Total");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcShAll).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevShAll).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devShAll).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("Sub-total");
+      bool open = ImGui::TreeNodeEx("Model data", totalFlags);
       ImGui::TableNextColumn();
       ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcAll).c_str());
       ImGui::TableNextColumn();
       ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevAll).c_str());
       ImGui::TableNextColumn();
       ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devAll).c_str());
-      ImGui::EndTable();
-    }
-    ImGui::Separator();
-    if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_None))
-    {
-      ImGui::TableSetupColumn("Rendering", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Host used", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Device used", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Device allocated", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableHeadersRow();
+      if(open)
+      {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Separator();
+        ImGui::TreeNodeEx("Centers", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcCenters).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevCenters).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devCenters).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("Covariances", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcCov).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevCov).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devCov).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("SH degree 0", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcSh0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevSh0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devSh0).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("SH degree 1,2,3", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcShOther).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevShOther).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devShOther).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("SH total", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.srcShAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.odevShAll).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_splatSetVk.memoryStats.devShAll).c_str());
+        // end if(open)
+        ImGui::TreePop();
+      }
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
-      ImGui::Text("UBO frame info");
+      open = ImGui::TreeNodeEx("Rasterization", totalFlags);
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rasterHostTotal).c_str());
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rasterDeviceUsedTotal).c_str());
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rasterDeviceAllocTotal).c_str());
+      if(open)
+      {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Separator();
+        ImGui::TreeNodeEx("UBO frame info", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedUboFrameInfo).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("Indirect params", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("Distances", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.hostAllocDistances).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedDistances).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.allocDistances).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("Indices", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.hostAllocIndices).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndices).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.allocIndices).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("GPU sort", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
+                              .c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
+                              .c_str());
+        // end if(open)
+        ImGui::TreePop();
+      }
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
-      ImGui::Text("Indirect params");
+      open = ImGui::TreeNodeEx("Ray tracing", totalFlags);
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(0).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxHostTotal).c_str());
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxDeviceUsedTotal).c_str());
       ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndirect).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("Distances");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.hostAllocDistances).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedDistances).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.allocDistances).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("Indices");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.hostAllocIndices).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.usedIndices).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.allocIndices).c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("GPU sort");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(0).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
-                            .c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal)
-                            .c_str());
-      ImGui::TableNextRow();
-      ImGui::TableNextColumn();
-      ImGui::Text("Sub-total");
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.hostTotal).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.deviceUsedTotal).c_str());
-      ImGui::TableNextColumn();
-      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.deviceAllocTotal).c_str());
+      ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxDeviceAllocTotal).c_str());
+      if(open)
+      {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Separator();
+        ImGui::TreeNodeEx("TLAS", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxUsedTlas).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxUsedTlas).c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TreeNodeEx("BLAS", itemFlags);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(0).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxUsedBlas).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", formatMemorySize(m_renderMemoryStats.rtxUsedBlas).c_str());
+        // end if(open)
+        ImGui::TreePop();
+      }
       ImGui::EndTable();
     }
     ImGui::Separator();
