@@ -1299,8 +1299,11 @@ void GaussianSplatting::benchmarkAdvance()
   std::cout << " Memory Scene; Host used \t" << m_splatSetVk.memoryStats.srcAll << "; Device Used \t"
             << m_splatSetVk.memoryStats.odevAll << "; Device Allocated \t" << m_splatSetVk.memoryStats.devAll
             << "; (bytes)" << std::endl;
-  std::cout << " Memory Rendering; Host used \t" << m_renderMemoryStats.hostTotal << "; Device Used \t"
-            << m_renderMemoryStats.deviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.deviceAllocTotal
+  std::cout << " Memory Rasterization; Host used \t" << m_renderMemoryStats.rasterHostTotal << "; Device Used \t"
+            << m_renderMemoryStats.rasterDeviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.rasterDeviceAllocTotal
+            << "; (bytes)" << std::endl;
+  std::cout << " Memory Raytracing; Host used \t" << m_renderMemoryStats.rtxHostTotal << "; Device Used \t"
+            << m_renderMemoryStats.rtxDeviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.rtxDeviceAllocTotal
             << "; (bytes)" << std::endl;
   std::cout << "}" << std::endl;
 
