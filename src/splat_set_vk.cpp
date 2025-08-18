@@ -1010,6 +1010,14 @@ void SplatSetVk::rtxInitAccelerationStructures(SplatSet& splatSet)
     // then build the static TLAS
     rtAccelerationStructures.tlasSubmitBuildAndWait(tlasInstances, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
   }
+
+  // UIpdate memory statistics
+  tlasSizeBytes = rtAccelerationStructures.tlasBuildData.sizeInfo.accelerationStructureSize;
+  blasSizeBytes = 0;
+  for(auto& bd : rtAccelerationStructures.blasBuildData)
+  {
+    blasSizeBytes += bd.sizeInfo.accelerationStructureSize;
+  }
 }
 
 }  // namespace vk_gaussian_splatting

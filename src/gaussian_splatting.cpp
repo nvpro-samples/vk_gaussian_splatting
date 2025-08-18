@@ -175,6 +175,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     readBackIndirectParametersIfNeeded(cmd);
 
+    updateRenderingMemoryStatistics(cmd, splatCount);
+
     // Attention: early return
     return;
   }
@@ -667,17 +669,30 @@ void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, con
     }
   }
   m_renderMemoryStats.usedUboFrameInfo = sizeof(shaderio::FrameInfo);
-
-  m_renderMemoryStats.hostTotal =
+  //
+  m_renderMemoryStats.rasterHostTotal =
       m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances + m_renderMemoryStats.usedUboFrameInfo;
 
   uint32_t vrdxSize = prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
 
-  m_renderMemoryStats.deviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
+  m_renderMemoryStats.rasterDeviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
                                         + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
 
-  m_renderMemoryStats.deviceAllocTotal = m_renderMemoryStats.allocIndices + m_renderMemoryStats.allocDistances + vrdxSize
+  m_renderMemoryStats.rasterDeviceAllocTotal = m_renderMemoryStats.allocIndices + m_renderMemoryStats.allocDistances + vrdxSize
                                          + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
+
+  // RTX Acceleration Structures
+  m_renderMemoryStats.rtxUsedTlas = m_splatSetVk.tlasSizeBytes;
+  m_renderMemoryStats.rtxUsedBlas = m_splatSetVk.blasSizeBytes;
+
+  m_renderMemoryStats.rtxHostTotal = 0;
+  m_renderMemoryStats.rtxDeviceUsedTotal  = m_renderMemoryStats.rtxUsedTlas + m_renderMemoryStats.rtxUsedBlas;
+  m_renderMemoryStats.rtxDeviceAllocTotal = m_renderMemoryStats.rtxUsedTlas + m_renderMemoryStats.rtxUsedBlas;
+
+  // Total
+  m_renderMemoryStats.hostTotal       = m_renderMemoryStats.rasterHostTotal + m_renderMemoryStats.rtxHostTotal;
+  m_renderMemoryStats.deviceUsedTotal = m_renderMemoryStats.rasterDeviceUsedTotal + m_renderMemoryStats.rtxDeviceUsedTotal;
+  m_renderMemoryStats.deviceAllocTotal = m_renderMemoryStats.rasterDeviceAllocTotal + m_renderMemoryStats.rtxDeviceAllocTotal;
 }
 
 void GaussianSplatting::deinitAll()

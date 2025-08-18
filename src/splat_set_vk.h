@@ -203,6 +203,10 @@ public:
     uint32_t odevShOther = 0;  // GRAM bytes used for SH degree 1 of source model
   } memoryStats;
 
+  // RTX AS memory stats (it is more rendering memory than model memory, so placed here
+  uint32_t tlasSizeBytes;  // Size of the TLAS in VRAM in bytes
+  uint32_t blasSizeBytes;  // Size of the BLAS in VRAM in bytes
+
 private:
   // create the buffers on the device and upload
   // the splat set data from host to device

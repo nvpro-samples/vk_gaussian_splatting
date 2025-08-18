@@ -162,7 +162,7 @@ int main(int argc, char** argv)
     ImGui::DockBuilderDockWindow("Properties", propertiesID);
 
     // bottom panel container
-    ImGuiID memoryID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Down, 0.40F, nullptr, &viewportID);
+    ImGuiID memoryID = ImGui::DockBuilderSplitNode(viewportID, ImGuiDir_Down, 0.45F, nullptr, &viewportID);
     ImGui::DockBuilderDockWindow("Memory Statistics", memoryID);
     ImGuiID profilerID = ImGui::DockBuilderSplitNode(memoryID, ImGuiDir_Right, 0.33F, nullptr, &memoryID);
     ImGui::DockBuilderDockWindow("Profiler", profilerID);
