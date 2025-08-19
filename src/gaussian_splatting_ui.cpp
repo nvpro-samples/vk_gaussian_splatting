@@ -60,8 +60,8 @@ GaussianSplattingUI::GaussianSplattingUI(nvutils::ProfilerManager*   profilerMan
                          {".png"}, &m_screenshotFilename);
 };
 
-GaussianSplattingUI::~GaussianSplattingUI(){
-    // Nothiung to do here
+GaussianSplattingUI::~GaussianSplattingUI() {
+  // Nothiung to do here
 };
 
 void GaussianSplattingUI::onAttach(nvapp::Application* app)
@@ -926,14 +926,12 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   if(PE::Checkbox("V-Sync", &vsync))
     m_app->setVsync(vsync);
 
-  if(PE::entry(
-         "Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
+  if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
   {
     m_requestUpdateShaders = true;
   }
 
-  if(PE::entry(
-         "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+  if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
   {
     resetRenderSettings();
     m_requestUpdateShaders   = true;
@@ -941,8 +939,7 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   }
 
   ImGui::BeginDisabled(prmSelectedPipeline != PIPELINE_RTX);
-  if(PE::entry(
-         "Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
+  if(PE::entry("Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
   {
     m_requestUpdateShaders = true;
   }
@@ -1060,6 +1057,10 @@ void GaussianSplattingUI::guiDrawRendererProperties()
           m_requestUpdateShaders = true;
         }
 
+        if(PE::Checkbox("Mip splatting antialiasing", &prmRaster.msAntialiasing,
+                        "Indicates if Gaussians were trained (and should be rendered) with mip-splatting antialiasing method."))
+          m_requestUpdateShaders = true;
+
         if(PE::Checkbox("Fragment shader barycentric", &prmRaster.fragmentBarycentric,
                         "Enables fragment shader barycentric to reduce vertex and mesh shaders outputs."))
           m_requestUpdateShaders = true;
@@ -1148,8 +1149,7 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format"))
     {
-      if(PE::entry(
-             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetDataParameters();
         m_requestUpdateSplatData = true;
@@ -1175,8 +1175,7 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format RTX"))
     {
-      if(PE::entry(
-             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRtxDataParameters();
         m_requestUpdateSplatAs = true;
@@ -1245,8 +1244,8 @@ void GaussianSplattingUI::guiDrawMeshMaterialProperties()
     auto& material = materials[i];
     ImGui::PushID(i);
     PE::Text("Name", m_meshSetVk.meshes[objIndex].matNames[i]);
-    needMaterialUpdate |= PE::entry(
-        "Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
+    needMaterialUpdate |=
+        PE::entry("Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
     needMaterialUpdate |= PE::ColorEdit3("ambient", glm::value_ptr(material.ambient));
     needMaterialUpdate |= PE::ColorEdit3("diffuse", glm::value_ptr(material.diffuse));
     needMaterialUpdate |= PE::ColorEdit3("specular", glm::value_ptr(material.specular));
@@ -1283,8 +1282,7 @@ void GaussianSplattingUI::guiDrawCameraProperties()
     changed |= ImGui::IsItemDeactivatedAfterEdit();
     PE::InputFloat3("Up", &camera.up.x, "%.5f", 0, "Up vector interest");
     changed |= ImGui::IsItemDeactivatedAfterEdit();
-    if(PE::entry(
-           "Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
+    if(PE::entry("Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
     {
       camera.up = y_is_up ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
       changed   = true;

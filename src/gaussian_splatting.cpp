@@ -404,7 +404,8 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
 
       // let's wakeup the sorting thread to run a new sort if needed
       // will start work only if camera direction or position has changed
-      m_cpuSorter.sortAsync(glm::normalize(m_center - m_eye), m_eye, m_splatSet.positions, m_splatSetVk.transform, prmRaster.cpuLazySort);
+      m_cpuSorter.sortAsync(glm::normalize(m_center - m_eye), m_eye, m_splatSet.positions, m_splatSetVk.transform,
+                            prmRaster.cpuLazySort);
     }
   }
   else
@@ -676,21 +677,21 @@ void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, con
   uint32_t vrdxSize = prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
 
   m_renderMemoryStats.rasterDeviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
-                                        + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
+                                              + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
 
   m_renderMemoryStats.rasterDeviceAllocTotal = m_renderMemoryStats.allocIndices + m_renderMemoryStats.allocDistances + vrdxSize
-                                         + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
+                                               + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
 
   // RTX Acceleration Structures
   m_renderMemoryStats.rtxUsedTlas = m_splatSetVk.tlasSizeBytes;
   m_renderMemoryStats.rtxUsedBlas = m_splatSetVk.blasSizeBytes;
 
-  m_renderMemoryStats.rtxHostTotal = 0;
+  m_renderMemoryStats.rtxHostTotal        = 0;
   m_renderMemoryStats.rtxDeviceUsedTotal  = m_renderMemoryStats.rtxUsedTlas + m_renderMemoryStats.rtxUsedBlas;
   m_renderMemoryStats.rtxDeviceAllocTotal = m_renderMemoryStats.rtxUsedTlas + m_renderMemoryStats.rtxUsedBlas;
 
   // Total
-  m_renderMemoryStats.hostTotal       = m_renderMemoryStats.rasterHostTotal + m_renderMemoryStats.rtxHostTotal;
+  m_renderMemoryStats.hostTotal = m_renderMemoryStats.rasterHostTotal + m_renderMemoryStats.rtxHostTotal;
   m_renderMemoryStats.deviceUsedTotal = m_renderMemoryStats.rasterDeviceUsedTotal + m_renderMemoryStats.rtxDeviceUsedTotal;
   m_renderMemoryStats.deviceAllocTotal = m_renderMemoryStats.rasterDeviceAllocTotal + m_renderMemoryStats.rtxDeviceAllocTotal;
 }
@@ -785,6 +786,7 @@ shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::st
   m_glslCompiler.options().AddMacroDefinition("DISTANCE_COMPUTE_WORKGROUP_SIZE",
                                               std::to_string((int)prmRaster.distShaderWorkgroupSize));
   m_glslCompiler.options().AddMacroDefinition("RASTER_MESH_WORKGROUP_SIZE", std::to_string((int)prmRaster.meshShaderWorkgroupSize));
+  m_glslCompiler.options().AddMacroDefinition("MS_ANTIALIASING", std::to_string((int)prmRaster.msAntialiasing));
 
   // RTX
   m_glslCompiler.options().AddMacroDefinition("KERNEL_DEGREE", std::to_string(prmRtx.kernelDegree));
@@ -1300,11 +1302,11 @@ void GaussianSplatting::benchmarkAdvance()
             << m_splatSetVk.memoryStats.odevAll << "; Device Allocated \t" << m_splatSetVk.memoryStats.devAll
             << "; (bytes)" << std::endl;
   std::cout << " Memory Rasterization; Host used \t" << m_renderMemoryStats.rasterHostTotal << "; Device Used \t"
-            << m_renderMemoryStats.rasterDeviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.rasterDeviceAllocTotal
-            << "; (bytes)" << std::endl;
+            << m_renderMemoryStats.rasterDeviceUsedTotal << "; Device Allocated \t"
+            << m_renderMemoryStats.rasterDeviceAllocTotal << "; (bytes)" << std::endl;
   std::cout << " Memory Raytracing; Host used \t" << m_renderMemoryStats.rtxHostTotal << "; Device Used \t"
-            << m_renderMemoryStats.rtxDeviceUsedTotal << "; Device Allocated \t" << m_renderMemoryStats.rtxDeviceAllocTotal
-            << "; (bytes)" << std::endl;
+            << m_renderMemoryStats.rtxDeviceUsedTotal << "; Device Allocated \t"
+            << m_renderMemoryStats.rtxDeviceAllocTotal << "; (bytes)" << std::endl;
   std::cout << "}" << std::endl;
 
   m_benchmarkId++;

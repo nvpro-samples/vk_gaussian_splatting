@@ -122,8 +122,11 @@ void main()
 
   splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
 
-  // emit as early as possible for perf reasons
+  // emit as early as possible for perf reasons, only for original 3DGS, 
+  // see later on for MipSplatting
+#if MS_ANTIALIASING == 0
   outFragCol = splatColor;
+#endif
 
   // Fetch and construct the 3D covariance matrix
   const mat3 Vrk = fetchCovariance(splatIndex);
@@ -146,8 +149,22 @@ void main()
 
   // Transform the 3D covariance matrix (Vrk) to compute the 2D covariance matrix
   mat3 cov2Dm = transpose(T) * Vrk * T;
+
+#if MS_ANTIALIASING == 1
+  // This mode is used when model is reconstructed using MipSplatting
+  // https://niujinshuchong.github.io/mip-splatting/
+  float detOrig = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+#endif
+
   cov2Dm[0][0] += 0.3;
   cov2Dm[1][1] += 0.3;
+
+#if MS_ANTIALIASING == 1
+  float detBlur = cov2Dm[0][0] * cov2Dm[1][1] - cov2Dm[0][1] * cov2Dm[0][1];
+  // emit the fragment color with compensation
+  splatColor.a *= sqrt(max(detOrig / detBlur, 0.0));
+  outFragCol = splatColor;
+#endif
 
   // We are interested in the upper-left 2x2 portion of the projected 3D covariance matrix because
   // we only care about the X and Y values. We want the X-diagonal, cov2Dm[0][0],
