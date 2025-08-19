@@ -101,6 +101,9 @@ struct RasterParameters
   int     meshShaderWorkgroupSize = 32;   // best default value set by experimentation on ADA6000
   bool    fragmentBarycentric     = false;
   bool    pointCloudModeEnabled   = false;
+  // Whether gaussians should be rendered with mip-splat
+  // antialiasing https://niujinshuchong.github.io/mip-splatting/
+  bool msAntialiasing = false;
 };
 
 // Parameters that control rasterization

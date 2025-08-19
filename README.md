@@ -106,6 +106,8 @@ The system also provides a means to run automatic benchmarks, which are detailed
 
 [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)] **3D Gaussian Splatting for Real-Time Radiance Field Rendering**. Kerbl, B., Kopanas, G., Leimkuehler, T., & Drettakis, G. (2023). ACM Transactions on Graphics (TOG), 42, 1 - 14.
 
+[[Yu2023](https://niujinshuchong.github.io/mip-splatting/)] **Mip-Splatting: Alias-Free 3D Gaussian Splatting.**. Yu, Z., Chen, A., Huang, B., Sattler, T., & Geiger, A. (2023).  2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 19447-19456.
+
 [[Radl2024](https://r4dl.github.io/StopThePop/)] **StopThePop: Sorted Gaussian Splatting for View-Consistent Real-time Rendering**. Radl, L., Steiner, M., Parger, M., Weinrauch, A., Kerbl, B., & Steinberger, M. (2024). ACM Trans. Graph., 43, 64:1-64:17.
 
 [[Moënne-Loccoz2024](https://gaussiantracer.github.io/)] **3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes**. Moënne-Loccoz, N., Mirzaei, A., Perel, O., Lutio, R.D., Esturo, J.M., State, G., Fidler, S., Sharp, N., & Gojcic, Z. (2024).  ACM Trans. Graph., 43, 232:1-232:19.
