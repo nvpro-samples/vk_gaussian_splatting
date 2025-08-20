@@ -216,7 +216,7 @@ The **same color and opacity** (computed from **Spherical Harmonics (SH) coeffic
 
 ### Fragment Shader  
 
-The fragment shader is implemented in [**raster.frag.glsl**](shaders/raster.frag.glsl).  
+The fragment shader is implemented in [**raster.frag.glsl**](../shaders/raster.frag.glsl).  
 
 It is designed to be extremely **lightweight**, as most computations are already handled in the **vertex shader**. Since **Gaussian Splatting** is inherently **fragment-intensive**, minimizing the workload in this stage is crucial for performance.  
 
@@ -228,7 +228,7 @@ The fragment shader operates as follows:
 
 ### Mesh shader
 
-The mesh shader is implemented in [**raster.mesh.glsl**](shaders/raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.
+The mesh shader is implemented in [**raster.mesh.glsl**](../shaders/raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.
 
 #### Shader Setup
 
