@@ -121,6 +121,10 @@ protected:
 
   void onPreRender();
 
+  // reset frame counter for temporal accumulated multi-sampling
+  // will cause a restart of the frame construction
+  inline void resetFrameCounter() { prmFrame.frameSampleId = -1; }
+
   void onRender(VkCommandBuffer cmd);
 
   // reset the rendering settings that can
@@ -193,6 +197,9 @@ private:
 
   //////////////
   // RTX specific
+
+  // updates the frame counter and returns true if a new raytracing pass is needed
+  bool updateFrameCounter();
 
   void initRtDescriptorSet();
   void updateRtDescriptorSet();

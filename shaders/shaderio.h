@@ -51,6 +51,12 @@
 #define FRUSTUM_CULLING_AT_DIST 1
 #define FRUSTUM_CULLING_AT_RASTER 2
 
+// particle format (PF), RTX
+// not used in shaders (using RTX_USE_AABBS compiler defined instead)
+// used only by UI but here to be easier to find
+#define PARTICLE_FORMAT_ICOSAHEDRON 0
+#define PARTICLE_FORMAT_PARAMETRIC 1
+
 // degree of the splat kernel, RTX
 #define KERNEL_DEGREE_QUINTIC 5
 #define KERNEL_DEGREE_TESSERACTIC 4
@@ -146,6 +152,11 @@ struct FrameInfo
   int32_t rtxMaxBounces  DEFAULT(3);
 
   float multiplier DEFAULT(1.0f);  // for alternative visualization modes
+
+  int32_t frameSampleId  DEFAULT(0);       // the frame sample index since last frame reset
+  int32_t frameSampleMax DEFAULT(200);     // maximum number of frame after which we stop accumulating frames raytracing
+  float focalDist        DEFAULT(1.5f);    // focal distance to compute depth of field
+  float aperture         DEFAULT(0.009f);  // aperture distance to compute depth of field, 0 does no DOF effect
 };
 
 // Push constant for raster

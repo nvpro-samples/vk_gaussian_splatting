@@ -282,6 +282,33 @@ double maxComponent(in dvec3 v)
   return max(v.x, max(v.y, v.z));
 }
 
+uint xxhash32(uvec3 p)
+{
+  const uvec4 primes = uvec4(2246822519U, 3266489917U, 668265263U, 374761393U);
+  uint        h32;
+  h32 = p.z + primes.w + p.x * primes.y;
+  h32 = primes.z * ((h32 << 17) | (h32 >> (32 - 17)));
+  h32 += p.y * primes.y;
+  h32 = primes.z * ((h32 << 17) | (h32 >> (32 - 17)));
+  h32 = primes.x * (h32 ^ (h32 >> 15));
+  h32 = primes.y * (h32 ^ (h32 >> 13));
+  return h32 ^ (h32 >> 16);
+}
+
+uint pcg(inout uint state)
+{
+  uint prev = state * 747796405u + 2891336453u;
+  uint word = ((prev >> ((prev >> 28u) + 4u)) ^ prev) * 277803737u;
+  state     = prev;
+  return (word >> 22u) ^ word;
+}
+
+float rand(inout uint seed)
+{
+  uint r = pcg(seed);
+  return float(r) * (1.F / float(0xffffffffu));
+}
+
 void main()
 {
   const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
@@ -302,6 +329,26 @@ void main()
 
   vec3 rayOrigin    = origin.xyz;
   vec3 rayDirection = direction.xyz;
+
+  // Depth-of-Field
+#if !HYBRID_ENABLED && RTX_DOF_ENABLED
+#define TWO_PI 6.28318530718
+  
+  // Initialize the random number
+  uint seed = xxhash32(uvec3(gl_LaunchIDEXT.xy, frameInfo.frameSampleId));
+
+  vec3  focalPoint        = rayDirection * frameInfo.focalDist;
+  float cam_r1            = rand(seed) * TWO_PI;
+  float cam_r2            = rand(seed) * frameInfo.aperture;
+  vec4  cam_right         = frameInfo.viewInverse * vec4(1, 0, 0, 0);
+  vec4  cam_up            = frameInfo.viewInverse * vec4(0, 1, 0, 0);
+  vec3  randomAperturePos = (cos(cam_r1) * cam_right.xyz + sin(cam_r1) * cam_up.xyz) * sqrt(cam_r2);
+  vec3  finalRayDir       = normalize(focalPoint - randomAperturePos);
+
+  // Set the new ray origin and direction with depth-of-field
+  rayOrigin += randomAperturePos;
+  rayDirection = finalRayDir;
+#endif
 
   int rayHitsCount = 0;
 
@@ -512,6 +559,7 @@ void main()
 #if VISUALIZE == VISUALIZE_CLOCK
   fragRadiance = HsbToRgb(vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * 0.1 * float(clock) / float(1 << 20))), 1.0, 1.));
 #endif
+
 #if VISUALIZE == VISUALIZE_DEPTH
   if(closestParticleFound)
   {
@@ -519,8 +567,19 @@ void main()
         vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * float(closestParticleDist) / 256.0F)), 1.0, 1.));
   }
 #endif
+
 #if VISUALIZE == VISUALIZE_RAYHITS
   fragRadiance = vec3(frameInfo.multiplier * 10 * float(rayHitsCount) / 255, 0.0, 0.0);
+#endif
+
+#if VISUALIZE == VISUALIZE_FINAL && !HYBRID_ENABLED
+  if(frameInfo.frameSampleId > 0)
+  {
+    // Do accumulation over time
+    const float a        = 1.0F / float(frameInfo.frameSampleId + 1);
+    const vec4  oldColor = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
+    fragRadiance         = mix(oldColor, vec4(fragRadiance, 1.0), a).xyz;
+  }
 #endif
 
   imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));

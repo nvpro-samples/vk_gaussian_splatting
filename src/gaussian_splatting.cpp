@@ -139,6 +139,7 @@ void GaussianSplatting::onResize(VkCommandBuffer cmd, const VkExtent2D& viewport
   m_viewSize = {viewportSize.width, viewportSize.height};
   NVVK_CHECK(m_gBuffers.update(cmd, viewportSize));
   updateRtDescriptorSet();
+  resetFrameCounter();
 }
 
 void GaussianSplatting::onPreRender()
@@ -167,6 +168,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   if(m_shaders.valid && splatCount && prmSelectedPipeline == PIPELINE_RTX)
   {
+    if(prmRtx.temporalSampling && !updateFrameCounter())
+      return;
+
     collectReadBackValuesIfNeeded();
 
     updateAndUploadFrameInfoUBO(cmd, splatCount);
@@ -280,6 +284,8 @@ void GaussianSplatting::processUpdateRequests(void)
 
   if(!m_splatSet.size() || !needUpdate)
     return;
+
+  resetFrameCounter();
 
   vkDeviceWaitIdle(m_device);
 
@@ -789,6 +795,7 @@ shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::st
   m_glslCompiler.options().AddMacroDefinition("MS_ANTIALIASING", std::to_string((int)prmRaster.msAntialiasing));
 
   // RTX
+  m_glslCompiler.options().AddMacroDefinition("TEMPORAL_SAMPLING", std::to_string((int)prmRtx.temporalSampling));
   m_glslCompiler.options().AddMacroDefinition("KERNEL_DEGREE", std::to_string(prmRtx.kernelDegree));
   m_glslCompiler.options().AddMacroDefinition("KERNEL_MIN_RESPONSE", std::to_string(prmRtx.kernelMinResponse));
   m_glslCompiler.options().AddMacroDefinition("KERNEL_ADAPTIVE_CLAMPING", std::to_string((int)prmRtx.kernelAdaptiveClamping));
@@ -797,6 +804,8 @@ shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::st
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_INSTANCES", std::to_string((int)prmRtxData.useTlasInstances));
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_AABBS", std::to_string((int)prmRtxData.useAABBs));
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_MESHES", std::to_string((int)m_meshSetVk.instances.size()));
+  m_glslCompiler.options().AddMacroDefinition("RTX_DOF_ENABLED", std::to_string((int)prmRtx.dofEnabled));
+
   // Hybrid
   m_glslCompiler.options().AddMacroDefinition("HYBRID_ENABLED", std::to_string((int)(prmSelectedPipeline == PIPELINE_HYBRID)));
 
@@ -1613,6 +1622,30 @@ void GaussianSplatting::raytrace(const VkCommandBuffer& cmdBuf, const glm::vec4&
 
   vkCmdTraceRaysKHR(cmdBuf, &m_sbtRegions.raygen, &m_sbtRegions.miss, &m_sbtRegions.hit, &m_sbtRegions.callable,
                     m_viewSize[0], m_viewSize[1], 1);
+}
+
+
+bool GaussianSplatting::updateFrameCounter()
+{
+  static float     ref_fov{0};
+  static glm::mat4 ref_cam_matrix;
+
+  const auto& m   = cameraManip->getViewMatrix();
+  const auto  fov = cameraManip->getFov();
+
+  if(ref_cam_matrix != m || ref_fov != fov)
+  {
+    resetFrameCounter();
+    ref_cam_matrix = m;
+    ref_fov        = fov;
+  }
+
+  if(prmFrame.frameSampleId >= prmFrame.frameSampleMax)
+  {
+    return false;
+  }
+  prmFrame.frameSampleId++;
+  return true;
 }
 
 }  // namespace vk_gaussian_splatting
