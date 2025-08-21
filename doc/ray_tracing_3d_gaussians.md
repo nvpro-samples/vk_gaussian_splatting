@@ -87,6 +87,53 @@ The provided implementation allows composing scenes with 3D meshes and a particl
 3. Finally, if $meshHitDist$ is not infinite (there was a hit) and if minimum $transmittance$ is not reeached due to particles located in front of the mesh (step 2), the shading of the mesh is computed for this intersection, using the set of lights (point or directional), and composed with the $radiance$. This task is performed by the `processMeshHit` function. If the material of the object that was hit is reflective or refractive, a `done` flag is set to false, and a new `rayOrigin` and `rayDirection` are computed for the tracing of a **secondary ray**.
 4. Then the main loop restarts the same tasks with the secondary ray, adding the resulting partial radiance coming from reflections or refractions to the final pixel radiance. The main loop ends when no more mesh is hit or when the maximum number of bounces is reached.
 
+## Depth of Field
+
+![Raytracing depth of field, using a single sample frame](./raytracing_dof_one_frame.png)
+*Raytracing depth of field, using a single sample frame*
+
+Depth of field (DoF) is implemented in the [ray generation shader](../shaders/raytrace.rgen.glsl) main function using a sampling approach. We initialize a random number seed based on the launch ID and frame sample ID:
+
+```glsl
+// Initialize the random number
+uint seed = xxhash32(uvec3(gl_LaunchIDEXT.xy, frameInfo.frameSampleId));
+
+vec3  focalPoint        = rayDirection * frameInfo.focalDist;
+float cam_r1            = rand(seed) * TWO_PI;
+float cam_r2            = rand(seed) * frameInfo.aperture;
+vec4  cam_right         = frameInfo.viewInverse * vec4(1, 0, 0, 0);
+vec4  cam_up            = frameInfo.viewInverse * vec4(0, 1, 0, 0);
+vec3  randomAperturePos = (cos(cam_r1) * cam_right.xyz + sin(cam_r1) * cam_up.xyz) * sqrt(cam_r2);
+vec3  finalRayDir       = normalize(focalPoint - randomAperturePos);
+
+// Set the new ray origin and direction with depth-of-field
+rayOrigin += randomAperturePos;
+rayDirection = finalRayDir;
+```
+
+This method calculates a new ray origin and direction to simulate the blur effect due to depth of field, by perturbing the ray direction based on the aperture size and focal distance. The random aperture position is generated using a combination of cosine and sine functions to ensure a uniform distribution within the aperture.
+
+![Raytracing depth of field, accumulating hundred sample frames](./raytracing_dof_hundred_frames.png)
+*Raytracing depth of field, accumulating hundred sample frames*
+
+Using this method on a single frame ($frameInfo.frameSampleId = 0$) leads to a noisy image result due to the random approach. To achieve a clean denoised blur effect, we use **temporal sampling** and **accumulation over multiple frames** with a random seed evolving as a function of $frameInfo.frameSampleId$. By averaging the contributions from each frame, at the end of the ray generation main function, the noise is reduced:
+
+```glsl
+if(frameInfo.frameSampleId > 0)
+{
+  // Do accumulation over time
+  const float a        = 1.0F / float(frameInfo.frameSampleId + 1);
+  const vec4  oldColor = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
+  fragRadiance         = mix(oldColor, vec4(fragRadiance, 1.0), a).xyz;
+}
+
+imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));
+```
+
+Here, the color from previous frames is blended with the current frame's color. The accumulation factor $$a = \frac{1.0}{\text{frameSampleId} + 1}$$ ensures that the contribution of each frame decreases over time, resulting in a smoother and cleaner image.
+
+The use of a denoiser such as DLSS would lead to better visual quality during the convergence period. This is kept for future work.
+
 ## Performances Results
 
 To run the benchmark, you need to have the 3DGRT dataset located in folder <path_to_3DGRT_dataset_root>.

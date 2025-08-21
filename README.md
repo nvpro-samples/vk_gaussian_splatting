@@ -18,6 +18,7 @@ This new version of the sample introduces two new pipelines, a **ray tracing** a
 
 ## News
 
+- [2025/08] Add depth of field to raytracing (3DGRT) pipeline.
 - [2025/08] Added raytracing (3DGRT) and hybrid rendering (3DGS/3DGRT) pipelines + 3DGRT dataset.
 - [2025/08] Added compositing with meshes and project save/load functionality.
 - [2025/06] Ported to new NVIDIA DesignWorks [nvpro_core2](https://github.com/nvpro-samples/nvpro_core2).

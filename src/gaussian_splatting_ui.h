@@ -181,6 +181,7 @@ private:
     GUI_PIPELINE,             // the rendering pipeline to use
     GUI_FRUSTUM_CULLING,      // where to perform frustum culling (or disabled)
     GUI_SH_FORMAT,            // data format for storage of SH in VRAM
+    GUI_PARTICLE_FORMAT,      // Particle tracing mode for RTX
     GUI_KERNEL_DEGREE,        // Kernel degree for RTX
     GUI_VISUALIZE,            // visualization mode
     GUI_ILLUM_MODEL,          // TODO rename, "illumination" model is not the proper name

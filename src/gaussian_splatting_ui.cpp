@@ -95,6 +95,9 @@ void GaussianSplattingUI::onAttach(nvapp::Application* app)
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_FLOAT16, "Float 16");
   m_ui.enumAdd(GUI_SH_FORMAT, FORMAT_UINT8, "Uint8");
 
+  m_ui.enumAdd(GUI_PARTICLE_FORMAT, PARTICLE_FORMAT_ICOSAHEDRON, "Icosahedron");
+  m_ui.enumAdd(GUI_PARTICLE_FORMAT, PARTICLE_FORMAT_PARAMETRIC, "AABB + parametric");
+
   m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_QUINTIC, "Quintic");
   m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_TESSERACTIC, "Tesseractic");
   m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_CUBIC, "Cubic");
@@ -944,7 +947,8 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     m_requestUpdateShaders = true;
   }
   ImGui::BeginDisabled(prmRender.visualize == 0);
-  PE::DragFloat("multiplier", (float*)&prmFrame.multiplier, 1.0F, 0.0F, 1000.0F);
+  if(PE::DragFloat("multiplier", (float*)&prmFrame.multiplier, 1.0F, 0.0F, 1000.0F))
+    resetFrameCounter();
   ImGui::EndDisabled();
   ImGui::EndDisabled();
 
@@ -1083,35 +1087,104 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     {
       if(ImGui::BeginTabItem("Ray tracing specifics"))
       {
-        PE::begin("## Raytrace settings");
+        PE::begin("## Raytrace sampling and bounces");
 
         PE::SliderInt("Max bounces", &prmFrame.rtxMaxBounces, 1, 16);
 
-        if(PE::entry(
-               "Kernel degree", [&]() { return m_ui.enumCombobox(GUI_KERNEL_DEGREE, "##ID", &prmRtx.kernelDegree); }, "TODO"))
-          m_requestUpdateSplatData = true;
-
-        if(PE::Checkbox("Adaptive clamp", &prmRtx.kernelAdaptiveClamping, "TODO"))
-          m_requestUpdateSplatData = true;
-
-        /* Too slow, just for testing, TODO remove completely ?
-        if(PE::Checkbox("Back to Front", &prmRtx.backToFront, "TODO"))
+        ImGui::BeginDisabled(prmSelectedPipeline == PIPELINE_HYBRID);
         {
-          // resets some defaults that are function of the method
-          if(prmRtx.backToFront)
-            prmFrame.minTransmittance = 0.0f;
-          else
-            prmFrame.minTransmittance = 0.01f;
+          if(PE::Checkbox("Temporal sampling", &prmRtx.temporalSampling,
+                          "Enable accumulation of frame results over time for DoF.\n"
+                          "If enabled, the specified number of temporal samples will be accumulated over \"Temporal samples count\" frames,\n"
+                          "and the last accumulated frame will be presented without additional rendering.\n"
+                          "Note that rendering converges faster if v-sync is off.\n"
+                          "If disabled, the system renders in free run mode."))
+          {
+            resetFrameCounter();
+            m_requestUpdateShaders = true;
+          }
 
-          m_requestUpdateShaders = true;
+          ImGui::BeginDisabled(!prmRtx.temporalSampling);
+
+          if(PE::InputInt("Temporal samples count", &prmFrame.frameSampleMax, 1, 100, 0,
+                          "Number of frames after which temporal sampling is stopped. \n"
+                          "A value of 0 disables temporal sampling."))
+          {
+            prmFrame.frameSampleMax = std::clamp(prmFrame.frameSampleMax, 1, 1000);
+            resetFrameCounter();
+          }
+
+          // temporal sampling progress bar
+          PE::entry("Sampling frame", [&]() {
+            float progress = 0.0;
+            char  buf[32]  = "1/1";
+            if(prmRtx.temporalSampling)
+            {
+              progress = (float)prmFrame.frameSampleId / (std::max(1, prmFrame.frameSampleMax));
+              sprintf(buf, "%d/%d", prmFrame.frameSampleId, prmFrame.frameSampleMax);
+            }
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.4f, 0.7f, 0.0f, 1.0f));  // Green of course :-)
+            ImGui::ProgressBar(progress, ImVec2(0.f, 0.f), buf);
+            ImGui::PopStyleColor();
+            return true;
+          });
+          ImGui::EndDisabled();
+
+          PE::end();
+
+          PE::begin("## Raytrace depth of field");
+
+          if(PE::Checkbox("Depth of Field", &prmRtx.dofEnabled,
+                          "Activates Depth of Field effect (DoF).\n"
+                          "Activating \"Temporal sampling\" in addition to DoF leads to better visual results."))
+          {
+            m_requestUpdateShaders = true;
+          }
+          ImGui::BeginDisabled(!prmRtx.dofEnabled);
+          {
+            if(PE::DragFloat("Focal distance", &prmFrame.focalDist, 0.1F, 0.1F, 15.0F, "%.3f"))
+              resetFrameCounter();
+
+            if(PE::SliderFloat("Aperture", &prmFrame.aperture, 0.0F, 0.01F, "%.6f"))
+              resetFrameCounter();
+          }
+          ImGui::EndDisabled();
         }
-        */
+        ImGui::EndDisabled();
 
-        PE::InputFloat("Alpha clamp", &prmFrame.alphaClamp, 0.0, 3.0, "%.2f",
-                       /* ImGuiInputTextFlags_EnterReturnsTrue*/ 0, "TODO");
+        PE::end();
 
-        PE::InputFloat("Minimum transmittance", &prmFrame.minTransmittance, 0.0, 1.0, "%.2f",
-                       /* ImGuiInputTextFlags_EnterReturnsTrue */ 0, "TODO");
+        PE::begin("## Raytrace gaussians settings");
+
+        int parametric = prmRtxData.useAABBs ? PARTICLE_FORMAT_PARAMETRIC : PARTICLE_FORMAT_ICOSAHEDRON;
+
+        if(PE::entry(
+               "Particles format", [&]() { return m_ui.enumCombobox(GUI_PARTICLE_FORMAT, "##ID", &parametric); },
+               "This is a convenience shortcut to switch the Radiance Field use AABB property.\n"
+               "Note that activating parametric will force the use of TLAS instance.\n"))
+        {
+          if(parametric == PARTICLE_FORMAT_ICOSAHEDRON)
+          {
+            prmRtxData.useAABBs = false;
+          }
+          if(parametric == PARTICLE_FORMAT_PARAMETRIC)
+          {
+            prmRtxData.useAABBs         = true;
+            prmRtxData.useTlasInstances = true;
+          }
+          m_requestUpdateSplatData = true;
+        }
+
+        if(PE::entry("Kernel degree",
+                     [&]() { return m_ui.enumCombobox(GUI_KERNEL_DEGREE, "##ID", &prmRtx.kernelDegree); }))
+          m_requestUpdateSplatData = true;
+
+        if(PE::Checkbox("Adaptive clamp", &prmRtx.kernelAdaptiveClamping))
+          m_requestUpdateSplatData = true;
+
+        PE::InputFloat("Alpha clamp", &prmFrame.alphaClamp, 0.0, 3.0, "%.2f", ImGuiInputTextFlags_EnterReturnsTrue);
+
+        PE::InputFloat("Minimum transmittance", &prmFrame.minTransmittance, 0.0, 1.0, "%.2f", ImGuiInputTextFlags_EnterReturnsTrue);
 
         if(PE::entry(
                "Ray hits per pass",
@@ -1128,7 +1201,9 @@ void GaussianSplattingUI::guiDrawRendererProperties()
 
         PE::Text("Maximum anyhit/pixel", std::to_string(prmRtx.payloadArraySize * prmFrame.maxPasses));
 
-        // for "debug"
+        PE::end();
+        PE::begin("## Raytrace feedback");
+
         PE::Text("Mouse ", fmt::format("{} {}", prmFrame.cursor.x, prmFrame.cursor.y));
         PE::Text("Splat Id ", std::to_string(m_indirectReadback.particleID));
         PE::Text("Splat Dist ", std::to_string(m_indirectReadback.particleDist));
@@ -1962,6 +2037,11 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
       LOAD1(prmRaster.pointCloudModeEnabled, item, "pointCloudModeEnabled");
       LOAD1(prmRaster.sortingMethod, item, "sortingMethod");
 
+      LOAD1(prmRtx.temporalSampling, item, "temporalSampling");
+      LOAD1(prmFrame.frameSampleMax, item, "temporalSamplesCount");
+      LOAD1(prmRtx.dofEnabled, item, "dofEnabled");
+      LOAD1(prmFrame.focalDist, item, "focalDist");
+      LOAD1(prmFrame.aperture, item, "aperture");
       LOAD1(prmRtx.kernelAdaptiveClamping, item, "kernelAdaptiveClamping");
       LOAD1(prmRtx.kernelDegree, item, "kernelDegree");
       LOAD1(prmRtx.kernelMinResponse, item, "kernelMinResponse");
@@ -2139,6 +2219,11 @@ bool GaussianSplattingUI::saveProject(std::string path)
       item["pointCloudModeEnabled"]   = prmRaster.pointCloudModeEnabled;
       item["sortingMethod"]           = prmRaster.sortingMethod;
 
+      item["temporalSampling"]       = prmRtx.temporalSampling;
+      item["temporalSamplesCount"]   = prmFrame.frameSampleMax;
+      item["dofEnabled"]             = prmRtx.dofEnabled;
+      item["focalDist"]              = prmFrame.focalDist;
+      item["aperture"]               = prmFrame.aperture;
       item["kernelAdaptiveClamping"] = prmRtx.kernelAdaptiveClamping;
       item["kernelDegree"]           = prmRtx.kernelDegree;
       item["kernelMinResponse"]      = prmRtx.kernelMinResponse;
