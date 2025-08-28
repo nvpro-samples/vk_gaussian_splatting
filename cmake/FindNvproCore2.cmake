@@ -61,11 +61,6 @@ else()
                     set(NVPRO_GIT_URL ${GIT_BASE_URL}/nvpro-samples/nvpro_core2.git)
                 endif()
 
-                # GitHub uses 'master' instead of 'main'
-                if("${NVPRO_GIT_TAG}" STREQUAL "main")
-                    set(NVPRO_GIT_TAG master)
-                endif()
-
                 message(STATUS "Using GitHub nvpro_core2 repository")
             else()
                 # Internal repository - reconstruct URL preserving the protocol
