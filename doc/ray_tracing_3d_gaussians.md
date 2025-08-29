@@ -10,9 +10,10 @@ We implement the rendering algorithm of 3D Gaussian Ray Tracing (3DGRT) as descr
 2. [Any Hit Based Implementation](#any-hit-based-implementation)
 3. [Acceleration Structures](#acceleration-structures)
 4. [Compositing with 3D Meshes and Secondary Rays](#compositing-with-3d-meshes-and-secondary-rays)
-5. [Performance Results](#performance-results)
-6. [Continue Reading](#continue-reading)
-7. [References](#references)
+6. [Depth of Field](#depth-of-field)
+7. [Performance Results](#performance-results)
+8. [Continue Reading](#continue-reading)
+9. [References](#references)
 
 ## Principle
 
