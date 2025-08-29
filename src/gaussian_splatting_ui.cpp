@@ -152,6 +152,8 @@ void GaussianSplattingUI::onRender(VkCommandBuffer cmd)
   GaussianSplatting::onRender(cmd);
 }
 
+#define ICON_BLANK "     "
+
 void GaussianSplattingUI::onUIMenu()
 {
   static bool close_app{false};
@@ -163,15 +165,15 @@ void GaussianSplattingUI::onUIMenu()
 #endif
   if(ImGui::BeginMenu("File"))
   {
-    if(ImGui::MenuItem("Open file", ""))
+    if(ImGui::MenuItem(ICON_MS_FILE_OPEN " Open file", ""))
     {
       prmScene.sceneToLoadFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY Files (*.ply)");
     }
-    if(ImGui::MenuItem("Re Open", "F5", false, m_loadedSceneFilename != ""))
+    if(ImGui::MenuItem(ICON_MS_RESTORE_PAGE " Re Open", "F5", false, m_loadedSceneFilename != ""))
     {
       prmScene.sceneToLoadFilename = m_loadedSceneFilename;
     }
-    if(ImGui::BeginMenu("Recent Files"))
+    if(ImGui::BeginMenu(ICON_MS_HISTORY " Recent Files"))
     {
       for(const auto& file : m_recentFiles)
       {
@@ -183,12 +185,12 @@ void GaussianSplattingUI::onUIMenu()
       ImGui::EndMenu();
     }
     ImGui::Separator();
-    if(ImGui::MenuItem("Open project", ""))
+    if(ImGui::MenuItem(ICON_MS_FILE_OPEN " Open project", ""))
     {
       prmScene.projectToLoadFilename =
           nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load project file", "VKGS Files (*.vkgs)");
     }
-    if(ImGui::BeginMenu("Recent projects"))
+    if(ImGui::BeginMenu(ICON_MS_HISTORY " Recent projects"))
     {
       for(const auto& file : m_recentProjects)
       {
@@ -199,7 +201,7 @@ void GaussianSplattingUI::onUIMenu()
       }
       ImGui::EndMenu();
     }
-    if(ImGui::MenuItem("Save project", ""))
+    if(ImGui::MenuItem(ICON_MS_FILE_SAVE " Save project", ""))
     {
       auto path = nvgui::windowSaveFileDialog(m_app->getWindowHandle(), "Save project file", "VKGS Files (*.vkgs)");
       if(!path.empty())
@@ -208,12 +210,12 @@ void GaussianSplattingUI::onUIMenu()
       }
     }
     ImGui::Separator();
-    if(ImGui::MenuItem("Close", ""))
+    if(ImGui::MenuItem(ICON_MS_SCAN_DELETE " Close", ""))
     {
       deinitAll();
     }
     ImGui::Separator();
-    if(ImGui::MenuItem("Exit", "Ctrl+Q"))
+    if(ImGui::MenuItem(ICON_MS_EXIT_TO_APP " Exit", "Ctrl+Q"))
     {
       close_app = true;
     }
@@ -221,8 +223,8 @@ void GaussianSplattingUI::onUIMenu()
   }
   if(ImGui::BeginMenu("View"))
   {
-    ImGui::MenuItem("V-Sync", "Ctrl+Shift+V", &v_sync);
-    ImGui::MenuItem("ShowUI", "", &m_showUI);
+    ImGui::MenuItem(ICON_MS_BOTTOM_PANEL_OPEN " V-Sync", "Ctrl+Shift+V", &v_sync);
+    ImGui::MenuItem(ICON_MS_SPACE_DASHBOARD " ShowUI", "", &m_showUI);
     ImGui::EndMenu();
   }
 #ifndef NDEBUG
@@ -528,6 +530,8 @@ void GaussianSplattingUI::onUIRender()
 
 void GaussianSplattingUI::guiDrawAssetsWindow()
 {
+  ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ChildBg]);
+
   if(ImGui::Begin("Assets"))
   {
     // we systematically clamp, not only on user input, because sizes can have changed
@@ -546,6 +550,8 @@ void GaussianSplattingUI::guiDrawAssetsWindow()
     guiDrawObjectTree();
   }
   ImGui::End();
+
+  ImGui::PopStyleColor();
 }
 
 void GaussianSplattingUI::guiDrawRendererTree()
@@ -562,7 +568,7 @@ void GaussianSplattingUI::guiDrawRendererTree()
   if(m_selectedAsset == RENDERER)
     node_flags |= ImGuiTreeNodeFlags_Selected;
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-  node_open = ImGui::TreeNodeEx("Renderer", node_flags);
+  node_open = ImGui::TreeNodeEx(ICON_MS_CAMERA " Renderer", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = RENDERER;
@@ -576,6 +582,8 @@ void GaussianSplattingUI::guiDrawRendererTree()
     int i = 0;
     {
       ImGui::Indent(30);
+      ImGui::Text(ICON_MS_SUBDIRECTORY_ARROW_RIGHT);
+      ImGui::SameLine();
       if(m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline))
       {
         m_requestUpdateShaders = true;
@@ -596,7 +604,7 @@ void GaussianSplattingUI::guiDrawCameraTree()
   if(m_selectedAsset == CAMERAS)
     node_flags |= ImGuiTreeNodeFlags_Selected;
 
-  bool node_open = ImGui::TreeNodeEx("Cameras", node_flags);
+  bool node_open = ImGui::TreeNodeEx(ICON_MS_PHOTO_CAMERA " Cameras", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = CAMERAS;
@@ -605,20 +613,22 @@ void GaussianSplattingUI::guiDrawCameraTree()
     m_selectedLightIndex        = -1;
   }
   ImGui::PushID(1);
-  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 160);
-  if(ImGui::SmallButton("Store"))
+  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
+  if(ImGui::SmallButton(ICON_MS_ADD_A_PHOTO))
   {
     m_cameraSet.storeCurrentCamera();
   }
-  ImGui::SameLine();
-  if(ImGui::SmallButton("Import"))
+  nvgui::tooltip("Store current camera settings in presets");
+  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
+  if(ImGui::SmallButton(ICON_MS_FILE_OPEN))
   {
-    auto name = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Import INRIA Camera file", ".json");
+    auto name = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Import INRIA Camera file", "INRIA Camera file|*.json");
     if(!name.empty())
     {
       importCamerasINRIA(name.string(), m_cameraSet);
     }
   }
+  nvgui::tooltip("Import INRIA Camera file");
   ImGui::PopID();
 
   if(node_open)
@@ -628,25 +638,26 @@ void GaussianSplattingUI::guiDrawCameraTree()
     {
       ImGui::PushID(i);
       node_flags      = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-      const auto name = i == 0 ? fmt::format("Default Preset ", i) : fmt::format("Camera Preset ({})", i);
+      const auto name = i == 0 ? fmt::format(ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Default Preset ", i) :
+                                 fmt::format(ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Camera Preset ({})", i);
 
       bool node_open = ImGui::TreeNodeEx(name.c_str(), node_flags);
-      ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 160);
-      if(ImGui::SmallButton("Load"))
+      ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
+      if(ImGui::SmallButton(ICON_MS_LOCAL_SEE))
       {
         cameraManip->setCamera(m_cameraSet.getCamera(i), false);
         m_lastLoadedCamera = i;
       }
+      nvgui::tooltip("Load camera preset");
       // Delete button only if not default
       if(i != 0)
       {
         ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
-        ImGui::PushFont(nvgui::getIconicFont());
-        if(ImGui::SmallButton(nvgui::icon_trash))
+        if(ImGui::SmallButton(ICON_MS_DELETE))
         {
           m_cameraSet.eraseCamera(i);
         }
-        ImGui::PopFont();
+        nvgui::tooltip("Delete preset");
       }
       ImGui::PopID();
     }
@@ -663,7 +674,7 @@ void GaussianSplattingUI::guiDrawLightTree()
   if(m_selectedAsset == LIGHTS)
     node_flags |= ImGuiTreeNodeFlags_Selected;
 
-  bool node_open = ImGui::TreeNodeEx("Lights", node_flags);
+  bool node_open = ImGui::TreeNodeEx(ICON_MS_LIGHT_MODE " Lights", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = LIGHTS;
@@ -671,12 +682,14 @@ void GaussianSplattingUI::guiDrawLightTree()
     m_selectedMeshInstanceIndex = -1;
     m_selectedLightIndex        = -1;
   }
-  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 160);
-  if(ImGui::SmallButton("Create"))
+  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
+  if(ImGui::SmallButton(ICON_MS_ADD_CIRCLE))
   {
     m_selectedLightIndex        = m_lightSet.createLight();
     m_requestUpdateLightsBuffer = true;
   }
+  nvgui::tooltip("Create light");
+
   if(node_open)
   {
     // display the lights tree
@@ -687,7 +700,7 @@ void GaussianSplattingUI::guiDrawLightTree()
       if(m_selectedLightIndex == i)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
-      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, "Light %d", i);
+      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Light %d", i);
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
         m_selectedAsset             = NONE;
@@ -698,8 +711,7 @@ void GaussianSplattingUI::guiDrawLightTree()
       if(m_lightSet.size() > 1)
       {
         ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
-        ImGui::PushFont(nvgui::getIconicFont());
-        if(ImGui::SmallButton(nvgui::icon_trash))
+        if(ImGui::SmallButton(ICON_MS_DELETE))
         {
           m_lightSet.eraseLight(i);
           m_requestUpdateLightsBuffer = true;
@@ -709,7 +721,7 @@ void GaussianSplattingUI::guiDrawLightTree()
           m_selectedMeshInstanceIndex = -1;
           m_selectedLightIndex        = -1;
         }
-        ImGui::PopFont();
+        nvgui::tooltip("Delete light");
       }
       ImGui::PopID();
     }
@@ -728,7 +740,8 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
   //  node_flags |= ImGuiTreeNodeFlags_Selected;
 
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-  bool node_open = ImGui::TreeNodeEx(fmt::format("Radiance Fields ({})", m_loadedSceneFilename.empty() ? 0 : 1).c_str(), node_flags);
+  bool node_open =
+      ImGui::TreeNodeEx(fmt::format(ICON_MS_GRAIN " Radiance Fields ({})", m_loadedSceneFilename.empty() ? 0 : 1).c_str(), node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = SPLATSET;
@@ -745,8 +758,8 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
       if(m_selectedAsset == SPLATSET)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
-      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, "Splat set %d - %s", i,
-                                         m_loadedSceneFilename.filename().string().c_str());
+      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Splat set %d - %s",
+                                         i, m_loadedSceneFilename.filename().string().c_str());
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
         m_selectedAsset             = SPLATSET;
@@ -776,7 +789,8 @@ void GaussianSplattingUI::guiDrawObjectTree()
     ImGui::SetNextItemOpen(true);
     m_objJustImported = false;
   }
-  bool node_open = ImGui::TreeNodeEx(fmt::format("Mesh Models ({})", m_meshSetVk.instances.size()).c_str(), node_flags);
+  bool node_open =
+      ImGui::TreeNodeEx(fmt::format(ICON_MS_DEPLOYED_CODE " Mesh Models ({})", m_meshSetVk.instances.size()).c_str(), node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = OBJECTS;
@@ -784,10 +798,10 @@ void GaussianSplattingUI::guiDrawObjectTree()
     m_selectedMeshInstanceIndex = -1;
     m_selectedLightIndex        = -1;
   }
-  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 160);
-  if(ImGui::SmallButton("Import"))
+  ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
+  if(ImGui::SmallButton(ICON_MS_FILE_OPEN))
   {
-    prmScene.meshToImportFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load obj file", "OBJ(.obj)");
+    prmScene.meshToImportFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load obj file", "OBJ|*.obj");
   }
   // Handle the request form file open or from drag and drop
   if(!prmScene.meshToImportFilename.empty())
@@ -845,8 +859,8 @@ void GaussianSplattingUI::guiDrawObjectTree()
       if(m_selectedMeshInstanceIndex == instanceIndex)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
-      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, "Model %d - %s", i,
-                                         m_meshSetVk.meshes[objectIndex].name.c_str());
+      bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Model %d - %s",
+                                         i, m_meshSetVk.meshes[objectIndex].name.c_str());
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
         m_selectedAsset             = NONE;
@@ -855,12 +869,10 @@ void GaussianSplattingUI::guiDrawObjectTree()
         m_selectedLightIndex        = -1;
       }
       ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
-      ImGui::PushFont(nvgui::getIconicFont());
-      if(ImGui::SmallButton(nvgui::icon_trash))
+      if(ImGui::SmallButton(ICON_MS_DELETE))
       {
         m_requestDeleteSelectedMesh = true;
       }
-      ImGui::PopFont();
       ImGui::PopID();
     }
     ImGui::TreePop();
