@@ -160,7 +160,7 @@ static bool importCamerasINRIA(std::string filename, CameraSet& cameraSet)
       glm::mat3 rotMat(rotation[0][0], rotation[1][0], rotation[2][0], rotation[0][1], rotation[1][1], rotation[2][1],
                        rotation[0][2], rotation[1][2], rotation[2][2]);
 
-      glm::vec3 up = rotMat * glm::vec3(0.f, -1.f, 0.f);
+      glm::vec3 up = rotMat * glm::vec3(0.f, 1.f, 0.f);
       glm::vec3 at = rotMat * glm::vec3(0.f, 0.f, 1.f);
 
       Camera newCam;
