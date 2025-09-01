@@ -112,23 +112,23 @@ float edgeDistance(vec2 P, vec2 A, vec2 B)
 bool processHit(in vec3 modelRayOrigin, in vec3 modelRayDirection, in int splatId, inout dvec3 transmittance, inout vec3 radiance, in float distance)
 {
   //
-  vec3  particlePosition;
-  vec3  particleScale;
-  mat3  particleInvRotation;
-  
+  vec3 particlePosition;
+  vec3 particleScale;
+  mat3 particleInvRotation;
+
   fetchParticlePSR(splatId, particlePosition, particleScale, particleInvRotation);
 
   vec3 particleRayOrigin;
   vec3 particleRayDirection;
-  particleCannonicalRay(modelRayOrigin, modelRayDirection, particlePosition, particleScale, particleInvRotation, 
+  particleCannonicalRay(modelRayOrigin, modelRayDirection, particlePosition, particleScale, particleInvRotation,
                         particleRayOrigin, particleRayDirection);
 
   const vec4 color           = fetchColor(splatId);
-  float     particleDensity = color.w;
+  float      particleDensity = color.w;
 
   const double  minParticleAlpha         = 1.0f / 255.0f;
   const int32_t particleKernelDegree     = KERNEL_DEGREE;
-  const float  minParticleKernelDensity = KERNEL_MIN_RESPONSE;
+  const float   minParticleKernelDensity = KERNEL_MIN_RESPONSE;
 
   const float maxResponse = particleRayMaxKernelResponse(particleRayOrigin, particleRayDirection, particleKernelDegree);
   float       alpha       = min(frameInfo.alphaClamp, maxResponse * particleDensity);
@@ -149,7 +149,7 @@ bool processHit(in vec3 modelRayOrigin, in vec3 modelRayDirection, in int splatI
 #endif
 
     const vec3 weight = vec3(alpha * transmittance);
-    radiance += grad *weight;
+    radiance += grad * weight;
     transmittance *= (1.0 - alpha);
     return true;
   }
@@ -187,11 +187,11 @@ void processMeshHit(in vec3     worldPos,
   vec3  matAmbient    = mat.ambient;
   vec3  matSpecular   = mat.specular;
   vec3  matRefractive = mat.transmittance;
-  float ior           = mat.ior;    // 1 = pure transparency, 1.5111 widow glass
+  float ior           = mat.ior;  // 1 = pure transparency, 1.5111 widow glass
   float matShininess  = mat.shininess;
   int   model         = mat.illum;
 
-   for(int i = 0; i < frameInfo.lightCount; ++i)
+  for(int i = 0; i < frameInfo.lightCount; ++i)
   {
     const LightSource light = lights.l[i];
 
@@ -227,11 +227,11 @@ void processMeshHit(in vec3     worldPos,
   }
 
   //
-  if(model <= 0 ) // 
+  if(model <= 0)  //
   {
     transmittance = dvec3(0.0);
   }
-  else if(model == 1) // reflection
+  else if(model == 1)  // reflection
   {
     transmittance *= matSpecular;
     done      = 0;  // set to 0 means continue to trace at next iteration
@@ -324,7 +324,7 @@ void main()
   // will use Closest hit only
   uint rayFlagsMesh = gl_RayFlagsCullBackFacingTrianglesEXT;
 
-  float tMax = 10000.0;
+  float       tMax = 10000.0;
   const float epsT = 1e-9;
 
   vec3 rayOrigin    = origin.xyz;
@@ -333,7 +333,7 @@ void main()
   // Depth-of-Field
 #if !HYBRID_ENABLED && RTX_DOF_ENABLED
 #define TWO_PI 6.28318530718
-  
+
   // Initialize the random number
   uint seed = xxhash32(uvec3(gl_LaunchIDEXT.xy, frameInfo.frameSampleId));
 
@@ -366,9 +366,9 @@ void main()
   int   closestParticleId    = PAYLOAD_INVALID_ID;
 
 #if HYBRID_ENABLED
-  vec4 pixel = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
-  radiance   = vec3(pixel);
-  transmittance = vec3(1.0-pixel.w);
+  vec4 pixel    = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
+  radiance      = vec3(pixel);
+  transmittance = vec3(1.0 - pixel.w);
 #endif
 
   // bounce loop
@@ -386,8 +386,8 @@ void main()
 
     vec3 meshHitWorldPos;
     vec3 meshHitWorldNrm;
-    int meshHitObjId;
-    int meshHitMatId;
+    int  meshHitObjId;
+    int  meshHitMatId;
 
     writeDist(0, PAYLOAD_INF_DISTANCE);
     writeId(0, PAYLOAD_INVALID_ID);
@@ -422,31 +422,34 @@ void main()
     if(bounce > 0)
     {
 #endif
-    // trace the gaussians with multi-pass any hit
-    int outerIdx = 0;
+      // trace the gaussians with multi-pass any hit
+      int outerIdx = 0;
 
-    // The two following are to compute processHit with transformed splat set model
-    const vec3 splatSetModelRayOrigin = vec3(pcRay.modelMatrixInverse * vec4(rayOrigin, 1.0));
-    // modelMatrixTranspose is equivalent to inverse(transpose(modelMatrixInverse))
-    const vec3 splatSetModelRayDirection = normalize(vec3(pcRay.modelMatrixTranspose * vec4(rayDirection, 1.0)));
+      // The two following are to compute particleProcessHit with transformed splat set model
+      const vec3 splatSetModelRayOrigin = vec3(pcRay.modelMatrixInverse * vec4(rayOrigin, 1.0));
+      // Since the ray direction should not be affected by translation,
+      // extract the rotation - scale part of the matrix and invert it.
+      mat3       rotScale                  = inverse(mat3(pcRay.modelMatrix));  // cast to mat3 removes the translation
+      const vec3 splatSetModelRayDirection = normalize(rotScale * rayDirection);
 
-    while(outerIdx < frameInfo.maxPasses && (rayLastHitDistance <= tMax) && (maxComponent(transmittance) > frameInfo.minTransmittance))
-    {
-      // prepare the payload
-      [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+
+      while(outerIdx < frameInfo.maxPasses && (rayLastHitDistance <= tMax) && (maxComponent(transmittance) > frameInfo.minTransmittance))
       {
-        writeId(i, PAYLOAD_INVALID_ID);
-        writeDist(i, PAYLOAD_INF_DISTANCE);
-      }
+        // prepare the payload
+        [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+        {
+          writeId(i, PAYLOAD_INVALID_ID);
+          writeDist(i, PAYLOAD_INF_DISTANCE);
+        }
 
 //#define USE_SER
 #ifdef USE_SER
-      hitObjectNV hObj;
-      hitObjectRecordEmptyNV(hObj);
-      hitObjectTraceRayNV(hObj, topLevelAS, rayFlags, 0xFF, 0, 0, 0, rayOrigin, rayLastHitDistance + epsT,
-                          rayDirection, tMax + epsT, 0);
-      reorderThreadNV(hObj);
-      hitObjectExecuteShaderNV(hObj, 0);
+        hitObjectNV hObj;
+        hitObjectRecordEmptyNV(hObj);
+        hitObjectTraceRayNV(hObj, topLevelAS, rayFlags, 0xFF, 0, 0, 0, rayOrigin, rayLastHitDistance + epsT,
+                            rayDirection, tMax + epsT, 0);
+        reorderThreadNV(hObj);
+        hitObjectExecuteShaderNV(hObj, 0);
 #else
       // trace the PAYLOAD_ARRAY_SIZE any hits
       traceRayEXT(topLevelAS,                 // acceleration structure
@@ -462,61 +465,62 @@ void main()
                   0                           // payload (location = 0)
       );
 #endif
-      const int firstId = readId(0);
+        const int firstId = readId(0);
 
-      // no more hits found
-      if(firstId == PAYLOAD_INVALID_ID)
-      {
-        break;
-      }
-
-      // evaluate the sorted hits
-      [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
-      {
-        const int splatId = readId(i);
-        const float dist = readDist(i);
-
-        if((splatId != PAYLOAD_INVALID_ID) && (maxComponent(transmittance) > frameInfo.minTransmittance))
+        // no more hits found
+        if(firstId == PAYLOAD_INVALID_ID)
         {
-#if WIREFRAME
-          {
-            // Compute the hit position in world space using barycentric coordinates
-            const vec2  bary = readBary(i);
-            const float u    = bary.x;
-            const float v    = bary.y;
-            const float w    = 1.0 - u - v;
+          break;
+        }
 
-            // Define wireframe thickness threshold
-            float threshold = 0.02;
-            if(u < threshold || v < threshold || w < threshold)
+        // evaluate the sorted hits
+        [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+        {
+          const int   splatId = readId(i);
+          const float dist    = readDist(i);
+
+          if((splatId != PAYLOAD_INVALID_ID) && (maxComponent(transmittance) > frameInfo.minTransmittance))
+          {
+#if WIREFRAME
             {
-              radiance      = vec3(1.0, 0.0, 0.0);  // wireframe color
-              transmittance = vec3(0.0);            // opaque
-              break;
+              // Compute the hit position in world space using barycentric coordinates
+              const vec2  bary = readBary(i);
+              const float u    = bary.x;
+              const float v    = bary.y;
+              const float w    = 1.0 - u - v;
+
+              // Define wireframe thickness threshold
+              float threshold = 0.02;
+              if(u < threshold || v < threshold || w < threshold)
+              {
+                radiance      = vec3(1.0, 0.0, 0.0);  // wireframe color
+                transmittance = vec3(0.0);            // opaque
+                break;
+              }
             }
-          }
 
 #endif  // end of display wireframe
 
-          bool acceptedHit = processHit(splatSetModelRayOrigin, splatSetModelRayDirection, splatId, transmittance, radiance, dist);
-          rayHitsCount += int(acceptedHit);
+            bool acceptedHit =
+                processHit(splatSetModelRayOrigin, splatSetModelRayDirection, splatId, transmittance, radiance, dist);
+            rayHitsCount += int(acceptedHit);
 
-          // debug feedback and alternative visualizations
-          if(!closestParticleFound && acceptedHit && outerIdx == 0)
-          {
-            closestParticleId    = splatId;
-            closestParticleDist  = dist;
-            closestParticleFound = true;
+            // debug feedback and alternative visualizations
+            if(!closestParticleFound && acceptedHit && outerIdx == 0)
+            {
+              closestParticleId    = splatId;
+              closestParticleDist  = dist;
+              closestParticleFound = true;
+            }
+
+            // we move on in any case
+            rayLastHitDistance = max(rayLastHitDistance, dist);
           }
-
-          // we move on in any case
-          rayLastHitDistance = max(rayLastHitDistance, dist);
         }
-      }
 
-      //
-      outerIdx++;
-    }
+        //
+        outerIdx++;
+      }
 
 #if HYBRID_ENABLED
     }
@@ -527,8 +531,8 @@ void main()
     // process mesh shading if needed
     if((meshHitDist < PAYLOAD_INF_DISTANCE) && (maxComponent(transmittance) > frameInfo.minTransmittance))
     {
-      processMeshHit(meshHitWorldPos, meshHitWorldNrm, meshHitObjId, meshHitMatId, rayDirection,
-                     transmittance, radiance, done, rayOrigin, rayDirection);
+      processMeshHit(meshHitWorldPos, meshHitWorldNrm, meshHitObjId, meshHitMatId, rayDirection, transmittance,
+                     radiance, done, rayOrigin, rayDirection);
     }
 #endif
 
@@ -547,7 +551,7 @@ void main()
   // debug feedback
   if(closestParticleFound && gl_LaunchIDEXT.xy == frameInfo.cursor)
   {
-    indirect.particleID = closestParticleId;
+    indirect.particleID   = closestParticleId;
     indirect.particleDist = closestParticleDist;
   }
 
@@ -557,7 +561,8 @@ void main()
   uint64_t clock = clockARB() - clockStart;
 
 #if VISUALIZE == VISUALIZE_CLOCK
-  fragRadiance = HsbToRgb(vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * 0.1 * float(clock) / float(1 << 20))), 1.0, 1.));
+  fragRadiance =
+      HsbToRgb(vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * 0.1 * float(clock) / float(1 << 20))), 1.0, 1.));
 #endif
 
 #if VISUALIZE == VISUALIZE_DEPTH
