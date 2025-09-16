@@ -298,7 +298,7 @@ void GaussianSplattingUI::onUIMenu()
   }
   if(s_showDemoIcons)
   {
-    nvgui::showDemoIcons();
+    //nvgui::showDemoIcons();
   }
 #endif  // !NDEBUG
 
