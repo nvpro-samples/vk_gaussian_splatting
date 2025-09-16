@@ -18,6 +18,7 @@ This new version of the sample introduces two new pipelines, a **ray tracing** a
 
 ## News
 
+- [2025/09] Add import of .spz file format from [nianticlabs](https://github.com/nianticlabs/spz).
 - [2025/08] Add depth of field to raytracing (3DGRT) pipeline.
 - [2025/08] Added raytracing (3DGRT) and hybrid rendering (3DGS/3DGRT) pipelines + 3DGRT dataset.
 - [2025/08] Added compositing with meshes and project save/load functionality.
@@ -60,16 +61,18 @@ cmake --build build --config Release
 
 ```
 
-## Opening 3DGS PLY Files
+## Opening 3DGS PLY and SPZ Files
 
-By default the application opens a 3DGS model representing a bouquet of flowers unless you disabled it at CMake stage. The sample application supports PLY files in the format introduced by INRIA [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]. PLY files can be opened using any of the following methods:
+By default the application opens a 3DGS model representing a bouquet of flowers unless you disabled it at CMake stage. The sample application supports PLY files in the format introduced by INRIA [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]. The sample also supports import of SPZ files as defined by [nianticlabs](https://github.com/nianticlabs/spz). PLY and SPZ files can be opened using any of the following methods:
 * **Command Line** – Provide the file path as last argument when launching the application.
-* **File Menu** – Use File > Open to browse and load a PLY file.
-* **Drag and Drop** – Simply drag the PLY file into the viewport.
+* **File Menu** – Use "File > Open" to browse and load a PLY or SPZ file.
+* **Drag and Drop** – Simply drag and drop the PLY or SPZ file into the viewport.
 
 **Compatibility**
 * [Jawset Postshot](https://www.jawset.com/) and [3DGRUT](https://github.com/nv-tlabs/3dgrut) output ply files are compatible with the INRIA format and can be opened directly.
 * Other reconstruction software's ply outputs such as [NerfStudio](https://docs.nerf.studio/nerfology/methods/splat.html) may work but have not been tested.
+
+* SPZ file import can be tested using the sample [models](https://github.com/nianticlabs/spz/tree/main/samples) provided by nianticlabs.
 
 ## 3DGS Datasets
 
@@ -127,6 +130,7 @@ The system also provides a means to run automatic benchmarks, which are detailed
 |--------------|---------|--|
 | **miniply** | https://github.com/vilya/miniply | [MIT](https://github.com/vilya/miniply/blob/master/LICENSE.md) |
 | **vrdx** | https://github.com/jaesung-cs/vulkan_radix_sort | [MIT](https://github.com/jaesung-cs/vulkan_radix_sort/blob/master/LICENSE) |
+| **spz** | https://github.com/nianticlabs/spz | [MIT](https://github.com/nianticlabs/spz?tab=MIT-1-ov-file#readme) |
 
 Some parts of the current implementation are strongly inspired by, and in some cases incorporate, source code and comments from the following third-party projects:
 

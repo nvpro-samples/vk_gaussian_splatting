@@ -103,13 +103,16 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
   m_glslCompiler.defaultTarget();
   m_glslCompiler.defaultOptions();
 
+  // Get device information
+  m_physicalDeviceInfo.init(m_app->getPhysicalDevice());
+
   // Get ray tracing properties
   m_rtProperties.pNext = &m_accelStructProps;
   VkPhysicalDeviceProperties2 prop2{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &m_rtProperties};
   vkGetPhysicalDeviceProperties2(m_app->getPhysicalDevice(), &prop2);
 
   // init the Vulkan splatSet and the mesh set for mesh compositing
-  m_splatSetVk.init(m_app, &m_alloc, &m_uploader, &m_sampler, &m_accelStructProps);
+  m_splatSetVk.init(m_app, &m_alloc, &m_uploader, &m_sampler, &m_physicalDeviceInfo, &m_accelStructProps);
   m_meshSetVk.init(m_app, &m_alloc, &m_uploader, &m_accelStructProps);
   m_cameraSet.init(cameraManip.get());
 };
@@ -168,6 +171,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   if(m_shaders.valid && splatCount && prmSelectedPipeline == PIPELINE_RTX)
   {
+    if(!m_splatSetVk.rtxValid)
+    {
+      // let's switch back to raster, RTX is KO
+      prmSelectedPipeline == PIPELINE_MESH;
+      return;
+    }
+
     if(prmRtx.temporalSampling && !updateFrameCounter())
       return;
 
@@ -260,7 +270,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
   }
 
   // raytrace the secondary rays if needed
-  if(m_shaders.valid && splatCount && !m_meshSetVk.instances.empty() && prmSelectedPipeline == PIPELINE_HYBRID)
+  if(m_shaders.valid && splatCount && m_splatSetVk.rtxValid && !m_meshSetVk.instances.empty() && prmSelectedPipeline == PIPELINE_HYBRID)
   {
     raytrace(cmd, glm::vec4(1, 1, 1, 1));
   }

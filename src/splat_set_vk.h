@@ -54,29 +54,33 @@ public:
             nvvk::ResourceAllocator*                            alloc,
             nvvk::StagingUploader*                              uploader,
             VkSampler*                                          sampler,
+            PhysicalDeviceInfo*                                 deviceInfo,
             VkPhysicalDeviceAccelerationStructurePropertiesKHR* accelStructProps)
   {
-    m_app      = app;
-    m_alloc    = alloc;
-    m_uploader = uploader;
-    m_sampler  = sampler;
+    m_app        = app;
+    m_alloc      = alloc;
+    m_uploader   = uploader;
+    m_sampler    = sampler;
+    m_deviceInfo = deviceInfo;
     rtAccelerationStructures.init(m_alloc, m_uploader, m_app->getQueue(0), 2000, 2000);
   }
 
   void deinit()
   {
     rtAccelerationStructures.deinit();
-    m_app      = nullptr;
-    m_alloc    = nullptr;
-    m_uploader = nullptr;
-    m_sampler  = nullptr;
+    m_app        = nullptr;
+    m_alloc      = nullptr;
+    m_uploader   = nullptr;
+    m_sampler    = nullptr;
+    m_deviceInfo = nullptr;
+    rtxValid     = false;
   }
 
   void resetTransform()
   {
     translation = {0.0f, 0.0f, 0.0f};
     rotation    = {0.0f, 0.0f, 0.0f};
-    scale       = {1.0f, -1.0f, -1.0f};  // INRIA models comes inverted
+    scale       = {1.0f, 1.0f, 1.0f};  // INRIA models comes inverted
     computeTransform(scale, rotation, translation, transform, transformInverse);
   }
 
@@ -97,12 +101,17 @@ public:
     m_alloc->destroyBuffer(m_splatModel.vertexBuffer);
     m_alloc->destroyBuffer(m_splatModel.indexBuffer);
     m_alloc->destroyBuffer(m_splatModel.aabbBuffer);
+    rtxValid = false;
   }
 
   // rtxInitSplatModel must be invoked prior to creation of acceleration structure
   void rtxInitAccelerationStructures(SplatSet& splatSet);
 
-  void rtxDeinitAccelerationStructures() { rtAccelerationStructures.deinitAccelerationStructures(); }
+  void rtxDeinitAccelerationStructures()
+  {
+    rtAccelerationStructures.deinitAccelerationStructures();
+    rtxValid = false;
+  }
 
   // reset the memory usage stats
   inline void resetMemoryStats() { memoryStats = {}; }
@@ -112,7 +121,7 @@ public:
 
   glm::vec3 translation{0.0f};
   glm::vec3 rotation{0.0f};
-  glm::vec3 scale{1.0f, -1.0f, -1.0f};  // INRIA models comes inverted
+  glm::vec3 scale{1.0f, 1.0f, 1.0f};
   glm::mat4 transform{};                // transformation matrix of the model
   glm::mat4 transformInverse{};         // inverseTransformation matrix of the model
 
@@ -203,7 +212,9 @@ public:
     uint32_t odevShOther = 0;  // GRAM bytes used for SH degree 1 of source model
   } memoryStats;
 
-  // RTX AS memory stats (it is more rendering memory than model memory, so placed here
+  // Is RTX valid
+  bool rtxValid = false;  // This flag is set to false if some rtx AS allocations failed or before init
+  // RTX AS memory stats
   uint32_t tlasSizeBytes;  // Size of the TLAS in VRAM in bytes
   uint32_t blasSizeBytes;  // Size of the BLAS in VRAM in bytes
 
@@ -252,9 +263,10 @@ private:
   float m_rtxKernelMinResponse;
   bool  m_rtxKernelAdaptiveClamping;
 
-  nvapp::Application*      m_app      = nullptr;
-  nvvk::ResourceAllocator* m_alloc    = nullptr;
-  nvvk::StagingUploader*   m_uploader = nullptr;
+  nvapp::Application*      m_app        = nullptr;
+  nvvk::ResourceAllocator* m_alloc      = nullptr;
+  nvvk::StagingUploader*   m_uploader   = nullptr;
+  PhysicalDeviceInfo*      m_deviceInfo = nullptr;
 };
 
 }  // namespace vk_gaussian_splatting
