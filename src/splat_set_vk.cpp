@@ -320,6 +320,7 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
   }
 
   // Spherical harmonics of degree 1 to 3
+  if(!splatSet.f_rest.empty())
   {
     const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)splatSet.f_rest.size() / splatCount;
     const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
@@ -577,6 +578,7 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
     memoryStats.devSh0  = mapSize.x * mapSize.y * 4 * sizeof(uint8_t);
   }
   // Prepare the spherical harmonics of degree 1 to 3
+  if(!splatSet.f_rest.empty())
   {
     const uint32_t sphericalHarmonicsElementsPerTexel       = 4;
     const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)splatSet.f_rest.size() / splatCount;
@@ -990,6 +992,18 @@ void SplatSetVk::rtxInitAccelerationStructures(SplatSet& splatSet)
                        .accelerationStructureReference = rtAccelerationStructures.blasSet[0].address,
                    });
 
+    // estimate the memory usage and early return if max than authorized limit
+    VkDeviceSize sizeBytes = std::span<VkAccelerationStructureInstanceKHR const>(tlasInstances).size_bytes();
+
+    // TODO: Should query the device
+    if(sizeBytes >= m_deviceInfo->properties11.maxMemoryAllocationSize)
+    {
+      LOGW("Model too large to generate RTX acceleration structure, Raytracing will be deactivated\n");
+      rtxValid = false;
+      rtxDeinitAccelerationStructures();
+      return;
+    }
+
     if(m_rtxUseInstances)
     {  // one instance per splat
       // for(uint32_t splatIdx = 0; splatIdx < instCount; ++splatIdx)
@@ -1011,13 +1025,16 @@ void SplatSetVk::rtxInitAccelerationStructures(SplatSet& splatSet)
     rtAccelerationStructures.tlasSubmitBuildAndWait(tlasInstances, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
   }
 
-  // UIpdate memory statistics
+  // Update memory statistics
   tlasSizeBytes = rtAccelerationStructures.tlasBuildData.sizeInfo.accelerationStructureSize;
   blasSizeBytes = 0;
   for(auto& bd : rtAccelerationStructures.blasBuildData)
   {
     blasSizeBytes += bd.sizeInfo.accelerationStructureSize;
   }
+
+  //
+  rtxValid = true;
 }
 
 }  // namespace vk_gaussian_splatting

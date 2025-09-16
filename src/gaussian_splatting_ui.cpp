@@ -60,8 +60,8 @@ GaussianSplattingUI::GaussianSplattingUI(nvutils::ProfilerManager*   profilerMan
                          {".png"}, &m_screenshotFilename);
 };
 
-GaussianSplattingUI::~GaussianSplattingUI() {
-  // Nothiung to do here
+GaussianSplattingUI::~GaussianSplattingUI(){
+    // Nothing to do here
 };
 
 void GaussianSplattingUI::onAttach(nvapp::Application* app)
@@ -167,7 +167,8 @@ void GaussianSplattingUI::onUIMenu()
   {
     if(ImGui::MenuItem(ICON_MS_FILE_OPEN " Open file", ""))
     {
-      prmScene.sceneToLoadFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file", "PLY Files (*.ply)");
+      prmScene.sceneToLoadFilename = nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load ply file",
+                                                                 "All Files|*.ply;*.spz|PLY Files|*.ply|SPZ files|*.spz");
     }
     if(ImGui::MenuItem(ICON_MS_RESTORE_PAGE " Re Open", "F5", false, m_loadedSceneFilename != ""))
     {
@@ -188,7 +189,7 @@ void GaussianSplattingUI::onUIMenu()
     if(ImGui::MenuItem(ICON_MS_FILE_OPEN " Open project", ""))
     {
       prmScene.projectToLoadFilename =
-          nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load project file", "VKGS Files (*.vkgs)");
+          nvgui::windowOpenFileDialog(m_app->getWindowHandle(), "Load project file", "VKGS Files|*.vkgs");
     }
     if(ImGui::BeginMenu(ICON_MS_HISTORY " Recent projects"))
     {
@@ -203,7 +204,7 @@ void GaussianSplattingUI::onUIMenu()
     }
     if(ImGui::MenuItem(ICON_MS_FILE_SAVE " Save project", ""))
     {
-      auto path = nvgui::windowSaveFileDialog(m_app->getWindowHandle(), "Save project file", "VKGS Files (*.vkgs)");
+      auto path = nvgui::windowSaveFileDialog(m_app->getWindowHandle(), "Save project file", "VKGS Files|*.vkgs");
       if(!path.empty())
       {
         saveProject(path.string());
@@ -319,6 +320,8 @@ void GaussianSplattingUI::onFileDrop(const std::filesystem::path& filename)
 
   //
   if(extension == ".ply")
+    prmScene.sceneToLoadFilename = filename;
+  else if(extension == ".spz")
     prmScene.sceneToLoadFilename = filename;
   else if(extension == ".vkgs")
     prmScene.projectToLoadFilename = filename;
@@ -740,8 +743,16 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
   //  node_flags |= ImGuiTreeNodeFlags_Selected;
 
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-  bool node_open =
-      ImGui::TreeNodeEx(fmt::format(ICON_MS_GRAIN " Radiance Fields ({})", m_loadedSceneFilename.empty() ? 0 : 1).c_str(), node_flags);
+  std::string rtxError = " ";
+  if(m_splatSet.size() != 0 && !m_splatSetVk.rtxValid)
+  {
+    rtxError = " Error: RTX allocation failed";
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+  }
+  bool node_open = ImGui::TreeNodeEx(
+      fmt::format(ICON_MS_GRAIN " Radiance Fields ({}){}", m_loadedSceneFilename.empty() ? 0 : 1, rtxError).c_str(), node_flags);
+  if(m_splatSet.size() != 0 && !m_splatSetVk.rtxValid)
+    ImGui::PopStyleColor();
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
     m_selectedAsset             = SPLATSET;
@@ -941,12 +952,14 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   if(PE::Checkbox("V-Sync", &vsync))
     m_app->setVsync(vsync);
 
-  if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
+  if(PE::entry(
+         "Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
   {
     m_requestUpdateShaders = true;
   }
 
-  if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+  if(PE::entry(
+         "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
   {
     resetRenderSettings();
     m_requestUpdateShaders   = true;
@@ -954,7 +967,8 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   }
 
   ImGui::BeginDisabled(prmSelectedPipeline != PIPELINE_RTX);
-  if(PE::entry("Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
+  if(PE::entry(
+         "Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
   {
     m_requestUpdateShaders = true;
   }
@@ -976,7 +990,9 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     prmFrame.alphaCullThreshold = (float)alphaThres / 255.0f;
   }
 
-  if(PE::SliderInt("Maximum SH degree", (int*)&prmRender.maxShDegree, 0, 3, "%d", 0,
+  int maxShDegree = m_splatSet.maxShDegree();
+
+  if(PE::SliderInt("Maximum SH degree", (int*)&prmRender.maxShDegree, 0, maxShDegree, "%d", 0,
                    "Sets the highest degree of Spherical Harmonics (SH) used for view-dependent effects."))
     m_requestUpdateShaders = true;
 
@@ -1236,7 +1252,8 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format"))
     {
-      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetDataParameters();
         m_requestUpdateSplatData = true;
@@ -1262,7 +1279,8 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format RTX"))
     {
-      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry(
+             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRtxDataParameters();
         m_requestUpdateSplatAs = true;
@@ -1287,6 +1305,13 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
 
       if(PE::Checkbox("BLAS Compaction", &prmRtxData.compressBlas, "Bottom Level Acceleration structure compression."))
         m_requestUpdateSplatAs = true;
+
+      if(m_splatSet.size() != 0 && !m_splatSetVk.rtxValid)
+      {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+        PE::Text("Error", "RTX allocation failed");
+        ImGui::PopStyleColor();
+      }
 
       PE::end();
     }
@@ -1331,8 +1356,8 @@ void GaussianSplattingUI::guiDrawMeshMaterialProperties()
     auto& material = materials[i];
     ImGui::PushID(i);
     PE::Text("Name", m_meshSetVk.meshes[objIndex].matNames[i]);
-    needMaterialUpdate |=
-        PE::entry("Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
+    needMaterialUpdate |= PE::entry(
+        "Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
     needMaterialUpdate |= PE::ColorEdit3("ambient", glm::value_ptr(material.ambient));
     needMaterialUpdate |= PE::ColorEdit3("diffuse", glm::value_ptr(material.diffuse));
     needMaterialUpdate |= PE::ColorEdit3("specular", glm::value_ptr(material.specular));
@@ -1369,7 +1394,8 @@ void GaussianSplattingUI::guiDrawCameraProperties()
     changed |= ImGui::IsItemDeactivatedAfterEdit();
     PE::InputFloat3("Up", &camera.up.x, "%.5f", 0, "Up vector interest");
     changed |= ImGui::IsItemDeactivatedAfterEdit();
-    if(PE::entry("Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
+    if(PE::entry(
+           "Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
     {
       camera.up = y_is_up ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
       changed   = true;

@@ -28,6 +28,9 @@
 #include <nvutils/file_operations.hpp>
 #include <nvutils/parallel_work.hpp>
 
+#include <nvvk/debug_util.hpp>
+#include <nvvk/default_structs.hpp>
+
 // Example using the parallel loop macro
 // constexpr uint32_t N = 100;
 // START_PAR_LOOP( N, i)
@@ -44,6 +47,15 @@
   }
 
 namespace vk_gaussian_splatting {
+
+// test if file extension converted to lower case matches ext,
+// ext shall be provided as lowerCase and contain '.' : Example: ".txt"
+inline bool hasExtension(const std::filesystem::path& filePath, std::string ext)
+{
+  auto fileExt = filePath.extension().string();
+  std::transform(fileExt.begin(), fileExt.end(), fileExt.begin(), ::tolower);
+  return fileExt == ext;
+}
 
 inline static std::vector<std::filesystem::path> getResourcesDirs()
 {
@@ -125,6 +137,55 @@ static void computeTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& t
   //
   transformInv = glm::inverse(transform);
 }
+
+struct PhysicalDeviceInfo
+{
+  VkPhysicalDeviceProperties         properties10;
+  VkPhysicalDeviceVulkan11Properties properties11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
+  VkPhysicalDeviceVulkan12Properties properties12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+  VkPhysicalDeviceVulkan13Properties properties13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+  VkPhysicalDeviceVulkan14Properties properties14 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES};
+
+  VkPhysicalDeviceFeatures         features10;
+  VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+  VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+  VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+  VkPhysicalDeviceVulkan14Features features14 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
+
+  void init(VkPhysicalDevice physicalDevice, uint32_t apiVersion = VK_API_VERSION_1_4)
+  {
+    assert(apiVersion >= VK_API_VERSION_1_2);
+
+    VkPhysicalDeviceProperties2 props = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props.pNext                       = &properties11;
+    properties11.pNext                = &properties12;
+    if(apiVersion >= VK_API_VERSION_1_3)
+    {
+      properties12.pNext = &properties13;
+    }
+    if(apiVersion >= VK_API_VERSION_1_4)
+    {
+      properties13.pNext = &properties14;
+    }
+    vkGetPhysicalDeviceProperties2(physicalDevice, &props);
+    properties10 = props.properties;
+
+    VkPhysicalDeviceFeatures2 features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    features.pNext                     = &features11;
+    features11.pNext                   = &features12;
+    if(apiVersion >= VK_API_VERSION_1_3)
+    {
+      features12.pNext = &features13;
+    }
+    if(apiVersion >= VK_API_VERSION_1_4)
+    {
+      features13.pNext = &features14;
+    }
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &features);
+    features10 = features.features;
+  }
+};
+
 
 }  // namespace vk_gaussian_splatting
 

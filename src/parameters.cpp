@@ -85,7 +85,7 @@ void resetRtxParameters()
 void registerCommandLineParameters(nvutils::ParameterRegistry* parameterRegistry)
 {
   // Scene
-  parameterRegistry->add({"inputFile", "load a ply file"}, {".ply"}, &prmScene.sceneToLoadFilename);
+  parameterRegistry->add({"inputFile", "load a ply or an spz file"}, {".ply", ".spz"}, &prmScene.sceneToLoadFilename);
 #ifdef WITH_DEFAULT_SCENE_FEATURE
   parameterRegistry->add({"loadDefaultScene", "0=disable the load of a default scene when no ply file is provided"},
                          &prmScene.enableDefaultScene);

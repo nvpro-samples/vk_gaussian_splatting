@@ -57,6 +57,11 @@ set_property(TARGET downsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
 set_property(TARGET downsweep_key_value_comp PROPERTY FOLDER "ThirdParty/vrdx")
 set_property(TARGET upsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
 
+#####
+# Include spz (uses zlib from nvpro_core2)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/spz)
+set_property(TARGET spz PROPERTY FOLDER "ThirdParty")
+
 #####################################################################################
 # Source files for this project
 #
@@ -68,7 +73,8 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/src 
   ${CMAKE_CURRENT_SOURCE_DIR}/shaders 
   ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/miniply
-  ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx)
+  ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx
+  ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/spz/src/cc)
 
 #####################################################################################
 # Executable
@@ -106,6 +112,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   nvpro2::nvvk
   nvpro2::nvgpu_monitor
   vk_radix_sort
+  spz::spz
 )
 
 add_project_definitions(${PROJECT_NAME})

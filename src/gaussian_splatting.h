@@ -213,15 +213,15 @@ protected:
   // scene loader
   PlyLoaderAsync m_plyLoader;
   // 3DGS/3DGRT model in RAM
-  SplatSet m_splatSet;
+  SplatSet m_splatSet = {};
   // 3DGS/3DGRT model in VRAM
-  SplatSetVk m_splatSetVk;
+  SplatSetVk m_splatSetVk = {};
   // Set of meshes in VRAM
-  MeshSetVk m_meshSetVk;
+  MeshSetVk m_meshSetVk = {};
   // Set of lights in RAM and VRAM
-  LightSetVk m_lightSet;
+  LightSetVk m_lightSet = {};
   // Set of cameras in RAM
-  CameraSet m_cameraSet;
+  CameraSet m_cameraSet = {};
 
   // Index of the selected Mesh instance if any or -1 if none
   int64_t m_selectedMeshInstanceIndex = -1;
@@ -259,6 +259,7 @@ protected:
   nvvk::SamplerPool           m_samplerPool{};  // The sampler pool, used to create texture samplers
   VkSampler                   m_sampler{};      // texture sampler (nearest)
   nvvk::ResourceAllocator     m_alloc;
+  PhysicalDeviceInfo          m_physicalDeviceInfo;
 
   nvutils::ProfilerTimeline* m_profilerTimeline{};
   nvvk::ProfilerGpuTimer     m_profilerGpuTimer;

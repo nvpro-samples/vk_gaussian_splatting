@@ -26,9 +26,12 @@
 
 // 3rd party ply library
 #include "miniply.h"
+// 3rd party spz library
+#include "load-spz.h"
 
 //
 #include "ply_loader_async.h"
+#include "utilities.h"
 
 using namespace vk_gaussian_splatting;
 
@@ -138,6 +141,59 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 
+  // we use spz library for .spz extensions
+  if(hasExtension(filename, ".spz"))
+  {
+    // Converts to RUB coordinate system
+    spz::UnpackOptions options{.to = spz::CoordinateSystem::RUB};
+    // let's load
+    spz::GaussianCloud cloud = spz::loadSpz(filename.string(), options);
+    // convert to INRIA representation
+    output.positions.swap(cloud.positions);
+    output.rotation.resize(cloud.rotations.size());
+    const uint32_t numSplats = output.positions.size() / 3;
+    for(auto i = 0; i < numSplats; i++)
+    {
+      const uint32_t offset       = i * 4;
+      output.rotation[offset + 0] = cloud.rotations[offset + 3];
+      output.rotation[offset + 1] = cloud.rotations[offset + 0];
+      output.rotation[offset + 2] = cloud.rotations[offset + 1];
+      output.rotation[offset + 3] = cloud.rotations[offset + 2];
+    }
+    output.scale.swap(cloud.scales);
+    output.opacity.swap(cloud.alphas);
+    output.f_dc = cloud.colors;
+    // reorganize SH per components to match INRIA
+    const uint32_t shCoefsCount = cloud.sh.size() / numSplats / 3;
+    output.f_rest.resize(cloud.sh.size());
+    for(auto i = 0; i < numSplats; i++)
+    {
+      const uint32_t offset = i * shCoefsCount * 3;
+
+      // Spherical harmonics: Interleave so the coefficients are the fastest-changing axis and
+      // the channel (r, g, b) is slower-changing axis.
+      for(int32_t j = 0; j < shCoefsCount; j++)
+      {
+        output.f_rest[offset + j] = cloud.sh[(i * shCoefsCount + j) * 3];
+      }
+      for(int32_t j = 0; j < shCoefsCount; j++)
+      {
+        output.f_rest[offset + shCoefsCount + j] = cloud.sh[(i * shCoefsCount + j) * 3 + 1];
+      }
+      for(int32_t j = 0; j < shCoefsCount; j++)
+      {
+        output.f_rest[offset + shCoefsCount * 2 + j] = cloud.sh[(i * shCoefsCount + j) * 3 + 2];
+      }
+    }
+    //
+    auto      endTime  = std::chrono::high_resolution_clock::now();
+    long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    std::cout << "File loaded in " << loadTime << "ms" << std::endl;
+    //
+    return cloud.numPoints != 0;
+  }
+
+  // We use miniply to load .ply files (binary or utf8)
   // Open the file
   miniply::PLYReader reader(filename.string().c_str());
   if(!reader.valid())
@@ -159,12 +215,7 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
         std::cout << "Warning: ply loader skipping empty ply element " << std::endl;
         continue;  // move to next while iteration
       }
-      output.positions.resize(numVerts * 3);
-      output.scale.resize(numVerts * 3);
-      output.rotation.resize(numVerts * 4);
-      output.opacity.resize(numVerts);
-      output.f_dc.resize(numVerts * 3);
-      output.f_rest.resize(numVerts * 45);
+
       // load progress
       const uint32_t total  = numVerts * (3 + 3 + 4 + 1 + 3 + 45);
       uint32_t       loaded = 0;
@@ -178,41 +229,46 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
                                 "f_rest_32", "f_rest_33", "f_rest_34", "f_rest_35", "f_rest_36", "f_rest_37", "f_rest_38",
                                 "f_rest_39", "f_rest_40", "f_rest_41", "f_rest_42", "f_rest_43", "f_rest_44"))
       {
+        output.f_rest.resize(numVerts * 45);
         reader.extract_properties(indices, 45, miniply::PLYPropertyType::Float, output.f_rest.data());
         loaded += numVerts * 45;
         setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 3, "x", "y", "z"))
       {
+        output.positions.resize(numVerts * 3);
         reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.positions.data());
         loaded += numVerts * 3;
         setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 1, "opacity"))
       {
+        output.opacity.resize(numVerts);
         reader.extract_properties(indices, 1, miniply::PLYPropertyType::Float, output.opacity.data());
         loaded += numVerts;
         setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 3, "scale_0", "scale_1", "scale_2"))
       {
+        output.scale.resize(numVerts * 3);
         reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.scale.data());
         loaded += numVerts * 3;
         setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 4, "rot_0", "rot_1", "rot_2", "rot_3"))
       {
+        output.rotation.resize(numVerts * 4);
         reader.extract_properties(indices, 4, miniply::PLYPropertyType::Float, output.rotation.data());
         loaded += numVerts * 4;
         setProgress(float(loaded) / float(total));
       }
       if(reader.find_properties(indices, 3, "f_dc_0", "f_dc_1", "f_dc_2"))
       {
+        output.f_dc.resize(numVerts * 3);
         reader.extract_properties(indices, 3, miniply::PLYPropertyType::Float, output.f_dc.data());
         loaded += numVerts * 3;
         setProgress(float(loaded) / float(total));
       }
-
 
       gsFound = true;
     }
@@ -222,6 +278,9 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
 
   if(gsFound)
   {
+    // convert coordinates
+    output.convertCoordinates(spz::CoordinateSystem::RDF, spz::CoordinateSystem::RUB);
+    //
     auto      endTime  = std::chrono::high_resolution_clock::now();
     long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
     std::cout << "File loaded in " << loadTime << "ms" << std::endl;
