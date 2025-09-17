@@ -65,7 +65,8 @@ int main(int argc, char** argv)
   sequencerInfo.registerScriptParameters(parameterRegistry, parameterParser);
 
   // extends reporting output with memory consumption information
-  sequencerInfo.postCallbacks.emplace_back([&]() { gaussianSplatting->benchmarkAdvance(); });
+  sequencerInfo.postCallbacks.emplace_back(
+      [&](const nvutils::ParameterSequencer::State& /* unused */) { gaussianSplatting->benchmarkAdvance(); });
 
   // After the creation of the elements we have more parameters in the registry than before (from gaussianSplatting).
   // Therefore add the entire registry to the commandline parser again, to add new ones.
