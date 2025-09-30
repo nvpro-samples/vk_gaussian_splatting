@@ -52,6 +52,7 @@ int main(int argc, char** argv)
   parameterRegistry.add({"verbose", "Verbose output of the Vulkan context"}, &vkSetup.verbose);
   parameterRegistry.add({"validation", "Enable validation layers"}, &vkSetup.enableValidationLayers);
   parameterRegistry.add({"benchmark", "Enable benchmarking, prevents async loadings and turns off vsync"}, &benchmarkMode);
+  parameterRegistry.add({"forcegpu", "Force the use of a specific GPU by probviding its ID"}, &vkSetup.forceGPU);
 
   registerCommandLineParameters(&parameterRegistry);
 
