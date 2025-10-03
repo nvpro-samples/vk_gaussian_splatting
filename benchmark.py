@@ -7,6 +7,7 @@ import os
 import sys
 import argparse
 from collections import defaultdict
+from matplotlib.ticker import AutoMinorLocator
 import matplotlib.patches as mpatches  # Add this import for legend patches
 import shutil
 
@@ -118,6 +119,9 @@ color_set = {
     "light_green": "#8BFF00",  
     "black": "#000000",
     "white": "#FFFFFF",
+    "orange1": "#ffb366",
+    "orange2": "#ff8829",
+    "orange3": "#fe6b40",
 }
 
 def plot_cumulative_histogram_timers(
@@ -129,7 +133,11 @@ def plot_cumulative_histogram_timers(
     pipeline_names,  
     stages=["GPU Dist", "GPU Sort", "Rasterization"], 
     filename="histogram_timers.png",
-    stage_colors = [color_set["black"], color_set["dark_green"], color_set["green"]]
+    stage_colors = [color_set["black"], color_set["dark_green"], color_set["green"], color_set["light_green"]],
+    legend = [],
+    device="VK",
+    mstofps=False,
+    legend_title="Stage"
 ):
     scene_groups = defaultdict(list)
 
@@ -151,7 +159,10 @@ def plot_cumulative_histogram_timers(
         scene_data = {pipeline: {stage: 0 for stage in stages} for pipeline in pipelines}
         for benchmark_name, timers in results:
             for stage in stages:
-                scene_data[benchmark_name][stage] += timers.get(stage, {}).get("VK", 0)
+                if mstofps:
+                    scene_data[benchmark_name][stage] += 1000.0 / timers.get(stage, {}).get(device, 0)
+                else:
+                    scene_data[benchmark_name][stage] += timers.get(stage, {}).get(device, 0)
         all_data.append(scene_data)
         x_labels.append(scene)
 
@@ -183,20 +194,29 @@ def plot_cumulative_histogram_timers(
     ax.set_ylabel(ylabel) 
     ax.set_title(title)   
 
+    # Add minor ticks automatically (e.g., 4 minor ticks between major ticks)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(4))  # 4 means 3 intermediate ticks
+    ax.tick_params(axis='y', which='minor', length=4, width=1)
+    ax.grid(axis='y', which='major', alpha=0.2)  # add major gridlines
+
     # Format x-ticks with pipeline short names
     ax.set_xticks(index)
     ax.set_xticklabels([f"{scene}\n({', '.join(pipeline_names)})" for scene in x_labels], 
                        rotation=45, ha="right")
     
-    # Create legend for stages
+    # Create legend for stages    
+    if len(legend) == 0:
+        legend = stages
+    
     legend_handles = [mpatches.Patch(color=stage_colors[i], label=stage) for i, stage in enumerate(stages)]
-    ax.legend(handles=legend_handles, title="Stages", loc='upper right')
+    ax.legend(handles=legend_handles, title=legend_title, loc='upper right')
 
     # Save the plot
     plt.tight_layout()
     plt.savefig(filename)
     print(f"Histogram saved as {filename}")
 
+# device can be "VK" or "CPU"
 def plot_histogram_timers(
     benchmarks, 
     title,
@@ -204,10 +224,13 @@ def plot_histogram_timers(
     xlabel,
     pipelines, 
     pipeline_names,  
-    stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+    stages=["GPU Dist", "GPU Sort", "Rasterization"],
     filename="histogram_timers.png",
-    stage_colors = [color_set["light_green"], color_set["green"], color_set["dark_green"], color_set["black"]],
+    stage_colors = [color_set["light_green"], color_set["green"], color_set["dark_green"], color_set["black"] ],
     legend = [],
+    device="VK",
+    mstofps=False,
+    legend_title="Setup"
 ):
     scene_groups = defaultdict(list)
 
@@ -229,7 +252,10 @@ def plot_histogram_timers(
         scene_data = {pipeline: {stage: 0 for stage in stages} for pipeline in pipelines}
         for benchmark_name, timers in results:
             for stage in stages:
-                scene_data[benchmark_name][stage] += timers.get(stage, {}).get("VK", 0)
+                if mstofps:
+                    scene_data[benchmark_name][stage] += 1000.0 / timers.get(stage, {}).get(device, 0)
+                else:
+                    scene_data[benchmark_name][stage] += timers.get(stage, {}).get(device, 0)
         all_data.append(scene_data)
         x_labels.append(scene)
 
@@ -261,6 +287,11 @@ def plot_histogram_timers(
     ax.set_ylabel(ylabel) 
     ax.set_title(title)   
 
+    # Add minor ticks automatically (e.g., 4 minor ticks between major ticks)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(4))  # 4 means 3 intermediate ticks
+    ax.tick_params(axis='y', which='minor', length=4, width=1)
+    ax.grid(axis='y', which='major', alpha=0.2)  # add major gridlines
+
     # Format x-ticks with pipeline short names
     ax.set_xticks(index)
     ax.set_xticklabels([f"{scene}\n({', '.join(pipeline_names)})" for scene in x_labels], 
@@ -271,7 +302,7 @@ def plot_histogram_timers(
         legend = pipelines
     
     legend_handles = [mpatches.Patch(color=stage_colors[i], label=pipeline) for i, pipeline in enumerate(legend)]
-    ax.legend(handles=legend_handles, title="Setup", loc='upper right')
+    ax.legend(handles=legend_handles, title=legend_title, loc='upper right')
 
     # Save the plot
     plt.tight_layout()
@@ -375,7 +406,7 @@ if __name__ == "__main__":
     # Setup argument parsing for the base dataset path
     parser = argparse.ArgumentParser(description="Run benchmarks for 3D scenes.")
     parser.add_argument("benchmark", type=str, help="path to the benchmark .cfg file")
-    parser.add_argument("dataset", type=str, choices=["3DGS", "3DGRT"], help="Dataset to use")
+    parser.add_argument("dataset", type=str, choices=["3DGS", "3DGRT", "3DGUT"], help="Dataset to use")
     parser.add_argument("dataset_path", type=str, help="Base path to the dataset")
     parser.add_argument("csv_name", type=str, help="Name of the output csv file")
 
@@ -404,14 +435,14 @@ if __name__ == "__main__":
     # Define the scenes from 3DGUT with the relative paths
     rt_scenes = {
         "bicycle 1M Splats": "bicycle_exported.ply"
-        ,"bonsai 1M Splats": "bonsai_exported.ply"
-        ,"counter 1M Splats": "counter_exported.ply"
-        ,"flowers 1M Splats": "flowers_exported.ply"
-        ,"garden 1M Splats": "garden_exported.ply"
-        ,"kitchen 1M Splats": "kitchen_exported.ply"
-        ,"room 1M Splats": "room_exported.ply"
-        ,"stump 1M Splats": "stump_exported.ply"
-        ,"treehill 1M Splats": "treehill_exported.ply"
+       ,"bonsai 1M Splats": "bonsai_exported.ply"
+       ,"counter 1M Splats": "counter_exported.ply"
+       ,"flowers 1M Splats": "flowers_exported.ply"
+       ,"garden 1M Splats": "garden_exported.ply"
+       ,"kitchen 1M Splats": "kitchen_exported.ply"
+       ,"room 1M Splats": "room_exported.ply"
+       ,"stump 1M Splats": "stump_exported.ply"
+       ,"treehill 1M Splats": "treehill_exported.ply"
     }
 
     # Select the appropriate scenes based on the dataset argument
@@ -435,10 +466,10 @@ if __name__ == "__main__":
 
         print(f"Running benchmark for {scene_name} at {scene_path}...")
         run_benchmark(executable, benchmark_file, scene_path, output_log)
-
-        # Rename the generated screen shots
-        for img_file in ["mesh_screenshot.png", "vert_screenshot.png", "3dgrt_screenshot.png"]:
-            if os.path.exists(img_file):
+        
+        # Rename all files starting with "screenshot" (any extension)
+        for img_file in os.listdir("."):
+            if img_file.startswith("screenshot"):
                 new_name = f"{output_prefix}_{img_file}"
                 shutil.move(img_file, new_name)
                 #print(f"Renamed {img_file} to {new_name}")
@@ -517,7 +548,7 @@ if __name__ == "__main__":
         plot_histogram_timers(
             all_results, 
             xlabel="Scene",
-            ylabel="Cumulative VK Time (milliseconds)",
+            ylabel="Raytracing VK Time (milliseconds)",
             title="Raytracing (3DGRT) Pipeline Performance Comparison Using Acceleration Structures Variants",
             pipelines = ["3DGRT - sh uint8 - inst. off - comp. on", "3DGRT - sh uint8 - inst. off - comp. off", "3DGRT - sh uint8 - inst. on - comp. on", "3DGRT - sh uint8 - inst. on - comp. on - useAABB"],
             pipeline_names= ["A", "B", "C", "D"],
@@ -534,5 +565,51 @@ if __name__ == "__main__":
             pipeline_names= ["A", "B", "C", "D"],
             stages=["Scene", "Raytracing"], 
             filename="08_histogram_as_format_memory_3dgrt.png")
+
+    if args.dataset == "3DGUT":
+
+        plot_cumulative_histogram_timers(
+            all_results, 
+            xlabel="Scene (Extent method)",
+            ylabel="Cumulative VK Time (milliseconds)",
+            title="Comparison of VK3DGUT rendering performances on 3DGUT dataset - GPU time (ms) \n NVIDIA RTX 6000 Ada - 1920x1080",
+            pipelines = ["3DGUT - conic", "3DGUT - eigen"],
+            pipeline_names= ["conic", "eigen"],
+            stages=["GPU Dist", "GPU Sort", "Rasterization"], 
+            legend=["conic", "eigen"],
+            legend_title="Extent method",
+            filename="09_histogram_timers_3dgut.png")
+
+        plot_histogram_timers(
+            all_results, 
+            xlabel="Scene (Extent method)",
+            ylabel="Frames per second (fps)",
+            title="Comparison of VK3DGUT rendering performances on 3DGUT dataset - framerate (fps) \n NVIDIA RTX 6000 Ada - 1920x1080",
+            pipelines = ["3DGUT - conic", "3DGUT - eigen"],
+            pipeline_names= ["conic", "eigen"],
+            stages=["Frame"], 
+            legend=["conic", "eigen"],
+            mstofps=True,
+            legend_title="Extent method",
+            stage_colors = [color_set["green"], color_set["dark_green"]],
+            filename="09_histogram_timers_3dgut_fps.png")
+
+    # using 3DGUT datset (informative but fair comparison is not possible using a single dataset, 
+    # since each rendering depent on an appropriate training)
+    if args.dataset == "COMPARE": 
+
+        plot_histogram_timers(
+            all_results, 
+            xlabel="Scene (Pipelines)",
+            ylabel="Frames per second (fps)",
+            title="Comparison of VK3DGS, VK3DGUT and VK3DGRT rendering performances on 3DGUT dataset \n NVIDIA RTX 6000 Ada - 1920x1080 - 3DGRT TLAS inst. off",
+            pipelines = ["3DGS - sh fp32", "3DGUT - sh fp32", "3DGRT - sh fp32"],
+            pipeline_names= ["A", "B", "C"],
+            stages=["Frame"], 
+            legend=["A - VK3DGS", "B - VK3DGUT", "C - VK3DGRT"],
+            device="CPU",
+            mstofps=True,
+            legend_title="Pipeline",
+            filename="09_histogram_timers_3dgs_3dgut_3dgrt_fps.png")
 
     print("CSV and histogram generation complete.")

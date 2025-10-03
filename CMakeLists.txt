@@ -121,7 +121,9 @@ add_project_definitions(${PROJECT_NAME})
 # copies files
 #
 
-copy_to_runtime_and_install( ${PROJECT_NAME}
-    LOCAL_DIRS "${CMAKE_CURRENT_LIST_DIR}/shaders"
-    AUTO
+copy_to_runtime_and_install(${PROJECT_NAME}
+  DIRECTORIES "${NVSHADERS_DIR}/nvshaders"
+  FILES ${Slang_GLSLANG}
+  LOCAL_DIRS "${CMAKE_CURRENT_LIST_DIR}/shaders"
+  AUTO
 )

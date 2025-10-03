@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,26 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-#extension GL_EXT_ray_tracing : require
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#ifndef _COLOR_
+#define _COLOR_
 
-#include "raycommon.glsl"
-#include "shaderio.h"
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 
-// layout(location = 0) rayPayloadInEXT hitPayload prd;
-
-layout(push_constant) uniform _PushConstantRay
+vec3 hsbToRgb(vec3 hsbColor)
 {
-  PushConstantRay pcRay;
-};
-
-void main()
-{
-  //prd.hitStatus = 0;
+  vec3 rgb = clamp(abs(mod((hsbColor.x * 6.0) + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  rgb      = (rgb * rgb * (3.0 - (2.0 * rgb)));
+  return (hsbColor.z * mix(vec3(1.0), rgb, hsbColor.y));
 }
+
+#endif

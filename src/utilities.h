@@ -73,6 +73,7 @@ inline static std::vector<std::filesystem::path> getShaderDirs()
   std::filesystem::path exeName = nvutils::getExecutablePath().stem();
   return {
       std::filesystem::absolute(exePath / TARGET_EXE_TO_SOURCE_DIRECTORY / "shaders"),
+      std::filesystem::absolute(exePath / TARGET_EXE_TO_NVSHADERS_DIRECTORY),
       std::filesystem::absolute(exePath / TARGET_NAME "_files" / "shaders"),
       std::filesystem::absolute(exePath),
   };
@@ -137,55 +138,6 @@ static void computeTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& t
   //
   transformInv = glm::inverse(transform);
 }
-
-struct PhysicalDeviceInfo
-{
-  VkPhysicalDeviceProperties         properties10;
-  VkPhysicalDeviceVulkan11Properties properties11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
-  VkPhysicalDeviceVulkan12Properties properties12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
-  VkPhysicalDeviceVulkan13Properties properties13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
-  VkPhysicalDeviceVulkan14Properties properties14 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES};
-
-  VkPhysicalDeviceFeatures         features10;
-  VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
-  VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-  VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-  VkPhysicalDeviceVulkan14Features features14 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
-
-  void init(VkPhysicalDevice physicalDevice, uint32_t apiVersion = VK_API_VERSION_1_4)
-  {
-    assert(apiVersion >= VK_API_VERSION_1_2);
-
-    VkPhysicalDeviceProperties2 props = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-    props.pNext                       = &properties11;
-    properties11.pNext                = &properties12;
-    if(apiVersion >= VK_API_VERSION_1_3)
-    {
-      properties12.pNext = &properties13;
-    }
-    if(apiVersion >= VK_API_VERSION_1_4)
-    {
-      properties13.pNext = &properties14;
-    }
-    vkGetPhysicalDeviceProperties2(physicalDevice, &props);
-    properties10 = props.properties;
-
-    VkPhysicalDeviceFeatures2 features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-    features.pNext                     = &features11;
-    features11.pNext                   = &features12;
-    if(apiVersion >= VK_API_VERSION_1_3)
-    {
-      features12.pNext = &features13;
-    }
-    if(apiVersion >= VK_API_VERSION_1_4)
-    {
-      features13.pNext = &features14;
-    }
-    vkGetPhysicalDeviceFeatures2(physicalDevice, &features);
-    features10 = features.features;
-  }
-};
-
 
 }  // namespace vk_gaussian_splatting
 

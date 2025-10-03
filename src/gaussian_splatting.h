@@ -44,14 +44,14 @@
 // GPU radix sort
 #include <vk_radix_sort.h>
 //
-#include <nvvk/context.hpp>
-#include <nvvk/debug_util.hpp>
-#include <nvvk/pipeline.hpp>
-
 #include <nvutils/logger.hpp>
 #include <nvutils/file_operations.hpp>
 #include <nvutils/alignment.hpp>
 
+#include <nvvk/context.hpp>
+#include <nvvk/debug_util.hpp>
+#include <nvvk/pipeline.hpp>
+#include <nvvk/physical_device.hpp>
 #include <nvvk/helpers.hpp>
 #include <nvvk/gbuffers.hpp>
 #include <nvvk/resources.hpp>
@@ -104,8 +104,8 @@ public:
   void benchmarkAdvance();
 
 public:
-  // public so that it can be accessed by main
   // Camera manipulator
+  // public so that it can be accessed by main
   std::shared_ptr<nvutils::CameraManipulator> cameraManip{};
 
 protected:
@@ -154,7 +154,7 @@ private:
   // init the raster pipelines
   void initPipelines();
 
-  // deinit raster and rtx pipelines TOTO move rtx in separate method
+  // deinit raster and rtx pipelines TODO move rtx in separate method
   void deinitPipelines();
 
   void initRendererBuffers();
@@ -204,7 +204,15 @@ private:
   void initRtDescriptorSet();
   void updateRtDescriptorSet();
   void initRtPipeline();
-  void raytrace(const VkCommandBuffer& cmdBuf, const glm::vec4& clearColor);
+  void raytrace(const VkCommandBuffer& cmdBuf, bool meshDepthOnly = false);
+
+  //////////////
+  // Post processing
+
+  void initDescriptorSetPostProcessing();
+  void updateDescriptorSetPostProcessing();
+  void initPipelinePostProcessing();
+  void postProcess(VkCommandBuffer cmd);
 
 protected:
   // name of the loaded scene if load is successfull
@@ -223,10 +231,8 @@ protected:
   // Set of cameras in RAM
   CameraSet m_cameraSet = {};
 
-  // Index of the selected Mesh instance if any or -1 if none
-  int64_t m_selectedMeshInstanceIndex = -1;
-  // Index of the selected Light if any or -1 if none
-  int64_t m_selectedLightIndex = -1;
+  // Index of the item selected in a root node of scene graph or -1 if none
+  int64_t m_selectedItemIndex = -1;
   // Index of the last camera loaded
   uint64_t m_lastLoadedCamera = 0;
 
@@ -259,7 +265,7 @@ protected:
   nvvk::SamplerPool           m_samplerPool{};  // The sampler pool, used to create texture samplers
   VkSampler                   m_sampler{};      // texture sampler (nearest)
   nvvk::ResourceAllocator     m_alloc;
-  PhysicalDeviceInfo          m_physicalDeviceInfo;
+  nvvk::PhysicalDeviceInfo    m_physicalDeviceInfo;
 
   nvutils::ProfilerTimeline* m_profilerTimeline{};
   nvvk::ProfilerGpuTimer     m_profilerGpuTimer;
@@ -269,7 +275,15 @@ protected:
   VkFormat          m_depthFormat = VK_FORMAT_UNDEFINED;         // Depth format of the depth buffer
   VkClearColorValue m_clearColor  = {{0.0F, 0.0F, 0.0F, 0.0F}};  // Clear color
   VkDevice          m_device      = VK_NULL_HANDLE;              // Convenient sortcut to device
-  nvvk::GBuffer     m_gBuffers;                                  // G-Buffers: color + depth
+
+  // Convenient enum to dereference color buffers in GBuffers
+  enum
+  {
+    COLOR_MAIN = 0,
+    COLOR_AUX1 = 1,
+  };
+  // G-Buffers: 2 color buffers + 1 depth buffer
+  nvvk::GBuffer m_gBuffers;
 
   // camera info for current frame, updated by onRender
   glm::vec3 m_eye{};
@@ -303,12 +317,14 @@ protected:
   // The different shaders that are used in the pipelines
   struct Shaders
   {
-    // Gs Raster
+    // 3D Gaussians Raster
     VkShaderModule distShader{};
     VkShaderModule meshShader{};
     VkShaderModule vertexShader{};
     VkShaderModule fragmentShader{};
-    // Mesh raster
+    VkShaderModule threedgutMeshShader{};
+    VkShaderModule threedgutFragmentShader{};
+    // 3D Meshes raster
     VkShaderModule meshVertexShader{};
     VkShaderModule meshFragmentShader{};
     // for RTX
@@ -318,11 +334,13 @@ protected:
     VkShaderModule rtxRchitShader{};   // Closest Hit
     VkShaderModule rtxRahitShader{};   // Any Hit
     VkShaderModule rtxRintShader{};    // Interrsection
+    // Post processings
+    VkShaderModule postComputeShader{};
     // true if all the shaders are succesfully build
     bool valid = false;
   } m_shaders;
 
-  // to process m_shaders in loop
+  // Utility storage to process m_shaders in loop
   struct ShaderEntry
   {
     shaderc::SpvCompilationResult spv;
@@ -330,15 +348,16 @@ protected:
   };
   std::vector<ShaderEntry> m_allShaders{};
 
-  // Gs Pipelines
-  VkPipeline m_computePipeline{};  // The compute pipeline to compute gaussian splats distances to eye and cull
+  // 3D Gaussians Pipelines
+  VkPipeline m_computePipelineGsDistCull{};  // The compute pipeline to compute gaussian splats distances to eye and cull
   VkPipeline m_graphicsPipelineGsVert = VK_NULL_HANDLE;  // The graphic pipeline to rasterize gaussian splats using vertex shaders
   VkPipeline m_graphicsPipelineGsMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize gaussian splats using mesh shaders
-  // Triangle Mesh Pipelines
+  VkPipeline m_graphicsPipeline3dgutMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize 3DGUT splats using mesh shaders
+  // 3D Meshes Pipelines
   VkPipeline m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize meshes
 
-  VkPipelineLayout m_pipelineLayout{};  // Raster Pipelines layout
-
+  // Common to 3D meshes and 3D Gaussians pipeline
+  VkPipelineLayout      m_pipelineLayout{};       // Raster Pipelines layout
   VkDescriptorSetLayout m_descriptorSetLayout{};  // Descriptor set layout
   VkDescriptorSet       m_descriptorSet{};        // Raster Descriptor set
   VkDescriptorPool      m_descriptorPool{};       // Raster Descriptor pool
@@ -350,42 +369,40 @@ protected:
   {
     // Rasterization
 
-    uint32_t usedUboFrameInfo = 0;  // used = alloc all the time
-    uint32_t usedIndirect     = 0;  // used = alloc all the time, for the active pipeline
+    uint64_t usedUboFrameInfo = 0;  // used = alloc all the time
+    uint64_t usedIndirect     = 0;  // used = alloc all the time, for the active pipeline
 
-    uint32_t hostAllocDistances = 0;  // used = alloc
-    uint32_t hostAllocIndices   = 0;  // used = alloc
+    uint64_t hostAllocDistances = 0;  // used = alloc
+    uint64_t hostAllocIndices   = 0;  // used = alloc
 
-    uint32_t allocIndices      = 0;
-    uint32_t usedIndices       = 0;
-    uint32_t allocDistances    = 0;
-    uint32_t usedDistances     = 0;
-    uint32_t allocVdrxInternal = 0;  // used is unknown
+    uint64_t allocIndices      = 0;
+    uint64_t usedIndices       = 0;
+    uint64_t allocDistances    = 0;
+    uint64_t usedDistances     = 0;
+    uint64_t allocVdrxInternal = 0;  // used is unknown
 
-    uint32_t rasterHostTotal        = 0;
-    uint32_t rasterDeviceUsedTotal  = 0;
-    uint32_t rasterDeviceAllocTotal = 0;
+    uint64_t rasterHostTotal        = 0;
+    uint64_t rasterDeviceUsedTotal  = 0;
+    uint64_t rasterDeviceAllocTotal = 0;
 
     // RTX
+    uint64_t rtxUsedTlas = 0;
+    uint64_t rtxUsedBlas = 0;
 
-    uint32_t rtxUsedTlas = 0;
-    uint32_t rtxUsedBlas = 0;
-
-    uint32_t rtxHostTotal        = 0;
-    uint32_t rtxDeviceUsedTotal  = 0;
-    uint32_t rtxDeviceAllocTotal = 0;
+    uint64_t rtxHostTotal        = 0;
+    uint64_t rtxDeviceUsedTotal  = 0;
+    uint64_t rtxDeviceAllocTotal = 0;
 
     // Totals
-    uint32_t hostTotal        = 0;
-    uint32_t deviceUsedTotal  = 0;
-    uint32_t deviceAllocTotal = 0;
+    uint64_t hostTotal        = 0;
+    uint64_t deviceUsedTotal  = 0;
+    uint64_t deviceAllocTotal = 0;
 
   } m_renderMemoryStats;
 
   /////////////////////////
   // RTX specific
 
-  uint32_t m_graphicsQueueIndex = 0;
   VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
   VkPhysicalDeviceAccelerationStructurePropertiesKHR m_accelStructProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
 
@@ -393,7 +410,7 @@ protected:
   VkPipelineLayout                                  m_rtPipelineLayout;
   VkPipeline m_rtPipeline;  // The RTX pipeline to ray trace gaussian splats and meshes
 
-  nvvk::DescriptorBindings m_rtDescriptorBindings;
+  nvvk::DescriptorBindings m_rtDescriptorBindings{};
   VkDescriptorSetLayout    m_rtDescriptorSetLayout{};
   VkDescriptorSet          m_rtDescriptorSet{};
   VkDescriptorPool         m_rtDescriptorPool{};
@@ -405,6 +422,17 @@ protected:
   nvvk::SBTGenerator::Regions m_sbtRegions{};  // common to GS and Mesh
 
   shaderio::PushConstantRay m_pcRay{};  // Push constant for ray tracer
+
+  ///////////////////////////////
+  // Post processing
+
+  VkPipeline       m_computePipelinePostProcess{};
+  VkPipelineLayout m_pipelineLayoutPostProcess{};
+
+  nvvk::DescriptorBindings m_descriptorBindingsPostProcess{};
+  VkDescriptorSetLayout    m_descriptorSetLayoutPostProcess{};
+  VkDescriptorSet          m_descriptorSetPostProcess{};
+  VkDescriptorPool         m_descriptorPoolPostProcess{};
 };
 
 }  // namespace vk_gaussian_splatting

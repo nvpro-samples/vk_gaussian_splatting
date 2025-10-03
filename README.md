@@ -6,25 +6,46 @@
 
 We envision this project as a **testbed** to explore and compare various approaches to real-time visualization of **3D Gaussian Splatting (3DGS) [[Kerbl2023](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)]** and related evolutions. By evaluating various techniques and optimizations, we aim to provide valuable insights into **performance, quality, and implementation trade-offs** when using the **Vulkan API**.
 
-This new version of the sample introduces two new pipelines, a **ray tracing** and a **hybrid** one in addition to the original **rasterization** one. Since the documentation is getting more elaborated, we reorganized and split the documentation as described hereafter. *For a good general understanding we strongly recommend to read those pages in order*.
+This sample implements several **rendering pipelines** based on **rasterization**, **ray tracing**, and **hybrid** approaches. For a good general understanding, we strongly recommend reading the following pages in order.
 
 1. The present **readme.md**, will get you **up and running** with the software, point out where to **get sample scenes** and how to **open your first scene**. It also centralizes the bibliographic references for all the sub pages.
 2. The [Vulkan Gaussian Splatting Overview](./doc/overview_of_vk_gaussian_splatting.md) page will drive you through the different elements of the user interface and the functionalities of the software. *Some important points are introduced in this page*.
 
-    We then describe our Vulkan implementation of the three rendering approaches aforementioned:
+    We then describe our Vulkan implementation of the rendering approaches:
 3. [VK3DGSR: 3D Gaussian Splatting (3DGS) [Kerbl2023] using Vulkan Rasterization](./doc/rasterization_of_3d_gaussian_splatting.md)
 4. [VK3DGRT: 3D Gaussian Ray Tracing (3DGRT) [Moënne-Loccoz2024] using Vulkan RTX](./doc/ray_tracing_3d_gaussians.md)
-5. [VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./doc/hybrid_rendering_3d_gaussians.md)
+5. 🔥[VK3DGUT: 3D Gaussian Unscented Transform (3DGUT) [Wu2024] Using Vulkan Rasterization](./doc/rasterization_of_3dgut.md) 
+6. 🔥[VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./doc/hybrid_rendering_3d_gaussians.md)
+
+
+![Implemented pipelines features](doc/overview_of_implemented_pipelines.png)
 
 ## News
 
-- [2025/09] Add import of .spz file format from [nianticlabs](https://github.com/nianticlabs/spz).
-- [2025/08] Add depth of field to raytracing (3DGRT) pipeline.
+- [2025/09] 🔥Added Unscented Transform (3DGUT) and hybrid rendering (3DGUT/3DGRT) pipelines, with support for fisheye and depth of field.
+- [2025/09] Added import of .spz file format from [nianticlabs](https://github.com/nianticlabs/spz).
+- [2025/08] Added depth of field to raytracing (3DGRT) pipeline.
 - [2025/08] Added raytracing (3DGRT) and hybrid rendering (3DGS/3DGRT) pipelines + 3DGRT dataset.
 - [2025/08] Added compositing with meshes and project save/load functionality.
 - [2025/06] Ported to new NVIDIA DesignWorks [nvpro_core2](https://github.com/nvpro-samples/nvpro_core2).
 - [2025/03] Added new models from [3ds-scan.de](https://3ds-scan.de/). Thanks to Christian Rochner.
 - [2025/03] First release with 3DGS rasterization.
+
+## Table of Contents
+
+1. [Requirements](#requirements)
+2. [Building and Running](#building-and-running)
+3. [Opening 3DGS PLY and SPZ Files](#opening-3dgs-ply-and-spz-files)
+4. [3DGS Datasets](#3dgs-datasets)
+5. [3DGRT Datasets](#3dgrt-datasets)
+6. [3DGUT Datasets](#3dgut-datasets)
+7. [Profiling and Benchmarking](#profiling-and-benchmarking)
+8. [Continue Reading](#continue-reading)
+9. [References](#references)
+10. [3rd-Party Licenses](#3rd-party-licenses)
+11. [License](#license)
+12. [Contributing](#contributing)
+13. [Support](#support)
 
 ## Requirements
 
@@ -70,13 +91,15 @@ By default the application opens a 3DGS model representing a bouquet of flowers 
 
 **Compatibility**
 * [Jawset Postshot](https://www.jawset.com/) and [3DGRUT](https://github.com/nv-tlabs/3dgrut) output ply files are compatible with the INRIA format and can be opened directly.
-* Other reconstruction software's ply outputs such as [NerfStudio](https://docs.nerf.studio/nerfology/methods/splat.html) may work but have not been tested.
+* Other reconstruction software's ply outputs such as [NerfStudio](https://docs.nerf.studio/nerfology/methods/splat.html), [LichtFeld Studio](https://github.com/MrNeRF/LichtFeld-Studio) should also work.
 
 * SPZ file import can be tested using the sample [models](https://github.com/nianticlabs/spz/tree/main/samples) provided by nianticlabs.
 
+> **Important Note**: Visualization of 3D Gaussian models is most effective when using the same rendering algorithm and settings used during reconstruction. For example, models generated using Postshot 3DGS with anti-aliasing enabled will be best visualized using one of the available 3DGS pipelines (Mesh or Vertex) and by enabling "Mip Splatting Anti-Aliasing" in the rendering > rasterization parameters. Since no generic format with proper metadata exists, users must manually configure the rendering settings. Note that original 3DGS models from INRIA do not include anti-aliasing, which was introduced later [Yu2023].
+
 ## 3DGS Datasets
 
-The INRIA dataset of pre-trained models is available for [download](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) from the INRIA server.
+The INRIA dataset of pre-trained models is available for [download](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip) from the INRIA server. 
 
 * To visualize 3DGS reconstruction output, **open PLY files located in the point_cloud subfolders**, corresponding to 7,000 or 30,000 iterations.
 * Attention: The **input.ply files cannot be loaded**, as they represent raw point clouds (not 3DGS) generated by Structure From Motion (SfM) during model reconstruction.
@@ -85,11 +108,29 @@ Additionally, you can download the [3D gaussian model of a place with a fountain
 
 The Bouquet of Flowers scene, which is automatically downloaded by CMake, can also be [downloaded here](http://developer.download.nvidia.com/ProGraphics/nvpro-samples/flowers_1.zip). The model is released under the [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) license.
 
+Note: Even if not generated by 3DGRT or 3DGUT, the 3DGS bouquet of flowers and the two 3DGS fountain scenes from 3ds-scan will provide acceptable visual results when rendered using 3DGRT or 3DGUT with **Kernel degree** set to "2 (Quadratic)."
+
 ## 3DGRT Datasets
 
-We provide the reconstruction of the MipNerf 360 image set v1, using 3DGRT parametric particles intersections and MCCM/Adam, providing 1M splats for each model. [Download (1.5GB)](http://developer.download.nvidia.com/ProGraphics/nvpro-samples/3dgrt-mipnerf360-parametric-1M-v1.zip). 
+> **Attention**: The original version of the archive, named 3dgrt-mipnerf360-parametric-1M-v1.zip, was erroneously containing 3DGUT models. The archive has been renamed and updated with proper 3DGRT content.
 
-Note that even if not generated by 3DGRT, the 3DGS bouquet of flowers and the two 3DGS fountain scenes from 3ds-scan will provide acceptable visual results when rendered using 3DGRT.
+We provide the reconstruction of the MipNerf 360 image set v1, using **3DGRT** with parametric particles intersections and MCCM/Adam, providing 1M splats for each model.
+
+Download: [3dgrt-mipnerf360-v1-parametric-degree-4-mcmc-selective-adam-1M (1.5GB)](http://developer.download.nvidia.com/ProGraphics/nvpro-samples/3dgrt-mipnerf360-v1-parametric-degree-4-mcmc-selective-adam-1M.zip). 
+
+Recommended visualization settings for the **3DGRT pipeline**:
+* **Kernel degree**: 4 (Tesseractic)
+* **Particle format**: AABB + parametric  
+
+## 3DGUT Datasets
+
+We provide the reconstruction of the MipNerf 360 image set v1, using **3DGUT** with MCCM/Adam, providing 1M splats for each model.
+
+Download: [3dgut-mipnerf360-v1-mcmc-selective-adam-1M (1.5GB)](http://developer.download.nvidia.com/ProGraphics/nvpro-samples/3dgut-mipnerf360-v1-mcmc-selective-adam-1M.zip). 
+
+Recommended visualization settings for the **3DGUT or hybrid 3DGUT+3DGRT pipelines**:
+* **Mip splatting anti-aliasing**: Enabled  
+* **Kernel degree**: 2 (Quadratic)  
 
 ## Profiling and Benchmarking
 
@@ -102,7 +143,8 @@ The system also provides a means to run automatic benchmarks, which are detailed
 1. [Vulkan Gaussian Splatting Overview](./doc/overview_of_vk_gaussian_splatting.md) 
 2. [VK3DGSR: 3D Gaussian Splatting (3DGS) [Kerbl2023] using Vulkan Rasterization](./doc/rasterization_of_3d_gaussian_splatting.md)
 3. [VK3DGRT: 3D Gaussian Ray Tracing (3DGRT) [Moënne-Loccoz2024] using Vulkan RTX](./doc/ray_tracing_3d_gaussians.md)
-4. [VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./doc/hybrid_rendering_3d_gaussians.md)
+4. [VK3DGUT: 3D Gaussian Unscented Transform (3DGUT) [Wu2024] Using Vulkan Rasterization](./doc/rasterization_of_3dgut.md)
+5. [VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./doc/hybrid_rendering_3d_gaussians.md)
 
 ## References
 

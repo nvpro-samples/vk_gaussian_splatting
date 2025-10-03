@@ -17,24 +17,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#pragma once
-
 #include "parameters.h"
 
 namespace vk_gaussian_splatting {
 
 // no reset function on purpose
-extern SceneParameters prmScene{};
+SceneParameters prmScene{};
 
-extern VramDataParameters    prmData{};
-extern RtxVramDataParameters prmRtxData{};
+VramDataParameters    prmData{};
+RtxVramDataParameters prmRtxData{};
 
 // no reset function on purpose
-extern uint32_t            prmSelectedPipeline = PIPELINE_MESH;
-extern shaderio::FrameInfo prmFrame{};
-extern RenderParameters    prmRender{};
-extern RasterParameters    prmRaster{};
-extern RtxParameters       prmRtx{};
+uint32_t            prmSelectedPipeline = PIPELINE_MESH;
+shaderio::FrameInfo prmFrame{};
+RenderParameters    prmRender{};
+RasterParameters    prmRaster{};
+RtxParameters       prmRtx{};
 
 // Storage for respective default values
 
@@ -95,15 +93,20 @@ void registerCommandLineParameters(nvutils::ParameterRegistry* parameterRegistry
 
   // Data
   parameterRegistry->add({"shformat", "0=fp32 1=fp16 2=uint8"}, &prmData.shFormat);
-  parameterRegistry->add({"useAABBs", "0(Default)=use icosahedron 3D mesh and built-in triangle/ray intersection, 1=use AABBs and parametric intersection shader. DO NOT COMBINE with useTlasInstances=0."},
+  parameterRegistry->add({"useAABBs", "0=use icosahedron 3D mesh and built-in triangle/ray intersection (Default), 1=use AABBs and parametric intersection shader. DO NOT COMBINE with useTlasInstances=0."},
                          &prmRtxData.useAABBs);
-  parameterRegistry->add({"useTlasInstances", "1(default)=use one TLAS instance per particle and a small unit particle BLAS. 0=use one TLAS entry and a large BLAS."},
+  parameterRegistry->add({"useTlasInstances", "1=use one TLAS instance per particle and a small unit particle BLAS (default). 0=use one TLAS entry and a large BLAS."},
                          &prmRtxData.useTlasInstances);
-  parameterRegistry->add({"compressBlas", "1(default)=compress BLAS. 0=diabled."}, &prmRtxData.compressBlas);
+  parameterRegistry->add({"compressBlas", "1=compress BLAS (default). 0=diabled."}, &prmRtxData.compressBlas);
 
   // Pipelines
-  parameterRegistry->add({"pipeline", "0=vert 1(default)=mesh 2=raytracing 3=hybrid"}, &prmSelectedPipeline);
+  parameterRegistry->add({"pipeline", "0=3dgs-vert 1=3dgs-mesh(default) 2=3dgrt 3=hybrid-3dgs 4=3dgut 5=hybrid-3dgut"},
+                         &prmSelectedPipeline);
   parameterRegistry->add({"maxShDegree", "max sh degree used for rendering in [0,1,2,3]"}, &prmRender.maxShDegree);
+  parameterRegistry->add({"extentProjection", "particle extent projection method [0=Eigen (default),1=Conic]"},
+                         &prmRaster.extentProjection);
+  parameterRegistry->add({"kernelDegree", "kernel degree used by 3DGRT, 3DGUT and Hybrid 3DGUT pipelines in [0,1,2(default),3,4,5]"},
+                         &prmRtx.kernelDegree);
 }
 
 }  // namespace vk_gaussian_splatting

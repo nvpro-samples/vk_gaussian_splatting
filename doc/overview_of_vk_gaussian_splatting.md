@@ -45,10 +45,12 @@ The description of the respective properties and the implementation details of t
 
 | Pipeline name                | Implementation details |
 |--|--|
-| **Raster mesh shader 3DGS**  | [Rasterizing 3D Gaussian Splatting (3DGS) [Kerbl2023]](./doc/rasterization_of_3d_gaussian_splatting.md) |
-| **Raster vertex shader 3DGS**| [Rasterizing 3D Gaussian Splatting (3DGS) [Kerbl2023]](./doc/rasterization_of_3d_gaussian_splatting.md) |
-| **Ray tracing 3DGRT**        | [Ray tracing 3D Gaussians (3DGRT) [Moënne-Loccoz2024]](./doc/ray_tracing_3d_gaussians.md)    |
-| **Hybrid 3DGS+3DGRT**        | [Hybrid rendering of 3D Gaussians](./doc/hybrid_rendering_3d_gaussians.md)                   |
+| **Raster vertex shader 3DGS**  | [VK3DGSR: 3D Gaussian Splatting (3DGS) [Kerbl2023] using Vulkan Rasterization](./rasterization_of_3d_gaussian_splatting.md) |
+| **Raster mesh shader 3DGS**| [VK3DGSR: 3D Gaussian Splatting (3DGS) [Kerbl2023] using Vulkan Rasterization](./rasterization_of_3d_gaussian_splatting.md) |
+| **Raster mesh shader 3DGUT**| [VK3DGUT: 3D Gaussian Unscented Transform (3DGUT) [Wu2024] Using Vulkan Rasterization](./rasterization_of_3dgut.md) |
+| **Ray tracing 3DGRT**        | [VK3DGRT: 3D Gaussian Ray Tracing (3DGRT) [Moënne-Loccoz2024] using Vulkan RTX](./ray_tracing_3d_gaussians.md)    |
+| **Hybrid 3DGS+3DGRT**        | [VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./hybrid_rendering_3d_gaussians.md)                   |
+| **Hybrid 3DGS+3DGUT**        | [VK3DGHR: 3D Gaussian Hybrid Rendering Using Vulkan RTX and Rasterization](./hybrid_rendering_3d_gaussians.md)                   |
 
 ## Radiance Fields / Splat Set
 
@@ -66,12 +68,12 @@ The **Splat Set Format in VRAM** group allows users to configure how the model's
 This **storage** option impacts memory access patterns and performance, allowing comparisons between different storage strategies. In both modes, splat attributes are stored linearly in memory in the order they are loaded from disk.
 *	**Data Buffer Mode** – Uses a separate buffer for each attribute type.
     *	This layout improves memory lookups during shader execution, as threads access attributes in sequential stages (e.g., first positions, then colors, etc.).
-    *  	Buffers are allocated and initialized by the `initDataBuffers` method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp)).
+    *  	Buffers are allocated and initialized by the `initDataBuffers` method (see [splat_set_vk.cpp](../src/splat_set_vk.cpp)).
 *	**Texture Mode** – Uses a separate texture map for each attribute type.
     *	All textures are 4092 pixels wide, with the height determined as a power of two based on the attribute's memory footprint.
     *	Linear storage in textures is suboptimal due to square-based cache for texel fetches, but data locality cannot be easily optimized as sorting is view-dependent.
     *	Future work could explore organizing data as in [Morgenstern2024] to leverage texture compression.
-    *   Textures are allocated and initialized by the `initDataTextures` method (see [gaussian_splatting.cpp](src/gaussian_splatting.cpp)).
+    *   Textures are allocated and initialized by the `initDataTextures` method (see [splat_set_vk.cpp](../src/splat_set_vk.cpp)).
 
 Finally, the **SH format** selector controls the precision used for storing spherical harmonics (SH) coefficients.
 
@@ -82,7 +84,7 @@ Finally, the **SH format** selector controls the precision used for storing sphe
 
 The **RTX Acceleration Structure** group allows to configure the associated  Acceleration Structure used by the ray tracing rendering pipeline. 
 
-Those options have strong impact on performance and memory consumption. They are documented and devised more in detail in the [Ray tracing 3D Gaussians (3DGRT) [Moënne-Loccoz2024]](./doc/ray_tracing_3d_gaussians.md) page.
+Those options have strong impact on performance and memory consumption. They are documented and devised more in detail in the [VK3DGRT: 3D Gaussian Ray Tracing (3DGRT) [Moënne-Loccoz2024] using Vulkan RTX](./doc/ray_tracing_3d_gaussians.md) page.
 
 ## Mesh Models
 

@@ -22,14 +22,12 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_control_flow_attributes : require  // for [[unroll]]
-#extension GL_GOOGLE_include_directive : require
-
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_buffer_reference2 : require
+#extension GL_GOOGLE_include_directive : require
 
 #include "shaderio.h"
-#include "common.glsl"
-#include "raycommon.glsl"
+#include "threedgrt_payload.glsl"
 
 // Hit attributes
 #if WIREFRAME

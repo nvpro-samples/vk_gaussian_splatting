@@ -73,15 +73,20 @@ void GaussianSplattingUI::onAttach(nvapp::Application* app)
 
   GaussianSplatting::onAttach(app);
 
-  // Init combo selectors used un UI
+  // Init combo selectors used in UI
 
   m_ui.enumAdd(GUI_STORAGE, STORAGE_BUFFERS, "Buffers");
   m_ui.enumAdd(GUI_STORAGE, STORAGE_TEXTURES, "Textures");
 
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Raster vertex shader 3DGS");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Raster mesh shader 3DGS");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH_3DGUT, "Raster mesh shader 3DGUT");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX, "Ray tracing 3DGRT");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_HYBRID, "Hybrid 3DGS+3DGRT");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_HYBRID_3DGUT, "Hybrid 3DGUT+3DGRT");
+
+  m_ui.enumAdd(GUI_EXTENT_METHOD, EXTENT_EIGEN, "Eigen");
+  m_ui.enumAdd(GUI_EXTENT_METHOD, EXTENT_CONIC, "Conic");
 
   m_ui.enumAdd(GUI_VISUALIZE, VISUALIZE_FINAL, "Final render");
   m_ui.enumAdd(GUI_VISUALIZE, VISUALIZE_CLOCK, "Clock cycles");
@@ -98,12 +103,22 @@ void GaussianSplattingUI::onAttach(nvapp::Application* app)
   m_ui.enumAdd(GUI_PARTICLE_FORMAT, PARTICLE_FORMAT_ICOSAHEDRON, "Icosahedron");
   m_ui.enumAdd(GUI_PARTICLE_FORMAT, PARTICLE_FORMAT_PARAMETRIC, "AABB + parametric");
 
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_QUINTIC, "Quintic");
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_TESSERACTIC, "Tesseractic");
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_CUBIC, "Cubic");
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_QUADRATIC, "Quadratic");
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_LAPLACIAN, "Laplacian");
-  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_LINEAR, "Linear");
+  m_ui.enumAdd(GUI_CAMERA_TYPE, CAMERA_PINHOLE, "Pinhole");
+  m_ui.enumAdd(GUI_CAMERA_TYPE, CAMERA_FISHEYE, "Fisheye");
+
+  m_ui.enumAdd(GUI_TEMPORAL_SAMPLING, TEMPORAL_SAMPLING_AUTO, "Automatic");
+  m_ui.enumAdd(GUI_TEMPORAL_SAMPLING, TEMPORAL_SAMPLING_ENABLED, "Force enabled");
+  m_ui.enumAdd(GUI_TEMPORAL_SAMPLING, TEMPORAL_SAMPLING_DISABLED, "Force disabled");
+
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_QUINTIC, "5 (Quintic)");
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_TESSERACTIC, "4 (Tesseractic)");
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_CUBIC, "3 (Cubic)");
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_QUADRATIC, "2 (Quadratic)");
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_LAPLACIAN, "1 (Laplacian)");
+  m_ui.enumAdd(GUI_KERNEL_DEGREE, KERNEL_DEGREE_LINEAR, "0 (Linear)");
+
+  m_ui.enumAdd(GUI_LIGHT_TYPE, LIGHT_TYPE_POINT, "Point");
+  m_ui.enumAdd(GUI_LIGHT_TYPE, LIGHT_TYPE_DIRECTIONAL, "Directional");
 
   m_ui.enumAdd(GUI_ILLUM_MODEL, 0, "No indirect");
   m_ui.enumAdd(GUI_ILLUM_MODEL, 1, "Reflective");
@@ -242,7 +257,8 @@ void GaussianSplattingUI::onUIMenu()
   if(ImGui::IsKeyPressed(ImGuiKey_Space))
   {
     m_lastLoadedCamera = (m_lastLoadedCamera + 1) % m_cameraSet.size();
-    cameraManip->setCamera(m_cameraSet.getCamera(m_lastLoadedCamera), false);
+    m_cameraSet.loadPreset(m_lastLoadedCamera, false);
+    m_requestUpdateShaders = true;
   }
   if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
   {
@@ -529,6 +545,8 @@ void GaussianSplattingUI::onUIRender()
   guiDrawRendererStatisticsWindow();
 
   guiDrawMemoryStatisticsWindow();
+
+  guiDrawFooterBar();
 }
 
 void GaussianSplattingUI::guiDrawAssetsWindow()
@@ -537,11 +555,6 @@ void GaussianSplattingUI::guiDrawAssetsWindow()
 
   if(ImGui::Begin("Assets"))
   {
-    // we systematically clamp, not only on user input, because sizes can have changed
-    m_selectedMeshInstanceIndex = std::clamp<int64_t>(m_selectedMeshInstanceIndex, -1, m_meshSetVk.instances.size() - 1);
-
-    m_selectedLightIndex = std::clamp<int64_t>(m_selectedLightIndex, -1, m_lightSet.size() - 1);
-
     guiDrawRendererTree();
 
     guiDrawCameraTree();
@@ -568,16 +581,14 @@ void GaussianSplattingUI::guiDrawRendererTree()
   // Renderer
   std::string pipelineName = m_ui.getEnums(GUI_PIPELINE)[prmSelectedPipeline].name;
   node_flags               = base_flags;
-  if(m_selectedAsset == RENDERER)
+  if(m_selectedAsset == GUI_RENDERER)
     node_flags |= ImGuiTreeNodeFlags_Selected;
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
   node_open = ImGui::TreeNodeEx(ICON_MS_CAMERA " Renderer", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
-    m_selectedAsset             = RENDERER;
-    m_selectedProperty          = GUI_RENDERER;
-    m_selectedMeshInstanceIndex = -1;
-    m_selectedLightIndex        = -1;
+    m_selectedAsset     = GUI_RENDERER;
+    m_selectedItemIndex = -1;
   }
   if(node_open)
   {
@@ -604,18 +615,16 @@ void GaussianSplattingUI::guiDrawCameraTree()
 
   ImGuiTreeNodeFlags node_flags = base_flags;
 
-  if(m_selectedAsset == CAMERAS)
+  if(m_selectedAsset == GUI_CAMERA && m_selectedItemIndex == -1)
     node_flags |= ImGuiTreeNodeFlags_Selected;
 
-  bool node_open = ImGui::TreeNodeEx(ICON_MS_PHOTO_CAMERA " Cameras", node_flags);
+  bool node_open = ImGui::TreeNodeEx(ICON_MS_PHOTO_CAMERA " Camera", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
-    m_selectedAsset             = CAMERAS;
-    m_selectedProperty          = GUI_CAMERA;
-    m_selectedMeshInstanceIndex = -1;
-    m_selectedLightIndex        = -1;
+    m_selectedAsset     = GUI_CAMERA;
+    m_selectedItemIndex = -1;
   }
-  ImGui::PushID(1);
+  ImGui::PushID(-1);
   ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
   if(ImGui::SmallButton(ICON_MS_ADD_A_PHOTO))
   {
@@ -640,25 +649,51 @@ void GaussianSplattingUI::guiDrawCameraTree()
     for(int i = 0; i < m_cameraSet.size(); ++i)
     {
       ImGui::PushID(i);
-      node_flags      = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+      node_flags = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+      if(m_selectedAsset == GUI_CAMERA && m_selectedItemIndex == i)
+        node_flags |= ImGuiTreeNodeFlags_Selected;
+
       const auto name = i == 0 ? fmt::format(ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Default Preset ", i) :
                                  fmt::format(ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Camera Preset ({})", i);
 
       bool node_open = ImGui::TreeNodeEx(name.c_str(), node_flags);
-      ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
+      if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+      {
+        m_selectedAsset     = GUI_CAMERA;
+        m_selectedItemIndex = i;
+      }
+      ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 110);
       if(ImGui::SmallButton(ICON_MS_LOCAL_SEE))
       {
-        cameraManip->setCamera(m_cameraSet.getCamera(i), false);
-        m_lastLoadedCamera = i;
+        if(m_cameraSet.getPreset(i).model != m_cameraSet.getCamera().model)
+        {
+          m_requestUpdateShaders = true;
+        }
+        m_cameraSet.loadPreset(i, false);
+        m_lastLoadedCamera     = i;
+        m_selectedItemIndex    = -1;  // Will select current camera
+        m_requestUpdateShaders = true;
       }
       nvgui::tooltip("Load camera preset");
+      if(i > 0)
+      {
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
+        if(ImGui::SmallButton(ICON_MS_ADD_A_PHOTO))
+        {
+          m_cameraSet.setPreset(i, m_cameraSet.getCamera());
+          m_lastLoadedCamera     = i;
+          m_selectedItemIndex    = -1;  // Will select current camera
+          m_requestUpdateShaders = true;
+        }
+        nvgui::tooltip("Overwrite preset with current camera settings");
+      }
       // Delete button only if not default
       if(i != 0)
       {
         ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
         if(ImGui::SmallButton(ICON_MS_DELETE))
         {
-          m_cameraSet.eraseCamera(i);
+          m_cameraSet.erasePreset(i);
         }
         nvgui::tooltip("Delete preset");
       }
@@ -674,21 +709,19 @@ void GaussianSplattingUI::guiDrawLightTree()
   const ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
   ImGuiTreeNodeFlags node_flags = base_flags;
-  if(m_selectedAsset == LIGHTS)
+  if(m_selectedAsset == GUI_LIGHT && m_selectedItemIndex == -1)
     node_flags |= ImGuiTreeNodeFlags_Selected;
 
   bool node_open = ImGui::TreeNodeEx(ICON_MS_LIGHT_MODE " Lights", node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
-    m_selectedAsset             = LIGHTS;
-    m_selectedProperty          = GUI_NONE;
-    m_selectedMeshInstanceIndex = -1;
-    m_selectedLightIndex        = -1;
+    m_selectedAsset     = GUI_NONE;
+    m_selectedItemIndex = -1;
   }
   ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 70);
   if(ImGui::SmallButton(ICON_MS_ADD_CIRCLE))
   {
-    m_selectedLightIndex        = m_lightSet.createLight();
+    m_selectedItemIndex         = m_lightSet.createLight();
     m_requestUpdateLightsBuffer = true;
   }
   nvgui::tooltip("Create light");
@@ -700,16 +733,14 @@ void GaussianSplattingUI::guiDrawLightTree()
     {
       ImGui::PushID(i);
       ImGuiTreeNodeFlags node_flags = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-      if(m_selectedLightIndex == i)
+      if(m_selectedAsset == GUI_LIGHT && m_selectedItemIndex == i)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
       bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Light %d", i);
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
-        m_selectedAsset             = NONE;
-        m_selectedProperty          = GUI_LIGHT;
-        m_selectedMeshInstanceIndex = -1;
-        m_selectedLightIndex        = i;
+        m_selectedAsset     = GUI_LIGHT;
+        m_selectedItemIndex = i;
       }
       if(m_lightSet.size() > 1)
       {
@@ -719,10 +750,8 @@ void GaussianSplattingUI::guiDrawLightTree()
           m_lightSet.eraseLight(i);
           m_requestUpdateLightsBuffer = true;
           // deselect all
-          m_selectedAsset             = NONE;
-          m_selectedProperty          = GUI_NONE;
-          m_selectedMeshInstanceIndex = -1;
-          m_selectedLightIndex        = -1;
+          m_selectedAsset     = GUI_NONE;
+          m_selectedItemIndex = -1;
         }
         nvgui::tooltip("Delete light");
       }
@@ -739,8 +768,8 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
 
   ImGuiTreeNodeFlags node_flags = base_flags;
 
-  //if(m_selectedAsset == SPLATSET)
-  //  node_flags |= ImGuiTreeNodeFlags_Selected;
+  if(m_selectedAsset == GUI_SPLATSET && m_selectedItemIndex == -1)
+    node_flags |= ImGuiTreeNodeFlags_Selected;
 
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
   std::string rtxError = " ";
@@ -755,10 +784,8 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
     ImGui::PopStyleColor();
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
-    m_selectedAsset             = SPLATSET;
-    m_selectedProperty          = GUI_NONE;
-    m_selectedMeshInstanceIndex = -1;
-    m_selectedLightIndex        = -1;
+    m_selectedAsset     = GUI_NONE;
+    m_selectedItemIndex = -1;
   }
   if(node_open)
   {
@@ -766,17 +793,15 @@ void GaussianSplattingUI::guiDrawRadianceFieldsTree()
     for(int i = 0; i < 1; ++i)
     {
       ImGuiTreeNodeFlags node_flags = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-      if(m_selectedAsset == SPLATSET)
+      if(m_selectedAsset == GUI_SPLATSET && m_selectedItemIndex != -1)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
       bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Splat set %d - %s",
                                          i, m_loadedSceneFilename.filename().string().c_str());
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
-        m_selectedAsset             = SPLATSET;
-        m_selectedProperty          = GUI_SPLATSET;
-        m_selectedMeshInstanceIndex = -1;
-        m_selectedLightIndex        = -1;
+        m_selectedAsset     = GUI_SPLATSET;
+        m_selectedItemIndex = i;
       }
     }
 
@@ -793,21 +818,20 @@ void GaussianSplattingUI::guiDrawObjectTree()
 
   ImGuiTreeNodeFlags node_flags = base_flags;
 
-  if(m_selectedAsset == OBJECTS)
+  if(m_selectedAsset == GUI_MESH && m_selectedItemIndex == -1)
     node_flags |= ImGuiTreeNodeFlags_Selected;
-  if(m_objJustImported)
+
+  if(m_objListUpdated)
   {
     ImGui::SetNextItemOpen(true);
-    m_objJustImported = false;
+    m_objListUpdated = false;
   }
   bool node_open =
       ImGui::TreeNodeEx(fmt::format(ICON_MS_DEPLOYED_CODE " Mesh Models ({})", m_meshSetVk.instances.size()).c_str(), node_flags);
   if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
   {
-    m_selectedAsset             = OBJECTS;
-    m_selectedProperty          = GUI_NONE;
-    m_selectedMeshInstanceIndex = -1;
-    m_selectedLightIndex        = -1;
+    m_selectedAsset     = GUI_NONE;
+    m_selectedItemIndex = -1;
   }
   ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
   if(ImGui::SmallButton(ICON_MS_FILE_OPEN))
@@ -837,11 +861,10 @@ void GaussianSplattingUI::guiDrawObjectTree()
       m_requestUpdateMeshData = true;
       m_requestUpdateShaders  = true;
       //
-      m_selectedAsset             = NONE;
-      m_selectedProperty          = GUI_MATERIAL;
-      m_selectedMeshInstanceIndex = m_meshSetVk.instances.size() - 1;
+      m_selectedAsset     = GUI_MESH;
+      m_selectedItemIndex = m_meshSetVk.instances.size() - 1;
       //
-      m_objJustImported = true;  // so that next loop will force the Object node open
+      m_objListUpdated = true;  // so that next loop will force the Object open if selected
     }
 
     // definition of the obj error popup
@@ -867,22 +890,22 @@ void GaussianSplattingUI::guiDrawObjectTree()
       int                instanceIndex = i;
       int                objectIndex   = m_meshSetVk.instances[instanceIndex].objIndex;
       ImGuiTreeNodeFlags node_flags    = base_flags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-      if(m_selectedMeshInstanceIndex == instanceIndex)
+      if(m_selectedAsset == GUI_MESH && m_selectedItemIndex == instanceIndex)
         node_flags |= ImGuiTreeNodeFlags_Selected;
 
       bool node_open = ImGui::TreeNodeEx((void*)(intptr_t)i, node_flags, ICON_MS_SUBDIRECTORY_ARROW_RIGHT "Model %d - %s",
                                          i, m_meshSetVk.meshes[objectIndex].name.c_str());
       if(ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
       {
-        m_selectedAsset             = NONE;
-        m_selectedProperty          = GUI_MATERIAL;
-        m_selectedMeshInstanceIndex = instanceIndex;
-        m_selectedLightIndex        = -1;
+        m_selectedAsset     = GUI_MESH;
+        m_selectedItemIndex = instanceIndex;
       }
       ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 30);
       if(ImGui::SmallButton(ICON_MS_DELETE))
       {
         m_requestDeleteSelectedMesh = true;
+        m_selectedItemIndex         = instanceIndex;
+        m_objListUpdated            = true;  // so that next loop will force the Object node open if selected
       }
       ImGui::PopID();
     }
@@ -894,7 +917,7 @@ void GaussianSplattingUI::guiDrawPropertiesWindow()
 {
   if(ImGui::Begin("Properties"))
   {
-    switch(m_selectedProperty)
+    switch(m_selectedAsset)
     {
       case GUI_RENDERER:
         if(ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen))
@@ -905,8 +928,9 @@ void GaussianSplattingUI::guiDrawPropertiesWindow()
       case GUI_SPLATSET:
         guiDrawSplatSetProperties();
         break;
-      case GUI_MATERIAL:
-        if(m_selectedMeshInstanceIndex >= 0 && m_selectedMeshInstanceIndex < m_meshSetVk.instances.size())
+      case GUI_MESH:
+        m_selectedItemIndex = std::clamp<int64_t>(m_selectedItemIndex, -1, m_meshSetVk.instances.size() - 1);
+        if(m_selectedItemIndex >= 0)
         {
           if(ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
           {
@@ -919,19 +943,27 @@ void GaussianSplattingUI::guiDrawPropertiesWindow()
         }
         break;
       case GUI_CAMERA:
-        if(ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+        m_selectedItemIndex = std::clamp<int64_t>(m_selectedItemIndex, -1, m_cameraSet.size() - 1);
+        //if(ImGui::CollapsingHeader("Camera Intrinsics", ImGuiTreeNodeFlags_DefaultOpen))
         {
           guiDrawCameraProperties();
         }
-        if(ImGui::CollapsingHeader("Navigation", ImGuiTreeNodeFlags_DefaultOpen))
+        if(m_selectedItemIndex == -1)
         {
-          guiDrawNavigationProperties();
+          if(ImGui::CollapsingHeader("Navigation", ImGuiTreeNodeFlags_DefaultOpen))
+          {
+            guiDrawNavigationProperties();
+          }
         }
         break;
       case GUI_LIGHT:
-        if(ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+        m_selectedItemIndex = std::clamp<int64_t>(m_selectedItemIndex, -1, m_lightSet.size() - 1);
+        if(m_selectedItemIndex >= 0)
         {
-          guiDrawLightProperties();
+          if(ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
+          {
+            guiDrawLightProperties();
+          }
         }
         break;
       default:
@@ -973,7 +1005,7 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     m_requestUpdateShaders = true;
   }
   ImGui::BeginDisabled(prmRender.visualize == 0);
-  if(PE::DragFloat("multiplier", (float*)&prmFrame.multiplier, 1.0F, 0.0F, 1000.0F))
+  if(PE::DragFloat("Multiplier", (float*)&prmFrame.multiplier, 1.0F, 0.0F, 1000.0F))
     resetFrameCounter();
   ImGui::EndDisabled();
   ImGui::EndDisabled();
@@ -990,9 +1022,10 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     prmFrame.alphaCullThreshold = (float)alphaThres / 255.0f;
   }
 
-  int maxShDegree = m_splatSet.maxShDegree();
+  const int maxModelShDegree = m_splatSet.maxShDegree();
+  prmRender.maxShDegree      = std::min(prmRender.maxShDegree, maxModelShDegree);
 
-  if(PE::SliderInt("Maximum SH degree", (int*)&prmRender.maxShDegree, 0, maxShDegree, "%d", 0,
+  if(PE::SliderInt("Maximum SH degree", (int*)&prmRender.maxShDegree, 0, maxModelShDegree, "%d", 0,
                    "Sets the highest degree of Spherical Harmonics (SH) used for view-dependent effects."))
     m_requestUpdateShaders = true;
 
@@ -1015,8 +1048,6 @@ void GaussianSplattingUI::guiDrawRendererProperties()
     {
       if(ImGui::BeginTabItem("Rasterization specifics"))
       {
-        //ImGui::TextDisabled("Rasterization specifics");
-
         PE::begin("## Raster settings");
 
         if(PE::entry("Sorting method", [&]() { return m_ui.enumCombobox(GUI_SORTING, "##ID", &prmRaster.sortingMethod); }))
@@ -1089,9 +1120,27 @@ void GaussianSplattingUI::guiDrawRendererProperties()
           m_requestUpdateShaders = true;
         }
 
+        bool forceExtentProjection = prmSelectedPipeline == PIPELINE_VERT || prmSelectedPipeline == PIPELINE_MESH
+                                     || prmSelectedPipeline == PIPELINE_HYBRID;
+
+        ImGui::BeginDisabled(forceExtentProjection);
+        if(PE::entry(
+               "Projection Method",
+               [&]() { return m_ui.enumCombobox(GUI_EXTENT_METHOD, "##ID", &prmRaster.extentProjection); },
+               "Available for 3DGUT pipelines only, 3DGS allways uses Eigen.\n"
+               "Method used to compute the 2D extent projection from the 3D covariance:\n"
+               "- Eigen method leads to basis aligned rectangular extent, more performant\n"
+               "- Conic method leads to axis aligned rectangular extent as in 3DGS and 3DGUT papers"))
+        {
+          m_requestUpdateShaders = true;
+        }
+        ImGui::EndDisabled();
+
         if(PE::Checkbox("Mip splatting antialiasing", &prmRaster.msAntialiasing,
                         "Indicates if Gaussians were trained (and should be rendered) with mip-splatting antialiasing method."))
           m_requestUpdateShaders = true;
+
+        ImGui::BeginDisabled(prmSelectedPipeline == PIPELINE_MESH_3DGUT || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT);
 
         if(PE::Checkbox("Fragment shader barycentric", &prmRaster.fragmentBarycentric,
                         "Enables fragment shader barycentric to reduce vertex and mesh shaders outputs."))
@@ -1106,33 +1155,40 @@ void GaussianSplattingUI::guiDrawRendererProperties()
                         "Other parameters such as Splat Scale still apply in this mode."))
           m_requestUpdateShaders = true;
 
+        ImGui::EndDisabled();
+
         PE::end();
 
         ImGui::EndTabItem();
       }
     }
-    if(prmSelectedPipeline == PIPELINE_RTX || prmSelectedPipeline == PIPELINE_HYBRID)
+
+    if(prmSelectedPipeline == PIPELINE_RTX || prmSelectedPipeline == PIPELINE_HYBRID
+       || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT || prmSelectedPipeline == PIPELINE_MESH_3DGUT)
     {
-      if(ImGui::BeginTabItem("Ray tracing specifics"))
+      if(ImGui::BeginTabItem("Ray tracing and 3DGUT specifics"))
       {
         PE::begin("## Raytrace sampling and bounces");
 
+        ImGui::BeginDisabled(prmSelectedPipeline == PIPELINE_MESH_3DGUT);
         PE::SliderInt("Max bounces", &prmFrame.rtxMaxBounces, 1, 16);
+        ImGui::EndDisabled();
 
         ImGui::BeginDisabled(prmSelectedPipeline == PIPELINE_HYBRID);
         {
-          if(PE::Checkbox("Temporal sampling", &prmRtx.temporalSampling,
-                          "Enable accumulation of frame results over time for DoF.\n"
-                          "If enabled, the specified number of temporal samples will be accumulated over \"Temporal samples count\" frames,\n"
-                          "and the last accumulated frame will be presented without additional rendering.\n"
-                          "Note that rendering converges faster if v-sync is off.\n"
-                          "If disabled, the system renders in free run mode."))
+          if(PE::entry(
+                 "Temporal sampling",
+                 [&]() { return m_ui.enumCombobox(GUI_TEMPORAL_SAMPLING, "##ID", &prmRtx.temporalSamplingMode); },
+                 "Enable accumulation of frame results over time.\n"
+                 "Automatic will activate sampling depending on other effects such as DoF.\n"
+                 "If enabled, the specified number of temporal samples will be accumulated over \"Temporal samples count\" frames,\n"
+                 "and the last accumulated frame will be presented without additional rendering.\n"
+                 "Note that rendering converges faster if v-sync is off.\n"
+                 "If disabled, the system renders in free run mode."))
           {
             resetFrameCounter();
             m_requestUpdateShaders = true;
           }
-
-          ImGui::BeginDisabled(!prmRtx.temporalSampling);
 
           if(PE::InputInt("Temporal samples count", &prmFrame.frameSampleMax, 1, 100, 0,
                           "Number of frames after which temporal sampling is stopped. \n"
@@ -1141,48 +1197,18 @@ void GaussianSplattingUI::guiDrawRendererProperties()
             prmFrame.frameSampleMax = std::clamp(prmFrame.frameSampleMax, 1, 1000);
             resetFrameCounter();
           }
-
-          // temporal sampling progress bar
-          PE::entry("Sampling frame", [&]() {
-            float progress = 0.0;
-            char  buf[32]  = "1/1";
-            if(prmRtx.temporalSampling)
-            {
-              progress = (float)prmFrame.frameSampleId / (std::max(1, prmFrame.frameSampleMax));
-              sprintf(buf, "%d/%d", prmFrame.frameSampleId, prmFrame.frameSampleMax);
-            }
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.4f, 0.7f, 0.0f, 1.0f));  // Green of course :-)
-            ImGui::ProgressBar(progress, ImVec2(0.f, 0.f), buf);
-            ImGui::PopStyleColor();
-            return true;
-          });
-          ImGui::EndDisabled();
-
-          PE::end();
-
-          PE::begin("## Raytrace depth of field");
-
-          if(PE::Checkbox("Depth of Field", &prmRtx.dofEnabled,
-                          "Activates Depth of Field effect (DoF).\n"
-                          "Activating \"Temporal sampling\" in addition to DoF leads to better visual results."))
-          {
-            m_requestUpdateShaders = true;
-          }
-          ImGui::BeginDisabled(!prmRtx.dofEnabled);
-          {
-            if(PE::DragFloat("Focal distance", &prmFrame.focalDist, 0.1F, 0.1F, 15.0F, "%.3f"))
-              resetFrameCounter();
-
-            if(PE::SliderFloat("Aperture", &prmFrame.aperture, 0.0F, 0.01F, "%.6f"))
-              resetFrameCounter();
-          }
-          ImGui::EndDisabled();
         }
         ImGui::EndDisabled();
 
         PE::end();
 
         PE::begin("## Raytrace gaussians settings");
+
+        if(PE::entry("Kernel degree",
+                     [&]() { return m_ui.enumCombobox(GUI_KERNEL_DEGREE, "##ID", &prmRtx.kernelDegree); }))
+          m_requestUpdateSplatData = true;
+
+        ImGui::BeginDisabled(prmSelectedPipeline == PIPELINE_MESH_3DGUT);
 
         int parametric = prmRtxData.useAABBs ? PARTICLE_FORMAT_PARAMETRIC : PARTICLE_FORMAT_ICOSAHEDRON;
 
@@ -1202,10 +1228,6 @@ void GaussianSplattingUI::guiDrawRendererProperties()
           }
           m_requestUpdateSplatData = true;
         }
-
-        if(PE::entry("Kernel degree",
-                     [&]() { return m_ui.enumCombobox(GUI_KERNEL_DEGREE, "##ID", &prmRtx.kernelDegree); }))
-          m_requestUpdateSplatData = true;
 
         if(PE::Checkbox("Adaptive clamp", &prmRtx.kernelAdaptiveClamping))
           m_requestUpdateSplatData = true;
@@ -1229,14 +1251,10 @@ void GaussianSplattingUI::guiDrawRendererProperties()
 
         PE::Text("Maximum anyhit/pixel", std::to_string(prmRtx.payloadArraySize * prmFrame.maxPasses));
 
-        PE::end();
-        PE::begin("## Raytrace feedback");
-
-        PE::Text("Mouse ", fmt::format("{} {}", prmFrame.cursor.x, prmFrame.cursor.y));
-        PE::Text("Splat Id ", std::to_string(m_indirectReadback.particleID));
-        PE::Text("Splat Dist ", std::to_string(m_indirectReadback.particleDist));
+        ImGui::EndDisabled();
 
         PE::end();
+
         ImGui::EndTabItem();
       }
     }
@@ -1248,6 +1266,17 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
 {
   namespace PE = nvgui::PropertyEditor;
 
+  if(ImGui::CollapsingHeader("Model Transform", ImGuiTreeNodeFlags_DefaultOpen))
+  {
+    PE::begin("##Transform");
+    if(guiGetTransform(m_splatSetVk.scale, m_splatSetVk.rotation, m_splatSetVk.translation, m_splatSetVk.transform,
+                       m_splatSetVk.transformInverse, false))
+    {
+      // delay update of Acceleration Structures if not using ray tracing
+      m_requestDelayedUpdateSplatAs = true;
+    }
+    PE::end();
+  }
   if(ImGui::CollapsingHeader("Splat Set Format in VRAM", ImGuiTreeNodeFlags_DefaultOpen))
   {
     if(PE::begin("##VRAM format"))
@@ -1266,12 +1295,14 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
       {
         m_requestUpdateSplatData = true;
       }
+      ImGui::BeginDisabled(m_splatSet.maxShDegree() == 0);
       if(PE::entry(
              "SH format", [&]() { return m_ui.enumCombobox(GUI_SH_FORMAT, "##ID", &prmData.shFormat); },
              "Selects storage format for SH coefficient, balancing precision and memory usage"))
       {
         m_requestUpdateSplatData = true;
       }
+      ImGui::EndDisabled();
       PE::end();
     }
   }
@@ -1316,24 +1347,13 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
       PE::end();
     }
   }
-  if(ImGui::CollapsingHeader("Model Transform", ImGuiTreeNodeFlags_DefaultOpen))
-  {
-    PE::begin("##Transform");
-    if(guiGetTransform(m_splatSetVk.scale, m_splatSetVk.rotation, m_splatSetVk.translation, m_splatSetVk.transform,
-                       m_splatSetVk.transformInverse, false))
-    {
-      // delay update of Acceleration Structures if not using ray tracing
-      m_requestDelayedUpdateSplatAs = true;
-    }
-    PE::end();
-  }
 }
 
 void GaussianSplattingUI::guiDrawMeshTransformProperties()
 {
   namespace PE = nvgui::PropertyEditor;
 
-  Instance& inst = m_meshSetVk.instances[m_selectedMeshInstanceIndex];
+  Instance& inst = m_meshSetVk.instances[m_selectedItemIndex];
   PE::begin("##Transform");
   if(guiGetTransform(inst.scale, inst.rotation, inst.translation, inst.transform, inst.transformInverse, false))
   {
@@ -1346,7 +1366,7 @@ void GaussianSplattingUI::guiDrawMeshMaterialProperties()
 {
   namespace PE = nvgui::PropertyEditor;
 
-  const auto objIndex           = m_meshSetVk.instances[m_selectedMeshInstanceIndex].objIndex;
+  const auto objIndex           = m_meshSetVk.instances[m_selectedItemIndex].objIndex;
   auto&      materials          = m_meshSetVk.meshes[objIndex].materials;
   bool       needMaterialUpdate = false;
 
@@ -1380,74 +1400,94 @@ void GaussianSplattingUI::guiDrawCameraProperties()
 {
   namespace PE = nvgui::PropertyEditor;
 
-  Camera camera     = cameraManip->getCamera();
-  bool   changed    = false;
-  bool   instantSet = false;
-
-  bool y_is_up = camera.up.y == 1;
-
-  if(PE::begin())
+  Camera camera = m_cameraSet.getCamera();
+  if(m_selectedItemIndex > -1)  // we show a preset - "read only"
   {
-    PE::InputFloat3("Eye", &camera.eye.x, "%.5f", 0, "Position of the Camera");
-    changed |= ImGui::IsItemDeactivatedAfterEdit();
-    PE::InputFloat3("Center", &camera.ctr.x, "%.5f", 0, "Center of camera interest");
-    changed |= ImGui::IsItemDeactivatedAfterEdit();
-    PE::InputFloat3("Up", &camera.up.x, "%.5f", 0, "Up vector interest");
-    changed |= ImGui::IsItemDeactivatedAfterEdit();
-    if(PE::entry(
-           "Y is UP", [&] { return ImGui::Checkbox("##Y", &y_is_up); }, "Is Y pointing up or Z?"))
+    camera = m_cameraSet.getPreset(m_selectedItemIndex);
+    if(m_selectedItemIndex > 0)
     {
-      camera.up = y_is_up ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
-      changed   = true;
+      ImGui::Text("To modify a preset.");
+      ImGui::Text("  1. Load the preset");
+      ImGui::Text("  2. Modify the current camera");
+      ImGui::Text("  3. Overwrite the preset with active camera");
     }
-    if(glm::length(camera.up) < 0.0001f)
-    {
-      camera.up = y_is_up ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
-      changed   = true;
-    }
-    if(PE::SliderFloat("FOV", &camera.fov, 1.F, 179.F, "%.1f deg", ImGuiSliderFlags_Logarithmic, "Field of view in degrees"))
-    {
-      instantSet = true;
-      changed    = true;
-    }
-
-    if(PE::treeNode("Clip planes"))
-    {
-      glm::vec2 clip = cameraManip->getClipPlanes();
-      PE::InputFloat("Near", &clip.x);
-      changed |= ImGui::IsItemDeactivatedAfterEdit();
-      PE::InputFloat("Far", &clip.y);
-      changed |= ImGui::IsItemDeactivatedAfterEdit();
-      PE::treePop();
-      cameraManip->setClipPlanes(clip);
-    }
-
-    if(cameraManip->isAnimated())
-    {
-      // Ignoring any changes while the camera is moving to the goal.
-      // The camera has to be in the new position before setting a new value.
-      changed = false;
-    }
-
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
-    ImGui::TextDisabled("(?)");
-    nvgui::tooltip(cameraManip->getHelp().c_str(), false, 0.0f);
-    ImGui::TableNextColumn();
-    if(ImGui::SmallButton("Copy"))
-    {
-      std::string text = fmt::format("{{{:.5f}, {:.5f}, {:.5f}}}, {{{:.5f}, {:.5f}, {:.5f}}}, {{{:.5f}, {:.5f}, {:.5f}}}",
-                                     camera.eye.x, camera.eye.y, camera.eye.z, camera.ctr.x, camera.ctr.y, camera.ctr.z,
-                                     camera.up.x, camera.up.y, camera.up.z);
-      ImGui::SetClipboardText(text.c_str());
-    }
-    nvgui::tooltip("Copy to the clipboard the current camera: {eye}, {ctr}, {up}");
-    PE::end();
-
-    if(changed)
-      cameraManip->setCamera(camera);
+    else
+      ImGui::Text("Default Preset cannot be modified.");
   }
+
+  bool changed = false;
+
+  if(ImGui::CollapsingHeader("Camera Intrinsics", ImGuiTreeNodeFlags_DefaultOpen))
+  {
+    ImGui::BeginDisabled(m_selectedItemIndex != -1 || cameraManip->isAnimated());
+    if(PE::begin())
+    {
+      if(PE::entry(
+             "Camera type", [&] { return m_ui.enumCombobox(GUI_CAMERA_TYPE, "##ID", &camera.model); },
+             "Fisheye type may not be supported by all the Pipelines.\n"
+             "The Camera type is not stored per camera for the time beeing."))
+      {
+        m_requestUpdateShaders = true;
+        changed                = true;
+      }
+
+      PE::InputFloat2("Clip planes", glm::value_ptr(camera.clip));
+      changed |= ImGui::IsItemDeactivatedAfterEdit();
+
+      if(PE::SliderFloat("FOV", &camera.fov, 1.F, 179.F, "%.1f deg", ImGuiSliderFlags_Logarithmic, "Field of view in degrees"))
+      {
+        changed = true;
+      }
+
+      ImGui::BeginDisabled(prmSelectedPipeline != PIPELINE_RTX && prmSelectedPipeline != PIPELINE_HYBRID_3DGUT
+                           && prmSelectedPipeline != PIPELINE_MESH_3DGUT);
+
+      if(PE::Checkbox("Depth of Field", &camera.dofEnabled,
+                      "Activates Depth of Field effect (DoF). Only works with 3DGRT, 3DGUT and hybrid 3DGUT/3GDRT.\n"
+                      "Activating \"Temporal sampling\" in addition to DoF leads to better visual results."))
+      {
+        m_requestUpdateShaders = true;
+        changed                = true;
+      }
+      ImGui::BeginDisabled(!camera.dofEnabled);
+      if(PE::DragFloat("Focus distance", &camera.focusDist, 0.1F, 0.1F, 15.0F, "%.3f"))
+      {
+        resetFrameCounter();
+        changed = true;
+      }
+      if(PE::SliderFloat("Aperture", &camera.aperture, 0.0F, 0.01F, "%.6f"))
+      {
+        resetFrameCounter();
+        changed = true;
+      }
+      ImGui::EndDisabled();  // DoF
+
+      ImGui::EndDisabled();  // Modifiable
+    }
+    PE::end();
+    ImGui::EndDisabled();
+  }
+  if(ImGui::CollapsingHeader("Camera Extrinsics", ImGuiTreeNodeFlags_DefaultOpen))
+  {
+    ImGui::BeginDisabled(m_selectedItemIndex != -1 || cameraManip->isAnimated());
+    if(PE::begin())
+    {
+
+      PE::InputFloat3("Eye", &camera.eye.x, "%.5f", 0, "Position of the Camera");
+      changed |= ImGui::IsItemDeactivatedAfterEdit();
+      PE::InputFloat3("Center", &camera.ctr.x, "%.5f", 0, "Center of camera interest");
+      changed |= ImGui::IsItemDeactivatedAfterEdit();
+      PE::InputFloat3("Up", &camera.up.x, "%.5f", 0, "Up vector interest");
+      changed |= ImGui::IsItemDeactivatedAfterEdit();
+
+      PE::end();
+    }
+    ImGui::EndDisabled();
+  }
+
+  // if changed it is necessarly the active camera
+  if(changed)
+    m_cameraSet.setCamera(camera);
 }
 
 void GaussianSplattingUI::guiDrawNavigationProperties()
@@ -1455,8 +1495,9 @@ void GaussianSplattingUI::guiDrawNavigationProperties()
 
   namespace PE = nvgui::PropertyEditor;
 
-  Camera camera  = cameraManip->getCamera();
-  bool   changed = false;
+  bool changed = false;
+
+  ImGui::BeginDisabled(cameraManip->isAnimated());
 
   // Navigation Mode
   if(PE::begin())
@@ -1466,7 +1507,7 @@ void GaussianSplattingUI::guiDrawNavigationProperties()
     auto duration = static_cast<float>(cameraManip->getAnimationDuration());
 
     changed |= PE::entry(
-        "Navigation",
+        "Navigation and Animation",
         [&] {
           int rmode = static_cast<int>(mode);
           changed |= ImGui::RadioButton("Examine", &rmode, nvutils::CameraManipulator::Examine);
@@ -1480,14 +1521,17 @@ void GaussianSplattingUI::guiDrawNavigationProperties()
         },
         "Camera Navigation Mode");
 
-    changed |= PE::SliderFloat("Speed", &speed, 0.01F, 10.0F, "%.3f", 0, "Changing the default speed movement");
-    changed |= PE::SliderFloat("Transition", &duration, 0.0F, 2.0F, "%.3f", 0, "Nb seconds to move to new position");
+    changed |= PE::SliderFloat("Speed", &speed, 0.01F, 10.0F, "%.3f", 0, "Changing the default movement speed");
+    changed |= PE::SliderFloat("Transition", &duration, 0.0F, 2.0F, "%.3f", 0,
+                               "Nb seconds to move to new position when loading a camera preset");
 
     cameraManip->setSpeed(speed);
     cameraManip->setAnimationDuration(duration);
 
     PE::end();
   }
+
+  ImGui::EndDisabled();
 }
 
 void GaussianSplattingUI::guiDrawLightProperties()
@@ -1496,10 +1540,14 @@ void GaussianSplattingUI::guiDrawLightProperties()
 
   bool needUpdate = false;
 
-  auto& light = m_lightSet.getLight(m_selectedLightIndex);
-
+  auto& light = m_lightSet.getLight(m_selectedItemIndex);
+  ImGui::Text("Light sources only affect meshes");
+  ImGui::Text("Point lights have quadratic attenuation");
   PE::begin("##Light");
-  needUpdate |= PE::InputInt("Type", &light.type);
+  if(PE::entry("Type", [&]() { return m_ui.enumCombobox(GUI_LIGHT_TYPE, "##ID", &light.type); }, "Type of light."))
+  {
+    needUpdate = true;
+  }
   needUpdate |= PE::DragFloat3("Position", glm::value_ptr(light.position));
   needUpdate |= PE::DragFloat("Intensity", &light.intensity);
   PE::end();
@@ -1539,7 +1587,7 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
     const int32_t rasterSplatCount =
         (prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX) ? totalSplatCount : m_indirectReadback.instanceCount;
     const uint32_t wgCount =
-        (prmSelectedPipeline == PIPELINE_MESH) ?
+        (prmSelectedPipeline == PIPELINE_MESH || prmSelectedPipeline == PIPELINE_MESH_3DGUT) ?
             ((prmRaster.sortingMethod == SORTING_GPU_SYNC_RADIX) ?
                  m_indirectReadback.groupCountX :
                  (prmFrame.splatCount + prmRaster.meshShaderWorkgroupSize - 1) / prmRaster.meshShaderWorkgroupSize) :
@@ -1776,6 +1824,58 @@ void GaussianSplattingUI::guiDrawMemoryStatisticsWindow()
     }
   }
   ImGui::End();
+}
+
+void GaussianSplattingUI::guiDrawFooterBar()
+{
+  //
+  //ImGuiViewportP* viewport = (ImGuiViewportP*)(void*)ImGui::GetMainViewport();
+  ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+  float height = ImGui::GetFrameHeight();
+
+  if(ImGui::BeginViewportSideBar("##MainStatusBar", NULL, ImGuiDir_Down, height, window_flags))
+  {
+    if(ImGui::BeginMenuBar())
+    {
+      ImGui::Text("Mouse ");
+      ImGui::Text("%s", fmt::format("{} {}", prmFrame.cursor.x, prmFrame.cursor.y).c_str());
+      ImGui::Text(" | Splat Id ");
+      ImGui::Text("%s", std::to_string(m_indirectReadback.particleID).c_str());
+      ImGui::Text(" | Splat Dist ");
+      ImGui::Text("%s", std::to_string(m_indirectReadback.particleDist).c_str());
+
+      /* DEBUG Feedback 
+      ImGui::Text(" %s", "debug: ");
+      ImGui::Text(" %s", std::to_string(m_indirectReadback.val1).c_str());
+      ImGui::Text(" %s", std::to_string(m_indirectReadback.val2).c_str());
+      ImGui::Text(" %s  ", std::to_string(m_indirectReadback.val3).c_str());
+      ImGui::Text(" %s", std::to_string(m_indirectReadback.val4).c_str());
+      ImGui::Text(" %s", std::to_string(m_indirectReadback.val5).c_str());
+      ImGui::Text(" %s  ", std::to_string(m_indirectReadback.val6).c_str());
+      ImGui::Text(" %s", std::to_string(m_indirectReadback.val7).c_str());
+      */
+
+      // temporal sampling progress bar
+      {
+        float       progress = 0.0;
+        std::string buf      = "1/1";
+        if(prmRtx.temporalSampling)
+        {
+          progress = (float)prmFrame.frameSampleId / (std::max(1, prmFrame.frameSampleMax));
+          buf      = fmt::format("{}/{}", prmFrame.frameSampleId, prmFrame.frameSampleMax);
+        }
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 255);
+        ImGui::Text("%s", "SPP");
+        nvgui::tooltip("Samples Per Pixel");
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.4f, 0.7f, 0.0f, 1.0f));  // Green of course :-)
+        ImGui::ProgressBar(progress, ImVec2(200.f, 0.f), buf.c_str());
+        ImGui::PopStyleColor();
+      }
+
+      ImGui::EndMenuBar();
+    }
+    ImGui::End();
+  }
 }
 
 void GaussianSplattingUI::guiAddToRecentFiles(std::filesystem::path filePath, int historySize)
@@ -2077,9 +2177,6 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
 
       LOAD1(prmRtx.temporalSampling, item, "temporalSampling");
       LOAD1(prmFrame.frameSampleMax, item, "temporalSamplesCount");
-      LOAD1(prmRtx.dofEnabled, item, "dofEnabled");
-      LOAD1(prmFrame.focalDist, item, "focalDist");
-      LOAD1(prmFrame.aperture, item, "aperture");
       LOAD1(prmRtx.kernelAdaptiveClamping, item, "kernelAdaptiveClamping");
       LOAD1(prmRtx.kernelDegree, item, "kernelDegree");
       LOAD1(prmRtx.kernelMinResponse, item, "kernelMinResponse");
@@ -2177,11 +2274,15 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
     {
       auto&  item = data["camera"];
       Camera cam;
+      LOAD1(cam.model, item, "model");
       LOAD3(cam.ctr, item, "ctr");
       LOAD3(cam.eye, item, "eye");
       LOAD3(cam.up, item, "up");
       LOAD1(cam.fov, item, "fov");
-      cameraManip->setCamera(cam);
+      LOAD1(cam.dofEnabled, item, "dofEnabled");
+      LOAD1(cam.focusDist, item, "focusDist");
+      LOAD1(cam.aperture, item, "aperture");
+      m_cameraSet.setCamera(cam);
     }
     // Parse camera presets
     if(data.contains("cameras"))
@@ -2189,11 +2290,15 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
       for(const auto& item : data["cameras"])
       {
         Camera cam;
+        LOAD1(cam.model, item, "model");
         LOAD3(cam.ctr, item, "ctr");
         LOAD3(cam.eye, item, "eye");
         LOAD3(cam.up, item, "up");
         LOAD1(cam.fov, item, "fov");
-        m_cameraSet.storeCamera(cam);
+        LOAD1(cam.dofEnabled, item, "dofEnabled");
+        LOAD1(cam.focusDist, item, "focusDist");
+        LOAD1(cam.aperture, item, "aperture");
+        m_cameraSet.createPreset(cam);
       }
     }
     // Parse lights
@@ -2203,7 +2308,7 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
       for(const auto& item : data["lights"])
       {
         // A default light already exists, we only modify it
-        auto id = 0;
+        uint64_t id = 0;
         if(!defaultLight)
         {
           id = m_lightSet.createLight();
@@ -2259,9 +2364,6 @@ bool GaussianSplattingUI::saveProject(std::string path)
 
       item["temporalSampling"]       = prmRtx.temporalSampling;
       item["temporalSamplesCount"]   = prmFrame.frameSampleMax;
-      item["dofEnabled"]             = prmRtx.dofEnabled;
-      item["focalDist"]              = prmFrame.focalDist;
-      item["aperture"]               = prmFrame.aperture;
       item["kernelAdaptiveClamping"] = prmRtx.kernelAdaptiveClamping;
       item["kernelDegree"]           = prmRtx.kernelDegree;
       item["kernelMinResponse"]      = prmRtx.kernelMinResponse;
@@ -2273,12 +2375,17 @@ bool GaussianSplattingUI::saveProject(std::string path)
 
     // Active Camera
     {
-      const auto& cam = cameraManip->getCamera();
+      const auto& cam = m_cameraSet.getCamera();
       json        item;
-      item["ctr"]    = {cam.ctr.x, cam.ctr.y, cam.ctr.z};
-      item["eye"]    = {cam.eye.x, cam.eye.y, cam.eye.z};
-      item["up"]     = {cam.up.x, cam.up.y, cam.up.z};
-      item["fov"]    = cam.fov;
+      item["model"]      = cam.model;
+      item["ctr"]        = {cam.ctr.x, cam.ctr.y, cam.ctr.z};
+      item["eye"]        = {cam.eye.x, cam.eye.y, cam.eye.z};
+      item["up"]         = {cam.up.x, cam.up.y, cam.up.z};
+      item["fov"]        = cam.fov;
+      item["dofEnabled"] = cam.dofEnabled;
+      item["focusDist"]  = cam.focusDist;
+      item["aperture"]   = cam.aperture;
+
       data["camera"] = item;
     }
 
@@ -2286,13 +2393,17 @@ bool GaussianSplattingUI::saveProject(std::string path)
     data["cameras"] = json::array();
     for(auto camId = 0; camId < m_cameraSet.size(); ++camId)
     {
-      auto& cam = m_cameraSet.getCamera(camId);
+      auto cam = m_cameraSet.getPreset(camId);
 
       json item;
-      item["ctr"] = {cam.ctr.x, cam.ctr.y, cam.ctr.z};
-      item["eye"] = {cam.eye.x, cam.eye.y, cam.eye.z};
-      item["up"]  = {cam.up.x, cam.up.y, cam.up.z};
-      item["fov"] = cam.fov;
+      item["model"]      = cam.model;
+      item["ctr"]        = {cam.ctr.x, cam.ctr.y, cam.ctr.z};
+      item["eye"]        = {cam.eye.x, cam.eye.y, cam.eye.z};
+      item["up"]         = {cam.up.x, cam.up.y, cam.up.z};
+      item["fov"]        = cam.fov;
+      item["dofEnabled"] = cam.dofEnabled;
+      item["focusDist"]  = cam.focusDist;
+      item["aperture"]   = cam.aperture;
 
       data["cameras"].push_back(item);
     }

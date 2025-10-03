@@ -691,7 +691,7 @@ GaussianCloud loadSplatFromPly(const std::string &filename, const UnpackOptions 
     return {};
   }
   int32_t numPoints = std::stoi(line.substr(std::strlen("element vertex ")));
-  if (numPoints <= 0 || numPoints > 10 * 1024 * 1024) {
+  if (numPoints <= 0){ // || numPoints > 10 * 1024 * 1024) {
     SpzLog("[SPZ ERROR] %s: invalid vertex count: %d", filename.c_str(), numPoints);
     in.close();
     return {};

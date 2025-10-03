@@ -28,9 +28,7 @@
 #extension GL_EXT_buffer_reference2 : require
 
 #include "shaderio.h"
-#include "common.glsl"
-#include "raycommon.glsl"
-
+#include "threedgrt_payload.glsl"
 
 // Hit attributes
 //#if WIREFRAME

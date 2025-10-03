@@ -38,14 +38,14 @@ layout(location = 0) rayPayloadEXT hitPayload prd;
 layout(location = 0) rayPayloadInEXT hitPayload prd;
 #endif
 
-int readId(in uint i) 
+int readId(in uint i)
 {
 #if USE_RTX_PAYLOAD_BUFFER
   const uint index = (gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x) * PAYLOAD_ARRAY_SIZE + i;
   return payload[index].id;
 #else
   return prd.id[i];
- #endif
+#endif
 }
 
 void writeId(in uint i, in int id)
@@ -80,13 +80,27 @@ void writeDist(in uint i, in float dist)
 
 vec2 readBary(in uint i)
 {
-#if USE_RTX_PAYLOAD_BUFFER 
+#if USE_RTX_PAYLOAD_BUFFER
   return vec2(0.0);
 #else
 #if WIREFRAME
   return prd.bary[i];
 #else
   return vec2(0.0);
+#endif
+#endif
+}
+
+vec3 readBary3(in uint i)
+{
+#if USE_RTX_PAYLOAD_BUFFER
+  return vec3(0.0);
+#else
+#if WIREFRAME
+  const vec2 uv = prd.bary[i];
+  return vec3(1.0 - uv.x - uv.y, uv.x, uv.y);
+#else
+  return vec3(0.0);
 #endif
 #endif
 }

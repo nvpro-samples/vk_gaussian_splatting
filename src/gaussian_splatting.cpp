@@ -88,9 +88,11 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
 
   // GBuffer
   m_depthFormat = nvvk::findDepthFormat(app->getPhysicalDevice());
+
+  // Two GBuffer color attachments, the second one is used only when temporal sampling with 3DGUT
   m_gBuffers.init({
       .allocator      = &m_alloc,
-      .colorFormats   = {m_colorFormat},  // Only one GBuffer color attachment
+      .colorFormats   = {m_colorFormat, m_colorFormat},
       .depthFormat    = m_depthFormat,
       .imageSampler   = m_sampler,
       .descriptorPool = m_app->getTextureDescriptorPool(),
@@ -104,7 +106,7 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
   m_glslCompiler.defaultOptions();
 
   // Get device information
-  m_physicalDeviceInfo.init(m_app->getPhysicalDevice());
+  m_physicalDeviceInfo.init(m_app->getPhysicalDevice(), VK_API_VERSION_1_4);
 
   // Get ray tracing properties
   m_rtProperties.pNext = &m_accelStructProps;
@@ -142,6 +144,7 @@ void GaussianSplatting::onResize(VkCommandBuffer cmd, const VkExtent2D& viewport
   m_viewSize = {viewportSize.width, viewportSize.height};
   NVVK_CHECK(m_gBuffers.update(cmd, viewportSize));
   updateRtDescriptorSet();
+  updateDescriptorSetPostProcessing();
   resetFrameCounter();
 }
 
@@ -174,7 +177,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     if(!m_splatSetVk.rtxValid)
     {
       // let's switch back to raster, RTX is KO
-      prmSelectedPipeline == PIPELINE_MESH;
+      prmSelectedPipeline = PIPELINE_MESH;
       return;
     }
 
@@ -185,7 +188,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     updateAndUploadFrameInfoUBO(cmd, splatCount);
 
-    raytrace(cmd, glm::vec4(1, 1, 1, 1));
+    raytrace(cmd);
 
     readBackIndirectParametersIfNeeded(cmd);
 
@@ -197,6 +200,9 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
   ///////////////////
   // From this point we are using full raster or hybrid.
+
+  if(prmRtx.temporalSampling && !updateFrameCounter())
+    return;
 
   // Handle device-host data update and splat sorting if a scene exist
   if(m_shaders.valid && splatCount)
@@ -221,7 +227,26 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
       tryConsumeAndUploadCpuSortingResult(cmd, splatCount);
     }
   }
-  // Drawing the primitives in the G-Buffer if any
+
+  // In which color buffer are we going to render ?
+  uint32_t colorBufferId = COLOR_MAIN;
+  if(prmRtx.temporalSampling && prmFrame.frameSampleId > 0)
+    colorBufferId = COLOR_AUX1;
+
+  // raytrace the mesh depth using primary rays if needed
+  bool raytraceMeshDepth = m_shaders.valid && !m_meshSetVk.instances.empty() && prmSelectedPipeline == PIPELINE_HYBRID_3DGUT;
+
+  nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getDepthImage(),
+                                    VK_IMAGE_LAYOUT_UNDEFINED,  // or previous
+                                    VK_IMAGE_LAYOUT_GENERAL,    // for ray tracing writes
+                                    {VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}});
+
+  if(raytraceMeshDepth)
+  {
+    raytrace(cmd, true);
+  }
+
+  // Drawing the primitives in the G-Buffer
   {
     auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmd, "Rasterization");
 
@@ -229,13 +254,16 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     const VkViewport  viewport{0.0F, 0.0F, float(viewportSize.width), float(viewportSize.height), 0.0F, 1.0F};
     const VkRect2D    scissor{{0, 0}, viewportSize};
 
-    // Drawing the primitives in a G-Buffer
     VkRenderingAttachmentInfo colorAttachment = DEFAULT_VkRenderingAttachmentInfo;
-    colorAttachment.imageView                 = m_gBuffers.getColorImageView();
+    colorAttachment.imageView                 = m_gBuffers.getColorImageView(colorBufferId);
     colorAttachment.clearValue                = {m_clearColor};
     VkRenderingAttachmentInfo depthAttachment = DEFAULT_VkRenderingAttachmentInfo;
-    depthAttachment.imageView                 = m_gBuffers.getDepthImageView();
-    depthAttachment.clearValue                = {.depthStencil = DEFAULT_VkClearDepthStencilValue};
+    if(raytraceMeshDepth)
+    {
+      depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;  // <-- preserve existing depth
+    }
+    depthAttachment.imageView  = m_gBuffers.getDepthImageView();
+    depthAttachment.clearValue = {.depthStencil = DEFAULT_VkClearDepthStencilValue};
 
     // Create the rendering info
     VkRenderingInfo renderingInfo      = DEFAULT_VkRenderingInfo;
@@ -244,7 +272,13 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     renderingInfo.pColorAttachments    = &colorAttachment;
     renderingInfo.pDepthAttachment     = &depthAttachment;
 
-    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getColorImage(), VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
+    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getColorImage(colorBufferId), VK_IMAGE_LAYOUT_GENERAL,
+                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
+
+    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getDepthImage(),
+                                      VK_IMAGE_LAYOUT_GENERAL,
+                                      VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                      {VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}});
 
     vkCmdBeginRendering(cmd, &renderingInfo);
 
@@ -252,7 +286,7 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     vkCmdSetScissorWithCount(cmd, 1, &scissor);
 
     // mesh first so that occluded splats fragments will be discarded by depth test
-    if(m_shaders.valid && !m_meshSetVk.instances.empty())
+    if(m_shaders.valid && !m_meshSetVk.instances.empty() && !raytraceMeshDepth)
     {
       drawMeshPrimitives(cmd);
     }
@@ -266,15 +300,28 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 
     vkCmdEndRendering(cmd);
 
-    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getColorImage(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL});
+    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getColorImage(colorBufferId), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                      VK_IMAGE_LAYOUT_GENERAL});
+    nvvk::cmdImageMemoryBarrier(cmd, {m_gBuffers.getDepthImage(),
+                                      VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                      VK_IMAGE_LAYOUT_GENERAL,
+                                      {VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS}});
   }
 
   // raytrace the secondary rays if needed
-  if(m_shaders.valid && splatCount && m_splatSetVk.rtxValid && !m_meshSetVk.instances.empty() && prmSelectedPipeline == PIPELINE_HYBRID)
+  if(m_shaders.valid && splatCount && m_splatSetVk.rtxValid && !m_meshSetVk.instances.empty()
+     && (prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT))
   {
-    raytrace(cmd, glm::vec4(1, 1, 1, 1));
+    raytrace(cmd);
   }
 
+  // Perform post processings if needed
+  if(prmRtx.temporalSampling && prmFrame.frameSampleId > 0)
+  {
+    postProcess(cmd);
+  }
+
+  //
   readBackIndirectParametersIfNeeded(cmd);
 
   updateRenderingMemoryStatistics(cmd, splatCount);
@@ -283,7 +330,27 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
 void GaussianSplatting::processUpdateRequests(void)
 {
 
-  if((prmSelectedPipeline == PIPELINE_RTX || prmSelectedPipeline == PIPELINE_HYBRID) && m_requestDelayedUpdateSplatAs)
+  // Automatic and Sanity settings depending in pipeline
+  if(prmSelectedPipeline != PIPELINE_RTX && prmSelectedPipeline != PIPELINE_HYBRID_3DGUT && prmSelectedPipeline != PIPELINE_MESH_3DGUT)
+  {
+    prmRtx.temporalSampling = false;
+    // prmRtx.dofEnabled       = false;
+  }
+  else
+  {
+    if(prmRtx.temporalSamplingMode == TEMPORAL_SAMPLING_AUTO && m_cameraSet.getCamera().dofEnabled)
+    {
+      prmRtx.temporalSampling = true;
+    }
+    else
+    {
+      prmRtx.temporalSampling = (prmRtx.temporalSamplingMode == TEMPORAL_SAMPLING_ENABLED);
+    }
+  }
+
+  // process delayed requests
+  if((prmSelectedPipeline == PIPELINE_RTX || prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT)
+     && m_requestDelayedUpdateSplatAs)
   {
     m_requestUpdateSplatAs        = true;
     m_requestDelayedUpdateSplatAs = false;
@@ -324,7 +391,10 @@ void GaussianSplatting::processUpdateRequests(void)
     if(m_requestUpdateMeshData || m_requestDeleteSelectedMesh)
     {
       if(m_requestDeleteSelectedMesh)
-        m_meshSetVk.deleteInstance(m_selectedMeshInstanceIndex);
+      {
+        m_meshSetVk.deleteInstance(uint32_t(m_selectedItemIndex));
+        m_selectedItemIndex = -1;
+      }
 
       m_meshSetVk.rtxDeinitAccelerationStructures();
       m_meshSetVk.updateObjDescriptionBuffer();
@@ -336,11 +406,13 @@ void GaussianSplatting::processUpdateRequests(void)
       initPipelines();
       initRtDescriptorSet();
       initRtPipeline();
+      initDescriptorSetPostProcessing();
+      initPipelinePostProcessing();
     }
   }
 
   // light buffer is never reallocated
-  // updates does not require descripto set changes
+  // updates does not require description set changes
   if(m_requestUpdateLightsBuffer)
   {
     m_lightSet.updateBuffer();
@@ -352,36 +424,67 @@ void GaussianSplatting::processUpdateRequests(void)
       m_requestUpdateLightsBuffer = m_requestDeleteSelectedMesh = false;
 }
 
+
 void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const uint32_t splatCount)
 {
   NVVK_DBG_SCOPE(cmd);
 
   auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmd, "UBO update");
 
+  Camera camera = m_cameraSet.getCamera();
+
   cameraManip->getLookat(m_eye, m_center, m_up);
 
   // Update frame parameters uniform buffer
-  // some attributes of frameInfo were set by the user interface
-  const glm::vec2& clip            = cameraManip->getClipPlanes();
-  prmFrame.splatCount              = splatCount;
-  prmFrame.viewMatrix              = cameraManip->getViewMatrix();
-  prmFrame.projectionMatrix        = cameraManip->getPerspectiveMatrix();
-  prmFrame.viewInverse             = glm::inverse(prmFrame.viewMatrix);
-  prmFrame.projInverse             = glm::inverse(prmFrame.projectionMatrix);
-  prmFrame.cameraPosition          = m_eye;
+  // some attributes of prmFrame were directly set by the user interface
+  prmFrame.splatCount = splatCount;
+  prmFrame.lightCount = int32_t(m_lightSet.size());
+
+  prmFrame.cameraPosition = m_eye;
+  prmFrame.viewMatrix     = cameraManip->getViewMatrix();
+  prmFrame.viewInverse    = glm::inverse(prmFrame.viewMatrix);
+
+  prmFrame.fovRad  = cameraManip->getRadFov();
+  prmFrame.nearFar = cameraManip->getClipPlanes();
+  // Projection matrix only viable in pinhole mode,
+  // but is used as a fallback for 3DGS when Fisheye is on
+  prmFrame.projectionMatrix = cameraManip->getPerspectiveMatrix();
+  prmFrame.projInverse      = glm::inverse(prmFrame.projectionMatrix);
+
   float       devicePixelRatio     = 1.0;
-  const float focalLengthX         = prmFrame.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
-  const float focalLengthY         = prmFrame.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
   const bool  isOrthographicCamera = false;
   const float focalMultiplier      = isOrthographicCamera ? (1.0f / devicePixelRatio) : 1.0f;
-  const float focalAdjustment      = focalMultiplier;  //  this.focalAdjustment* focalMultiplier;
+  const float focalAdjustment      = focalMultiplier;
   prmFrame.orthoZoom               = 1.0f;
   prmFrame.orthographicMode        = 0;  // disabled (uses perspective) TODO: activate support for orthographic
   prmFrame.viewport                = glm::vec2(m_viewSize.x * devicePixelRatio, m_viewSize.y * devicePixelRatio);
   prmFrame.basisViewport           = glm::vec2(1.0f / m_viewSize.x, 1.0f / m_viewSize.y);
-  prmFrame.focal                   = glm::vec2(focalLengthX, focalLengthY);
   prmFrame.inverseFocalAdjustment  = 1.0f / focalAdjustment;
-  prmFrame.lightCount              = m_lightSet.size();
+
+  if(camera.model == CAMERA_FISHEYE && prmSelectedPipeline != PIPELINE_VERT && prmSelectedPipeline != PIPELINE_MESH
+     && prmSelectedPipeline != PIPELINE_HYBRID)
+  {
+    // FISHEYE focal
+    prmFrame.focal = glm::vec2(1.0, -1.0) * prmFrame.viewport / prmFrame.fovRad;
+  }
+  else
+  {
+    // PIHNOLE focal
+    const float focalLengthX = prmFrame.projectionMatrix[0][0] * 0.5f * devicePixelRatio * m_viewSize.x;
+    const float focalLengthY = prmFrame.projectionMatrix[1][1] * 0.5f * devicePixelRatio * m_viewSize.y;
+    prmFrame.focal           = glm::vec2(focalLengthX, focalLengthY);
+  }
+
+  // Camera pose, used by unscented transform
+  {
+    prmFrame.viewTrans = prmFrame.viewMatrix[3];
+    glm::quat viewQuat = glm::quat_cast(prmFrame.viewMatrix);
+    // glm quaternion storage is scalar last, so we forward as is
+    prmFrame.viewQuat = glm::vec4(viewQuat.x, viewQuat.y, viewQuat.z, viewQuat.w);
+  }
+
+  prmFrame.focusDist = camera.focusDist;
+  prmFrame.aperture  = camera.aperture;
 
   // the buffer is small so we use vkCmdUpdateBuffer for the transfer
   vkCmdUpdateBuffer(cmd, m_frameInfoBuffer.buffer, 0, sizeof(shaderio::FrameInfo), &prmFrame);
@@ -494,7 +597,7 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
   {
     auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmd, "GPU Dist");
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipelineGsDistCull);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
 
     // Model transform
@@ -537,6 +640,9 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
   // Model transform
   m_pcRaster.modelMatrix        = m_splatSetVk.transform;
   m_pcRaster.modelMatrixInverse = m_splatSetVk.transformInverse;
+  // cast to mat3 extracts only the rot/scale part of the transform
+  glm::mat3 rotScale                    = glm::mat3(m_splatSetVk.transform);
+  m_pcRaster.modelMatrixRotScaleInverse = glm::inverse(rotScale);
 
   vkCmdPushConstants(cmd, m_pipelineLayout,
                      VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -544,7 +650,6 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
 
   if(prmSelectedPipeline == PIPELINE_VERT)
   {  // Pipeline using vertex shader
-
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineGsVert);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
 
@@ -571,7 +676,11 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
   {  // in mesh pipeline mode or in hybrid mode
     // Pipeline using mesh shader
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineGsMesh);
+    if(prmSelectedPipeline == PIPELINE_MESH || prmSelectedPipeline == PIPELINE_HYBRID)
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineGsMesh);
+    if(prmSelectedPipeline == PIPELINE_MESH_3DGUT || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT)
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline3dgutMesh);
+
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
 
     // overrides the pipeline setup for depth test/write
@@ -690,7 +799,7 @@ void GaussianSplatting::updateRenderingMemoryStatistics(VkCommandBuffer cmd, con
   m_renderMemoryStats.rasterHostTotal =
       m_renderMemoryStats.hostAllocIndices + m_renderMemoryStats.hostAllocDistances + m_renderMemoryStats.usedUboFrameInfo;
 
-  uint32_t vrdxSize = prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
+  uint64_t vrdxSize = prmRaster.sortingMethod != SORTING_GPU_SYNC_RADIX ? 0 : m_renderMemoryStats.allocVdrxInternal;
 
   m_renderMemoryStats.rasterDeviceUsedTotal = m_renderMemoryStats.usedIndices + m_renderMemoryStats.usedDistances + vrdxSize
                                               + m_renderMemoryStats.usedIndirect + m_renderMemoryStats.usedUboFrameInfo;
@@ -725,18 +834,15 @@ void GaussianSplatting::deinitAll()
   m_meshSetVk.deinitDataStorage();
   m_meshSetVk.rtxDeinitAccelerationStructures();
   m_lightSet.deinit();
+  m_cameraSet.deinit();
   deinitShaders();
   deinitPipelines();
   deinitRendererBuffers();
   resetRenderSettings();
-  // reset camera to default
-  cameraManip->setClipPlanes({0.1F, 2000.0F});
-  const glm::vec3 eye(0.0F, 0.0F, 2.0F);
-  const glm::vec3 center(0.F, 0.F, 0.F);
-  const glm::vec3 up(0.F, 1.F, 0.F);
-  cameraManip->setLookat(eye, center, up);
   // record default cam for reset in UI
-  m_cameraSet.setHomeCamera({eye, center, up, cameraManip->getFov()});
+  m_cameraSet.setCamera(Camera());
+  // record default cam for reset in UI
+  m_cameraSet.setHomePreset(m_cameraSet.getCamera());
 }
 
 bool GaussianSplatting::initAll()
@@ -746,14 +852,9 @@ bool GaussianSplatting::initAll()
   // resize the CPU sorter indices buffer
   m_splatIndices.resize(m_splatIndices.size());
   // TODO: use BBox of point cloud to set far plane, eye and center
-  cameraManip->setClipPlanes({0.1F, 2000.0F});
-  // we know that most INRIA models are upside down so we set the up vector to 0,-1,0
-  const glm::vec3 eye(0.0F, 0.0F, 2.0F);
-  const glm::vec3 center(0.F, 0.F, 0.F);
-  const glm::vec3 up(0.F, 1.F, 0.F);
-  cameraManip->setLookat(eye, center, up);
+  m_cameraSet.setCamera(Camera());
   // record default cam for reset in UI
-  m_cameraSet.setHomeCamera({eye, center, up, cameraManip->getFov()});
+  m_cameraSet.setHomePreset(m_cameraSet.getCamera());
   // reset general parameters
   resetRenderSettings();
 
@@ -776,6 +877,10 @@ bool GaussianSplatting::initAll()
   initRtDescriptorSet();
   initRtPipeline();
 
+  // Post processing
+  initDescriptorSetPostProcessing();
+  initPipelinePostProcessing();
+
   return true;
 }
 
@@ -787,9 +892,16 @@ void GaussianSplatting::deinitScene()
 
 shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::string& filename, shaderc_shader_kind shaderKind)
 {
+  m_glslCompiler.options().AddMacroDefinition("PIPELINE", std::to_string(prmSelectedPipeline));
+  m_glslCompiler.options().AddMacroDefinition(
+      "HYBRID_ENABLED",
+      std::to_string((int)(prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT)));
+
+  m_glslCompiler.options().AddMacroDefinition("CAMERA_TYPE", std::to_string(m_cameraSet.getCamera().model));
   m_glslCompiler.options().AddMacroDefinition("VISUALIZE", std::to_string((int)prmRender.visualize));
   m_glslCompiler.options().AddMacroDefinition("DISABLE_OPACITY_GAUSSIAN", std::to_string((int)prmRender.opacityGaussianDisabled));
   m_glslCompiler.options().AddMacroDefinition("FRUSTUM_CULLING_MODE", std::to_string(prmRaster.frustumCulling));
+
   // Disabled, TODO do we enable ortho cam in the UI/camera controller
   m_glslCompiler.options().AddMacroDefinition("ORTHOGRAPHIC_MODE", "0");
   m_glslCompiler.options().AddMacroDefinition("SHOW_SH_ONLY", std::to_string((int)prmRender.showShOnly));
@@ -803,6 +915,7 @@ shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::st
                                               std::to_string((int)prmRaster.distShaderWorkgroupSize));
   m_glslCompiler.options().AddMacroDefinition("RASTER_MESH_WORKGROUP_SIZE", std::to_string((int)prmRaster.meshShaderWorkgroupSize));
   m_glslCompiler.options().AddMacroDefinition("MS_ANTIALIASING", std::to_string((int)prmRaster.msAntialiasing));
+  m_glslCompiler.options().AddMacroDefinition("EXTENT_METHOD", std::to_string((int)prmRaster.extentProjection));
 
   // RTX
   m_glslCompiler.options().AddMacroDefinition("TEMPORAL_SAMPLING", std::to_string((int)prmRtx.temporalSampling));
@@ -814,10 +927,7 @@ shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::st
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_INSTANCES", std::to_string((int)prmRtxData.useTlasInstances));
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_AABBS", std::to_string((int)prmRtxData.useAABBs));
   m_glslCompiler.options().AddMacroDefinition("RTX_USE_MESHES", std::to_string((int)m_meshSetVk.instances.size()));
-  m_glslCompiler.options().AddMacroDefinition("RTX_DOF_ENABLED", std::to_string((int)prmRtx.dofEnabled));
-
-  // Hybrid
-  m_glslCompiler.options().AddMacroDefinition("HYBRID_ENABLED", std::to_string((int)(prmSelectedPipeline == PIPELINE_HYBRID)));
+  m_glslCompiler.options().AddMacroDefinition("RTX_DOF_ENABLED", std::to_string((int)m_cameraSet.getCamera().dofEnabled));
 
   return m_glslCompiler.compileFile(filename, shaderKind);
 }
@@ -838,33 +948,45 @@ bool GaussianSplatting::initShaders(void)
 
   m_shaders.valid = false;
 
-  // GS ratser
+  // Particles distance to viewpoint and frustum culling
   m_allShaders.emplace_back(compileGlslShader("dist.comp.glsl", shaderc_shader_kind::shaderc_compute_shader), &m_shaders.distShader);
-  m_allShaders.emplace_back(compileGlslShader("raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
+
+  // 3DGS raster
+  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
                             &m_shaders.vertexShader);
-  m_allShaders.emplace_back(compileGlslShader("raster.mesh.glsl", shaderc_shader_kind::shaderc_mesh_shader), &m_shaders.meshShader);
-  m_allShaders.emplace_back(compileGlslShader("raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.mesh.glsl", shaderc_shader_kind::shaderc_mesh_shader),
+                            &m_shaders.meshShader);
+  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
                             &m_shaders.fragmentShader);
+  // 3DGUT raster
+  m_allShaders.emplace_back(compileGlslShader("threedgut_raster.mesh.glsl", shaderc_shader_kind::shaderc_mesh_shader),
+                            &m_shaders.threedgutMeshShader);
+  m_allShaders.emplace_back(compileGlslShader("threedgut_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
+                            &m_shaders.threedgutFragmentShader);
   // Mesh raster
-  m_allShaders.emplace_back(compileGlslShader("mesh_raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedmesh_raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
                             &m_shaders.meshVertexShader);
-  m_allShaders.emplace_back(compileGlslShader("mesh_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedmesh_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
                             &m_shaders.meshFragmentShader);
   // Ray trace
-  m_allShaders.emplace_back(compileGlslShader("raytrace.rgen.glsl", shaderc_shader_kind::shaderc_raygen_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rgen.glsl", shaderc_shader_kind::shaderc_raygen_shader),
                             &m_shaders.rtxRgenShader);
-  m_allShaders.emplace_back(compileGlslShader("raytrace.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
                             &m_shaders.rtxRmissShader);
-  m_allShaders.emplace_back(compileGlslShader("raytraceShadow.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace_shadow.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
                             &m_shaders.rtxRmiss2Shader);
-  m_allShaders.emplace_back(compileGlslShader("raytrace.rchit.glsl", shaderc_shader_kind::shaderc_closesthit_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rchit.glsl", shaderc_shader_kind::shaderc_closesthit_shader),
                             &m_shaders.rtxRchitShader);
-  m_allShaders.emplace_back(compileGlslShader("raytrace.rahit.glsl", shaderc_shader_kind::shaderc_anyhit_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rahit.glsl", shaderc_shader_kind::shaderc_anyhit_shader),
                             &m_shaders.rtxRahitShader);
-  m_allShaders.emplace_back(compileGlslShader("raytrace.rint.glsl", shaderc_shader_kind::shaderc_intersection_shader),
+  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rint.glsl", shaderc_shader_kind::shaderc_intersection_shader),
                             &m_shaders.rtxRintShader);
 
-  int         errors = 0;
+  // Post processings
+  m_allShaders.emplace_back(compileGlslShader("post.comp.glsl", shaderc_shader_kind::shaderc_compute_shader),
+                            &m_shaders.postComputeShader);
+
+  size_t      errors = 0;
   std::string errorMsg;
   for(auto& shader : m_allShaders)
   {
@@ -1040,8 +1162,8 @@ void GaussianSplatting::initPipelines()
             },
         .layout = m_pipelineLayout,
     };
-    vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipeline);
-    NVVK_DBG_NAME(m_computePipeline);
+    vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipelineGsDistCull);
+    NVVK_DBG_NAME(m_computePipelineGsDistCull);
   }
   // Create the two GS rasterization pipelines
   {
@@ -1067,7 +1189,7 @@ void GaussianSplatting::initPipelines()
     pipelineState.depthStencilState.depthWriteEnable = VK_FALSE;
     pipelineState.depthStencilState.depthTestEnable  = VK_FALSE;
 
-    // create the pipeline that uses mesh shaders
+    // create the pipeline that uses mesh shaders for 3DGS
     {
       nvvk::GraphicsPipelineCreator creator;
       creator.pipelineInfo.layout                  = m_pipelineLayout;
@@ -1084,7 +1206,24 @@ void GaussianSplatting::initPipelines()
       NVVK_DBG_NAME(m_graphicsPipelineGsMesh);
     }
 
-    // create the pipeline that uses vertex shaders
+    // create the pipeline that uses mesh shaders for 3DGUT
+    {
+      nvvk::GraphicsPipelineCreator creator;
+      creator.pipelineInfo.layout                  = m_pipelineLayout;
+      creator.colorFormats                         = {m_colorFormat};
+      creator.renderingState.depthAttachmentFormat = m_depthFormat;
+      // The dynamic state is used to change the depth test state dynamically
+      creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
+      creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+
+      creator.addShader(VK_SHADER_STAGE_MESH_BIT_EXT, "main", m_shaders.threedgutMeshShader);
+      creator.addShader(VK_SHADER_STAGE_FRAGMENT_BIT, "main", m_shaders.threedgutFragmentShader);
+
+      creator.createGraphicsPipeline(m_device, nullptr, pipelineState, &m_graphicsPipeline3dgutMesh);
+      NVVK_DBG_NAME(m_graphicsPipeline3dgutMesh);
+    }
+
+    // create the pipeline that uses vertex shaders for 3DGS
     {
       const auto BINDING_ATTR_POSITION    = 0;
       const auto BINDING_ATTR_SPLAT_INDEX = 1;
@@ -1118,7 +1257,7 @@ void GaussianSplatting::initPipelines()
       NVVK_DBG_NAME(m_graphicsPipelineGsVert);
     }
   }
-  // Create the mesh rasterization pipeline
+  // Create the 3D mesh rasterization pipeline
   {
 
     // Preparing the pipeline states
@@ -1181,16 +1320,18 @@ void GaussianSplatting::deinitPipelines()
   m_graphicsPipelineGsVert = VK_NULL_HANDLE;
   vkDestroyPipeline(m_device, m_graphicsPipelineGsMesh, nullptr);
   m_graphicsPipelineGsMesh = VK_NULL_HANDLE;
+  vkDestroyPipeline(m_device, m_graphicsPipeline3dgutMesh, nullptr);
+  m_graphicsPipeline3dgutMesh = VK_NULL_HANDLE;
   vkDestroyPipeline(m_device, m_graphicsPipelineMesh, nullptr);
   m_graphicsPipelineGsMesh = VK_NULL_HANDLE;
-  vkDestroyPipeline(m_device, m_computePipeline, nullptr);
-  m_computePipeline = VK_NULL_HANDLE;
+  vkDestroyPipeline(m_device, m_computePipelineGsDistCull, nullptr);
+  m_computePipelineGsDistCull = VK_NULL_HANDLE;
 
   vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
   vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
   vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
 
-  // RTX TODO move this in rtDeinitPipelin and invoke in proper location
+  // RTX TODO move this in rtDeinitPipeline and invoke in proper location
   vkDestroyPipeline(m_device, m_rtPipeline, nullptr);
 
   vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
@@ -1199,6 +1340,13 @@ void GaussianSplatting::deinitPipelines()
 
   m_alloc.destroyBuffer(m_rtSBTBuffer);
   m_rtShaderGroups.clear();
+
+  // Post process
+  vkDestroyPipeline(m_device, m_computePipelinePostProcess, nullptr);
+
+  vkDestroyPipelineLayout(m_device, m_pipelineLayoutPostProcess, nullptr);
+  vkDestroyDescriptorPool(m_device, m_descriptorPoolPostProcess, nullptr);
+  vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayoutPostProcess, nullptr);
 }
 
 void GaussianSplatting::initRendererBuffers()
@@ -1273,15 +1421,9 @@ void GaussianSplatting::initRendererBuffers()
   NVVK_DBG_NAME(m_quadVertices.buffer);
   NVVK_DBG_NAME(m_quadIndices.buffer);
 
-  //m_uploader.appendBuffer(m_quadVertices, 0, std::span(vertices));
-  //m_uploader.appendBuffer(m_quadIndices, 0, std::span(indices));
-
   // buffers are small so we use vkCmdUpdateBuffer for the transfers
   vkCmdUpdateBuffer(cmd, m_quadVertices.buffer, 0, vertices.size() * sizeof(float), vertices.data());
   vkCmdUpdateBuffer(cmd, m_quadIndices.buffer, 0, indices.size() * sizeof(uint16_t), indices.data());
-
-
-  //m_uploader.cmdUploadAppended(cmd);
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
   // Uniform buffer
@@ -1347,6 +1489,8 @@ void GaussianSplatting::initRtDescriptorSet()
   m_rtDescriptorBindings.clear();
 
   m_rtDescriptorBindings.addBinding(RTX_BINDING_OUTIMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+  m_rtDescriptorBindings.addBinding(RTX_BINDING_AUX1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+  m_rtDescriptorBindings.addBinding(RTX_BINDING_OUTDEPTH, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
   m_rtDescriptorBindings.addBinding(RTX_BINDING_TLAS_SPLATS, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1,
                                     VK_SHADER_STAGE_RAYGEN_BIT_KHR);
@@ -1389,7 +1533,11 @@ void GaussianSplatting::initRtDescriptorSet()
 
   // Output image buffer
   writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_OUTIMAGE, m_rtDescriptorSet),
-                        m_gBuffers.getColorImageView(), VK_IMAGE_LAYOUT_GENERAL);
+                        m_gBuffers.getColorImageView(COLOR_MAIN), VK_IMAGE_LAYOUT_GENERAL);
+  writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_AUX1, m_rtDescriptorSet),
+                        m_gBuffers.getColorImageView(COLOR_AUX1), VK_IMAGE_LAYOUT_GENERAL);
+  writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_OUTDEPTH, m_rtDescriptorSet),
+                        m_gBuffers.getDepthImageView(), VK_IMAGE_LAYOUT_GENERAL);
 
   // splats TLAS
   writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_TLAS_SPLATS, m_rtDescriptorSet),
@@ -1425,7 +1573,11 @@ void GaussianSplatting::updateRtDescriptorSet()
 
     // Output image buffer
     writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_OUTIMAGE, m_rtDescriptorSet),
-                          m_gBuffers.getColorImageView(), VK_IMAGE_LAYOUT_GENERAL);
+                          m_gBuffers.getColorImageView(COLOR_MAIN), VK_IMAGE_LAYOUT_GENERAL);
+    writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_AUX1, m_rtDescriptorSet),
+                          m_gBuffers.getColorImageView(COLOR_AUX1), VK_IMAGE_LAYOUT_GENERAL);
+    writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_OUTDEPTH, m_rtDescriptorSet),
+                          m_gBuffers.getDepthImageView(), VK_IMAGE_LAYOUT_GENERAL);
     // let's update
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeContainer.size()), writeContainer.data(), 0, nullptr);
   }
@@ -1604,17 +1756,20 @@ void GaussianSplatting::initRtPipeline()
 //--------------------------------------------------------------------------------------------------
 // Ray Tracing the scene
 //
-void GaussianSplatting::raytrace(const VkCommandBuffer& cmdBuf, const glm::vec4& clearColor)
+void GaussianSplatting::raytrace(const VkCommandBuffer& cmdBuf, bool meshDepthOnly)
 {
   NVVK_DBG_SCOPE(cmdBuf);
 
-  auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmdBuf, "Raytracing");
+  const std::string name = meshDepthOnly ? "Raytracing prepass" : "Raytracing";
+
+  auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmdBuf, name);
 
   // Initializing push constant values
-  // m_pcRay.clearColor           = clearColor;
-  m_pcRay.modelMatrix          = m_splatSetVk.transform;
-  m_pcRay.modelMatrixInverse   = m_splatSetVk.transformInverse;
-  m_pcRay.modelMatrixTranspose = transpose(m_splatSetVk.transform);
+  m_pcRay.modelMatrix        = m_splatSetVk.transform;
+  m_pcRay.modelMatrixInverse = m_splatSetVk.transformInverse;
+  // cast to mat3 extracts only the rot/scale part of the transform
+  m_pcRay.modelMatrixRotScaleInverse = glm::inverse(glm::mat3(m_splatSetVk.transform));
+  m_pcRay.meshDepthOnly              = meshDepthOnly;
 
   std::vector<VkDescriptorSet> descSets{m_descriptorSet, m_rtDescriptorSet};
   vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rtPipeline);
@@ -1631,7 +1786,7 @@ void GaussianSplatting::raytrace(const VkCommandBuffer& cmdBuf, const glm::vec4&
 
 
   vkCmdTraceRaysKHR(cmdBuf, &m_sbtRegions.raygen, &m_sbtRegions.miss, &m_sbtRegions.hit, &m_sbtRegions.callable,
-                    m_viewSize[0], m_viewSize[1], 1);
+                    uint32_t(m_viewSize[0]), uint32_t(m_viewSize[1]), 1);
 }
 
 
@@ -1656,6 +1811,114 @@ bool GaussianSplatting::updateFrameCounter()
   }
   prmFrame.frameSampleId++;
   return true;
+}
+
+///////////////////////////////////
+// Post processings
+
+void GaussianSplatting::initDescriptorSetPostProcessing()
+{
+  // Descriptor Bindings
+  m_descriptorBindingsPostProcess.clear();
+  m_descriptorBindingsPostProcess.addBinding(BINDING_FRAME_INFO_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+  m_descriptorBindingsPostProcess.addBinding(POST_BINDING_MAIN_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+  m_descriptorBindingsPostProcess.addBinding(POST_BINDING_AUX1_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+  NVVK_CHECK(m_descriptorBindingsPostProcess.createDescriptorSetLayout(m_device, 0, &m_descriptorSetLayoutPostProcess));
+  NVVK_DBG_NAME(m_descriptorSetLayoutPostProcess);
+
+  // Descriptor Pool
+  std::vector<VkDescriptorPoolSize> poolSize;
+  m_descriptorBindingsPostProcess.appendPoolSizes(poolSize);
+  VkDescriptorPoolCreateInfo poolInfo = {
+      .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .maxSets       = 1,
+      .poolSizeCount = uint32_t(poolSize.size()),
+      .pPoolSizes    = poolSize.data(),
+  };
+  NVVK_CHECK(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptorPoolPostProcess));
+  NVVK_DBG_NAME(m_descriptorPoolPostProcess);
+
+  // Descriptor Set
+  VkDescriptorSetAllocateInfo allocInfo = {
+      .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool     = m_descriptorPoolPostProcess,
+      .descriptorSetCount = 1,
+      .pSetLayouts        = &m_descriptorSetLayoutPostProcess,
+  };
+  NVVK_CHECK(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSetPostProcess));
+  NVVK_DBG_NAME(m_descriptorSetPostProcess);
+
+  // Pipelne layout
+  const VkPushConstantRange pcRanges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+                                            | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT,
+                                        0, sizeof(shaderio::PushConstant)};
+
+  VkPipelineLayoutCreateInfo plCreateInfo{
+      .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount         = 1,
+      .pSetLayouts            = &m_descriptorSetLayoutPostProcess,
+      .pushConstantRangeCount = 1,
+      .pPushConstantRanges    = &pcRanges,
+  };
+  NVVK_CHECK(vkCreatePipelineLayout(m_device, &plCreateInfo, nullptr, &m_pipelineLayoutPostProcess));
+  NVVK_DBG_NAME(m_pipelineLayoutPostProcess);
+
+  // Writes
+  nvvk::WriteSetContainer writeContainer;
+  writeContainer.append(m_descriptorBindingsPostProcess.getWriteSet(BINDING_FRAME_INFO_UBO, m_descriptorSetPostProcess),
+                        m_frameInfoBuffer);
+  writeContainer.append(m_descriptorBindingsPostProcess.getWriteSet(POST_BINDING_MAIN_IMAGE, m_descriptorSetPostProcess),
+                        m_gBuffers.getColorImageView(COLOR_MAIN), VK_IMAGE_LAYOUT_GENERAL);
+  writeContainer.append(m_descriptorBindingsPostProcess.getWriteSet(POST_BINDING_AUX1_IMAGE, m_descriptorSetPostProcess),
+                        m_gBuffers.getColorImageView(COLOR_AUX1), VK_IMAGE_LAYOUT_GENERAL);
+  vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeContainer.size()), writeContainer.data(), 0, nullptr);
+}
+
+void GaussianSplatting::updateDescriptorSetPostProcessing()
+{
+  // update only if the descriptor set is already initialized
+  if(m_descriptorSetPostProcess != VK_NULL_HANDLE)
+  {
+    nvvk::WriteSetContainer writeContainer;
+    writeContainer.append(m_descriptorBindingsPostProcess.getWriteSet(POST_BINDING_MAIN_IMAGE, m_descriptorSetPostProcess),
+                          m_gBuffers.getColorImageView(COLOR_MAIN), VK_IMAGE_LAYOUT_GENERAL);
+    writeContainer.append(m_descriptorBindingsPostProcess.getWriteSet(POST_BINDING_AUX1_IMAGE, m_descriptorSetPostProcess),
+                          m_gBuffers.getColorImageView(COLOR_AUX1), VK_IMAGE_LAYOUT_GENERAL);
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeContainer.size()), writeContainer.data(), 0, nullptr);
+  }
+}
+
+void GaussianSplatting::initPipelinePostProcessing()
+{
+
+  VkComputePipelineCreateInfo pipelineInfo{
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .stage =
+          {
+              .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+              .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+              .module = m_shaders.postComputeShader,
+              .pName  = "main",
+          },
+      .layout = m_pipelineLayoutPostProcess,
+  };
+  vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipelinePostProcess);
+  NVVK_DBG_NAME(m_computePipelinePostProcess);
+}
+
+void GaussianSplatting::postProcess(VkCommandBuffer cmd)
+{
+  NVVK_DBG_SCOPE(cmd);
+
+  auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmd, "Post process");
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipelinePostProcess);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayoutPostProcess, 0, 1,
+                          &m_descriptorSetPostProcess, 0, nullptr);
+
+  uint32_t wgSize = 32;
+
+  vkCmdDispatch(cmd, (uint32_t(m_viewSize.x) + wgSize - 1) / wgSize, (uint32_t(m_viewSize.y) + wgSize - 1) / wgSize, 1);
 }
 
 }  // namespace vk_gaussian_splatting

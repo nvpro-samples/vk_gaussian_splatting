@@ -31,6 +31,7 @@
 #include <nvvk/resources.hpp>
 #include <nvvk/resource_allocator.hpp>
 #include <nvvk/acceleration_structures.hpp>
+#include <nvvk/physical_device.hpp>
 
 #include "splat_set.h"
 #include "utilities.h"
@@ -54,7 +55,7 @@ public:
             nvvk::ResourceAllocator*                            alloc,
             nvvk::StagingUploader*                              uploader,
             VkSampler*                                          sampler,
-            PhysicalDeviceInfo*                                 deviceInfo,
+            nvvk::PhysicalDeviceInfo*                           deviceInfo,
             VkPhysicalDeviceAccelerationStructurePropertiesKHR* accelStructProps)
   {
     m_app        = app;
@@ -122,8 +123,8 @@ public:
   glm::vec3 translation{0.0f};
   glm::vec3 rotation{0.0f};
   glm::vec3 scale{1.0f, 1.0f, 1.0f};
-  glm::mat4 transform{};                // transformation matrix of the model
-  glm::mat4 transformInverse{};         // inverseTransformation matrix of the model
+  glm::mat4 transform{};         // transformation matrix of the model
+  glm::mat4 transformInverse{};  // inverseTransformation matrix of the model
 
   //
   VkSampler* m_sampler = nullptr;
@@ -215,8 +216,8 @@ public:
   // Is RTX valid
   bool rtxValid = false;  // This flag is set to false if some rtx AS allocations failed or before init
   // RTX AS memory stats
-  uint32_t tlasSizeBytes;  // Size of the TLAS in VRAM in bytes
-  uint32_t blasSizeBytes;  // Size of the BLAS in VRAM in bytes
+  uint64_t tlasSizeBytes;  // Size of the TLAS in VRAM in bytes
+  uint64_t blasSizeBytes;  // Size of the BLAS in VRAM in bytes
 
 private:
   // create the buffers on the device and upload
@@ -263,10 +264,10 @@ private:
   float m_rtxKernelMinResponse;
   bool  m_rtxKernelAdaptiveClamping;
 
-  nvapp::Application*      m_app        = nullptr;
-  nvvk::ResourceAllocator* m_alloc      = nullptr;
-  nvvk::StagingUploader*   m_uploader   = nullptr;
-  PhysicalDeviceInfo*      m_deviceInfo = nullptr;
+  nvapp::Application*       m_app        = nullptr;
+  nvvk::ResourceAllocator*  m_alloc      = nullptr;
+  nvvk::StagingUploader*    m_uploader   = nullptr;
+  nvvk::PhysicalDeviceInfo* m_deviceInfo = nullptr;
 };
 
 }  // namespace vk_gaussian_splatting

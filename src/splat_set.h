@@ -47,13 +47,13 @@ struct SplatSet
   // returns -1 if splat set is invalid
   inline int32_t maxShDegree() const
   {
-    const uint32_t splatCount = size();
+    const size_t splatCount = size();
     if(splatCount == 0)
       return -1;
-    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)f_rest.size() / splatCount;
-    const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
+    const size_t totalSphericalHarmonicsComponentCount    = (uint32_t)f_rest.size() / splatCount;
+    const size_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
     // find the maximum SH degree stored in the file
-    int sphericalHarmonicsDegree = 0;
+    uint32_t sphericalHarmonicsDegree = 0;
     if(sphericalHarmonicsCoefficientsPerChannel >= 3)
     {
       sphericalHarmonicsDegree = 1;

@@ -101,6 +101,7 @@ struct RasterParameters
   int     meshShaderWorkgroupSize = 32;   // best default value set by experimentation on ADA6000
   bool    fragmentBarycentric     = false;
   bool    pointCloudModeEnabled   = false;
+  int     extentProjection        = EXTENT_CONIC;
   // Whether gaussians should be rendered with mip-splat
   // antialiasing https://niujinshuchong.github.io/mip-splatting/
   bool msAntialiasing = false;
@@ -112,13 +113,14 @@ extern RasterParameters prmRaster;
 // Parameters that control Raytracing (RTX)
 struct RtxParameters
 {
+  // temporalSampling is controlled by temporalSamplingMode, it is not directly exposed
   bool  temporalSampling       = false;  // do we accumulate frame results over time (for DOF and other)
+  int   temporalSamplingMode   = TEMPORAL_SAMPLING_AUTO;  // how do we control temporal sampling activation
   int   kernelDegree           = KERNEL_DEGREE_QUADRATIC;
   float kernelMinResponse      = 0.0113f;  // constant value from Paper
   bool  kernelAdaptiveClamping = true;
   int   payloadArraySize       = 18;     // best default value set by experimentation on ADA6000
   bool  usePayloadBuffer       = false;  // Experimental, change the value here for testing, no UI
-  bool  dofEnabled             = false;  // depth of field
 };
 
 // Parameters that control Raytracing (RTX)

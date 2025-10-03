@@ -26,8 +26,8 @@
 #extension GL_EXT_buffer_reference2 : require
 
 #include "shaderio.h"
-#include "common.glsl"
-#include "gs_particle.glsl"
+#include "threedgs_particles_storage.glsl"
+#include "threedgrt.glsl"
 
 layout(push_constant) uniform _PushConstantRay
 {
@@ -83,9 +83,11 @@ void main()
 #else
   const int particleId = gl_PrimitiveID;
 
+  // The two following transformations are to compute processHit with transformed splat set model
   const vec3 modelRayOrigin = vec3(pcRay.modelMatrixInverse * vec4(gl_WorldRayOriginEXT, 1.0));
-  // modelMatrixTranspose is equivalent to inverse(transpose(modelMatrixInverse))
-  const vec3 modelRayDirection = normalize(vec3(pcRay.modelMatrixTranspose * vec4(gl_WorldRayDirectionEXT, 1.0)));
+  // Since the ray direction should not be affected by translation,
+  // uses the inverse of the rotation - scale part of the model matrix.
+  const vec3 modelRayDirection = normalize(mat3(pcRay.modelMatrixRotScaleInverse) * gl_WorldRayDirectionEXT);
 
   if(particleDensityHitCustom(modelRayOrigin, modelRayDirection, particleId, gl_RayTminEXT, gl_RayTmaxEXT, 9.0F, hitT))
     reportIntersectionEXT(hitT, 0);

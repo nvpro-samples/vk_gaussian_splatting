@@ -87,7 +87,7 @@ public:
   }
 
   // access the light source of given index
-  shaderio::LightSource& getLight(uint32_t index)
+  shaderio::LightSource& getLight(uint64_t index)
   {
     assert(index < numLights);
     return lights[index];

@@ -19,9 +19,13 @@
 
 #version 460
 
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_control_flow_attributes2 : enable
 #extension GL_GOOGLE_include_directive : enable
 #include "shaderio.h"
-#include "common.glsl"
+#include "threedgut_camera_models.glsl"
+#include "threedgut_camera_projections.glsl"
+#include "threedgs_particles_storage.glsl"
 
 // scalar prevents alignment issues
 layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
@@ -65,23 +69,44 @@ void main()
   if(id >= frameInfo.splatCount)
     return;
 
-  vec4 pos          = vec4(fetchCenter(id), 1.0);
-  // TODO compute the mvpMatrix on the CPU
-  pos               = frameInfo.projectionMatrix * frameInfo.viewMatrix * pcRaster.modelMatrix * pos;
-  pos               = pos / pos.w;
-  const float depth = pos.z;
+  vec4 splatPos = vec4(fetchCenter(id), 1.0);
 
+  vec4 viewPos      = frameInfo.viewMatrix * pcRaster.modelMatrix * splatPos;
+  // TODO: projection matrix is not correct with fisheye, this is a coarse aprox to compute depth
+  vec4 ndcPos       = frameInfo.projectionMatrix * viewPos;
+  ndcPos            = ndcPos / ndcPos.w;
+  const float depth = ndcPos.z;
+
+#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
+#if CAMERA_TYPE == CAMERA_PINHOLE
   // valid only when center is inside NDC clip space.
   // Note: when culling between x=[-1,1] y=[-1,1], which is NDC extent,
   // the culling is not good since we only take into account
   // the center of each splat instead of its extent.
-#if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
+
   const float clip = 1.0f + frameInfo.frustumDilation;
-  if(abs(pos.x) > clip || abs(pos.y) > clip || pos.z < 0.f - frameInfo.frustumDilation || pos.z > 1.0)
+  if(abs(ndcPos.x) > clip || abs(ndcPos.y) > clip || ndcPos.z < 0.f - frameInfo.frustumDilation || ndcPos.z > 1.0)
+    return;
+
+#else
+
+  // Fisheye camera
+  CameraModelParameters sensorModel = initPerfectFisheyeCamera(frameInfo.viewport, frameInfo.focal);
+
+  // Fisheye projection to perform culling
+  vec2 projected;
+  bool isValid = projectPointFisheye(sensorModel.ocvFisheyeParams, frameInfo.viewport,
+                                     vec3(1.0, 1.0, -1.0) * viewPos.xyz, GUT_IN_IMAGE_MARGIN_FACTOR, projected);
+
+  if(!isValid)
+    return;
+
+  if(ndcPos.z < 0.f - frameInfo.frustumDilation || ndcPos.z > 1.0)
     return;
 #endif
+#endif
 
-  // increments the visible splat counter in the indirect buffer 
+  // increments the visible splat counter in the indirect buffer
   const uint instance_index = atomicAdd(indirect.instanceCount, 1);
   // stores the distance
   distances[instance_index] = encodeMinMaxFp32(-depth);

@@ -739,8 +739,8 @@ void SplatSetVk::deinitTexture(nvvk::Image& texture)
 // r = radius of the inscribed circle = 1 = (phi^2 * s) / ( 2 * sqrt(3))
 // s = edge length = ( 2 * sqrt(3) ) / phi^2
 // V = (5/12) * ( 3 + sqrt(5) ) * s^3 = 8.0
-constexpr float goldenRatio   = 1.618033988749895;
-constexpr float icosaEdge     = 1.323169076499215;
+constexpr float goldenRatio   = 1.618033988749895f;  // cast to float discards a bit of precision
+constexpr float icosaEdge     = 1.323169076499215f;  // cast to float discards a bit of precision
 constexpr float icosaVrtScale = 0.5 * icosaEdge;
 
 float kernelScale(float density, float modulatedMinResponse, float kernelDegree, bool adaptiveClamping)
@@ -780,7 +780,7 @@ glm::mat4 SplatSetVk::rtxComputeTransformMatrix(SplatSet& splatSet, uint64_t spl
 
   const float density = 1.0f / (1.0f + std::exp(-splatSet.opacity[splatIdx]));
 
-  const float kerScale = kernelScale(density, m_rtxKernelMinResponse, m_rtxKernelDegree, m_rtxKernelAdaptiveClamping);
+  const float kerScale = kernelScale(density, m_rtxKernelMinResponse, float(m_rtxKernelDegree), m_rtxKernelAdaptiveClamping);
 
   const glm::vec3 totalScale = scale * icosaVrtScale * kerScale;
 
@@ -828,7 +828,7 @@ void SplatSetVk::rtxCreateSplatIcosahedron(std::vector<glm::vec3>& vertices,
   aabbs.push_back(aabb);
   for(auto i = 0; i < s_indices.size(); ++i)
   {
-    indices[indexOffset + i] = vertexOffset + s_indices[i];
+    indices[indexOffset + i] = uint32_t(vertexOffset) + s_indices[i];
   }
 }
 

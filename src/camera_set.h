@@ -39,7 +39,28 @@
 
 namespace vk_gaussian_splatting {
 
-typedef nvutils::CameraManipulator::Camera Camera;
+typedef nvutils::CameraManipulator::Camera NvutilCamera;
+
+struct Camera
+{
+  int model = CAMERA_PINHOLE;
+
+  glm::vec3 eye = glm::vec3(0.0F, 0.0F, 2.0F);  // camera position
+  glm::vec3 ctr = glm::vec3(0, 0, 0);           // center of rotation (look at point) for interaction
+  glm::vec3 up  = glm::vec3(0, 1, 0);           // up vector
+
+  float     fov  = 60.0f;            // field of view
+  glm::vec2 clip = {0.1f, 2000.0f};  // znear, zfar
+
+  bool  dofEnabled = false;
+  float focusDist  = 1.3f;    // focus distance to compute depth of field (defocus effect)
+  float aperture   = 0.001f;  // aperture distance to compute depth of field, 0 does no DOF effect
+
+  bool operator==(const Camera& cam) const
+  {
+    return model == cam.model && eye == cam.eye && ctr == cam.ctr && up == cam.up && fov == cam.fov && clip == cam.clip;
+  }
+};
 
 class CameraSet
 {
@@ -49,29 +70,39 @@ public:
 
   void deinit()
   {
-    // nothing to do
+    m_camera = Camera();
+    m_presets.clear();
   }
 
-  void setHomeCamera(const Camera& camera)
+  // any modification of the camera must be followed by a setCamera for the change to take place
+  Camera getCamera() { return applyNvutilCamera(m_cameraManip->getCamera(), m_camera); }
+
+  void setCamera(const Camera& camera, bool instantSet = true)
   {
-    if(m_cameras.empty())
-      m_cameras.resize(1);
-    m_cameras[0] = camera;
+    m_camera = camera;
+    m_cameraManip->setCamera(toNvutilCamera(camera), instantSet);
+  };
+
+  void setHomePreset(const Camera& camera)
+  {
+    if(m_presets.empty())
+      m_presets.resize(1);
+    m_presets[0] = camera;
   }
 
   // return the number of cameras in the set
-  uint64_t size() { return m_cameras.size(); }
+  uint64_t size() const { return m_presets.size(); }
 
-  // store the current camera parameter in a new camera entry
-  // is a camera with same attributes already exists, no additional
-  // camera is created and index of existing one is returned
-  uint64_t storeCamera(const Camera& camera)
+  // store the current camera parameter in a new preset entry
+  // if a preset with same attributes already exists, no additional
+  // preset is created and index of existing one is returned
+  uint64_t createPreset(const Camera& camera)
   {
     bool     unique = true;
     uint64_t i      = 0;
-    for(; i < m_cameras.size(); ++i)
+    for(; i < m_presets.size(); ++i)
     {
-      if(m_cameras[i] == camera)
+      if(m_presets[i] == camera)
       {
         unique = false;
         break;
@@ -79,8 +110,8 @@ public:
     }
     if(unique)
     {
-      m_cameras.emplace_back(camera);
-      return m_cameras.size() - 1;
+      m_presets.emplace_back(camera);
+      return m_presets.size() - 1;
     }
     else
     {
@@ -91,45 +122,90 @@ public:
   // store the current camera parameter in a new camera entry
   // is a camera with same attributes already exists, no additional
   // camera is created and index of existing one is returned
-  uint64_t storeCurrentCamera(void) { return storeCamera(m_cameraManip->getCamera()); }
+  uint64_t storeCurrentCamera(void) { return createPreset(getCamera()); }
 
   // load a camera entry and set
-  bool loadCamera(uint64_t index)
+  bool loadPreset(uint64_t index, bool instantSet = true)
   {
-    if(index >= m_cameras.size())
+    if(index >= m_presets.size())
       return false;
-    m_cameraManip->setCamera(m_cameras[index]);
+    setCamera(m_presets[index], instantSet);
     return true;
   }
 
   // remove a camera from the set
   // default one (index 0) is forbiden
-  bool eraseCamera(uint64_t index)
+  bool erasePreset(uint64_t index)
   {
-    if(m_cameras.size() == 1 || index == 0 || index >= m_cameras.size())
+    if(m_presets.size() == 1 || index == 0 || index >= m_presets.size())
       return false;
 
-    for(uint64_t i = index; i < m_cameras.size() - 1; ++i)
+    for(uint64_t i = index; i < m_presets.size() - 1; ++i)
     {
-      m_cameras[i] = m_cameras[i + 1];
+      m_presets[i] = m_presets[i + 1];
     }
-    m_cameras.resize(m_cameras.size() - 1);
+    m_presets.resize(m_presets.size() - 1);
     return true;
   }
 
   // access the camera source of given index
-  Camera& getCamera(uint64_t index)
+  Camera getPreset(uint64_t index) const
   {
-    assert(index < m_cameras.size());
-    return m_cameras[index];
+    assert(index < m_presets.size());
+    return m_presets[index];
+  }
+
+  // access the camera source of given index
+  bool setPreset(uint64_t index, const Camera& camera)
+  {
+    if(m_presets.size() == 1 || index == 0 || index >= m_presets.size())
+      return false;
+    m_presets[index] = camera;
+    return true;
   }
 
 private:
-  std::vector<Camera>         m_cameras;
-  nvutils::CameraManipulator* m_cameraManip;
+  Camera                      m_camera;       // active camera
+  std::vector<Camera>         m_presets;      // set of camera presets
+  nvutils::CameraManipulator* m_cameraManip;  // camer manipulatror (navigation/animation)
+
+  // preserves the additional fields of camera
+  Camera& applyNvutilCamera(const NvutilCamera nvuCam, Camera& camera)
+  {
+    camera.eye  = nvuCam.eye;
+    camera.ctr  = nvuCam.ctr;
+    camera.up   = nvuCam.up;
+    camera.fov  = nvuCam.fov;
+    camera.clip = nvuCam.clip;
+    return camera;
+  }
+
+  Camera toCamera(const NvutilCamera nvuCam)
+  {
+    // other fields of result are set to default
+    return {
+        .eye  = nvuCam.eye,
+        .ctr  = nvuCam.ctr,
+        .up   = nvuCam.up,
+        .fov  = nvuCam.fov,
+        .clip = nvuCam.clip,
+    };
+  }
+
+  NvutilCamera toNvutilCamera(const Camera& camera)
+  {
+    // other fields from camera are "lost"
+    return {
+        .eye  = camera.eye,
+        .ctr  = camera.ctr,
+        .up   = camera.up,
+        .fov  = camera.fov,
+        .clip = camera.clip,
+    };
+  }
 };
 
-/////////// Utility function to omport cmareas frim INRIA json files
+/////////// Utility function to import cameras from INRIA json files
 
 static bool importCamerasINRIA(std::string filename, CameraSet& cameraSet)
 {
@@ -169,7 +245,7 @@ static bool importCamerasINRIA(std::string filename, CameraSet& cameraSet)
       newCam.up  = up;
 
       // add to CameraSet
-      cameraSet.storeCamera(newCam);
+      cameraSet.createPreset(newCam);
     }
     i.close();
     return true;

@@ -38,7 +38,9 @@
 #define PIPELINE_VERT 0
 #define PIPELINE_MESH 1
 #define PIPELINE_RTX 2
-#define PIPELINE_HYBRID 3  // Hybrid rendering: raster primary rays, raytrace secondary rays
+#define PIPELINE_HYBRID 3        // Hybrid rendering: raster primary rays (3DGS), raytrace secondary rays (3DGRT)
+#define PIPELINE_MESH_3DGUT 4    // 3DGUT (Unscented Transform) rasterization using mesh shaders
+#define PIPELINE_HYBRID_3DGUT 5  // Hybrid rendering: raster primary rays (3DGUT), raytrace secondary rays (3DGRT)
 
 // visualization mode
 #define VISUALIZE_FINAL 0
@@ -50,6 +52,14 @@
 #define FRUSTUM_CULLING_NONE 0
 #define FRUSTUM_CULLING_AT_DIST 1
 #define FRUSTUM_CULLING_AT_RASTER 2
+
+// method used to compute the 2D extent projection from the 3D covariance
+#define EXTENT_EIGEN 0  // basis aligned rectangular extent
+#define EXTENT_CONIC 1  // axis aligned rectangular extend as in original INRIA
+
+// type of camera
+#define CAMERA_PINHOLE 0
+#define CAMERA_FISHEYE 1
 
 // particle format (PF), RTX
 // not used in shaders (using RTX_USE_AABBS compiler defined instead)
@@ -93,6 +103,17 @@
 #define RTX_BINDING_TLAS_SPLATS 1     // Top-level acceleration structure for splats
 #define RTX_BINDING_TLAS_MESH 2       // Top-level acceleration structure for meshes
 #define RTX_BINDING_PAYLOAD_BUFFER 3  // the alternative to payload stack (less efficient)
+#define RTX_BINDING_AUX1 4            // Ray tracer auxiliary output image, when using hybrid mode + temporal sampling
+#define RTX_BINDING_OUTDEPTH 5        // depth buffer
+
+// Temporal sampling mode
+#define TEMPORAL_SAMPLING_AUTO 0  // Detects automatically if TS is needed for best visual results (e.g. if DoF is on)
+#define TEMPORAL_SAMPLING_ENABLED 1   // Force enabled
+#define TEMPORAL_SAMPLING_DISABLED 2  // Force disabled
+
+// bindings for set 0 of Post Process (0 is reserved for BINDING_FRAME_INFO_UBO)
+#define POST_BINDING_MAIN_IMAGE 1  // the image that is presented
+#define POST_BINDING_AUX1_IMAGE 2  // optional aux image to be accumulated (for example)
 
 // location for vertex attributes
 // (only for vertex shader mode)
@@ -104,36 +125,42 @@
 
 #ifdef __cplusplus
 #include <glm/glm.hpp>
+#include "wavefront.h"  // must be included before definition of DEFAULT
 // used to assign fields defaults
 #define DEFAULT(val) = val
 namespace shaderio {
 using namespace glm;
 #else
 // we are in glsl here
-// used to skip fields init
-// when included in glsl
-#define DEFAULT(val)
 // common extensions
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types : require
+#extension GL_GOOGLE_include_directive : require
+#include "wavefront.h"  // must be included before definition of DEFAULT
+// used to skip fields init
+// when included in glsl
+#define DEFAULT(val)
 #endif
 
-// Warning, struct members must be aligned
-// we group by packs of 128 bits
 struct FrameInfo
 {
-  mat4 projectionMatrix;
+  vec3 cameraPosition;  // position in world space
+  vec4 viewQuat;        // quaternion storing the rotation part of the view matrix
+  vec3 viewTrans;       // translation part of the view matrix
   mat4 viewMatrix;
   mat4 viewInverse;  // Camera inverse view matrix
+
+  mat4 projectionMatrix;
   mat4 projInverse;  // Camera inverse projection matrix
-
-  vec3                         cameraPosition;
-  float inverseFocalAdjustment DEFAULT(1.0f);
-
+  vec2 nearFar;
   vec2 focal;
   vec2 viewport;
+  vec2 basisViewport;
 
-  vec2                     basisViewport;
+  float fovRad                 DEFAULT(0.009f);  // Field of view in radians for fisheye camera
+  float inverseFocalAdjustment DEFAULT(1.0f);
+
+  // Ortho is not fully implemented
   float orthoZoom          DEFAULT(1.0f);  //
   int32_t orthographicMode DEFAULT(0);     // disabled, in [0,1]
 
@@ -153,20 +180,21 @@ struct FrameInfo
 
   float multiplier DEFAULT(1.0f);  // for alternative visualization modes
 
-  int32_t frameSampleId  DEFAULT(0);       // the frame sample index since last frame reset
-  int32_t frameSampleMax DEFAULT(200);     // maximum number of frame after which we stop accumulating frames raytracing
-  float focalDist        DEFAULT(1.5f);    // focal distance to compute depth of field
-  float aperture         DEFAULT(0.009f);  // aperture distance to compute depth of field, 0 does no DOF effect
+  int32_t frameSampleId  DEFAULT(0);    // the frame sample index since last frame sampling reset
+  int32_t frameSampleMax DEFAULT(200);  // maximum number of frame after which we stop accumulating frames samples
+
+  float focusDist DEFAULT(1.3f);    // focus distance to compute depth of field
+  float aperture  DEFAULT(0.001f);  // aperture distance to compute depth of field, 0 does no DOF effect
 };
 
 // Push constant for raster
 struct PushConstant
 {
   // model transformation
-  mat4 modelMatrix;
-  mat4 modelMatrixInverse;
-  // index of the mesh beeing rendered if any
-  uint32_t objIndex;
+  mat4     modelMatrix;
+  mat4     modelMatrixInverse;
+  mat4     modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
+  uint32_t objIndex;                    // index of the mesh being rendered if any
 };
 
 // indirect parameters for
@@ -189,66 +217,31 @@ struct IndirectParams
   // for debug info readback, TODO shall be in some other buffer
   int32_t particleID DEFAULT(-1);   // Will be set by the ID of the nearest splat on the ray path
   float particleDist DEFAULT(0.0);  // Will be set by the dist to the nearest splat on the ray path
+  float val1         DEFAULT(0.0);
+  float val2         DEFAULT(0.0);
+  float val3         DEFAULT(0.0);
+  float val4         DEFAULT(0.0);
+  float val5         DEFAULT(0.0);
+  float val6         DEFAULT(0.0);
+  float val7         DEFAULT(0.0);
+  float val8         DEFAULT(0.0);
 };
 
-// Information of a obj model when referenced in a shader
-struct ObjDesc
-{
-  //int      txtOffset;             // Texture index offset in the array of textures
-  uint64_t vertexAddress;         // Address of the Vertex buffer
-  uint64_t indexAddress;          // Address of the index buffer
-  uint64_t materialAddress;       // Address of the material buffer
-  uint64_t materialIndexAddress;  // Address of the triangle material index buffer
-};
-
-// Structure holding the material for mesh objects
-struct ObjMaterial
-{
-  vec3  ambient;
-  vec3  diffuse;
-  vec3  specular;
-  vec3  transmittance;
-  vec3  emission;
-  float shininess;
-  float ior;
-  float dissolve;
-  int   illum;
-  int   textureID;
-};
-
-//
-#define LIGHT_TYPE_POINT 0
-#define LIGHT_TYPE_DIRECTIONAL 1
-
-// Structure holding light source attributes
-struct LightSource
-{
-  vec3 position   DEFAULT(vec3(0.0, 4.0, 0.0));
-  float intensity DEFAULT(1.0);
-  int type        DEFAULT(LIGHT_TYPE_DIRECTIONAL);
-};
 
 // Push constant specific to raytracing
 struct PushConstantRay
 {
-  // vec4 clearColor; // TODO move that in frameInfo ?
   // model transformation
   mat4 modelMatrix;
   mat4 modelMatrixInverse;
-  mat4 modelMatrixTranspose;
-  // stores the splat indices and vertices
+  mat4 modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
+  // stores the geometry of the splat primitive
   // provisionaly placed here, shall not be in push constant,
   // rather in some objects description buffer
   uint64_t vertexAddress;  // Address of the Vertex buffer
   uint64_t indexAddress;   // Address of the index buffer
-};
-
-struct Vertex  // See ObjLoader, copy of VertexObj
-{
-  vec3 pos;
-  vec3 nrm;
-  //vec3 color;
-  //vec2 texCoord;
+  // set to true will raytrace the mesh depth as a pre-pass
+  bool meshDepthOnly;
 };
 
 #ifdef __cplusplus
@@ -275,6 +268,4 @@ struct hitPayload
 #endif
 
 #undef DEFAULT
-#undef START_BINDING
-#undef END_BINDING
 #endif

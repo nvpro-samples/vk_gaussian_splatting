@@ -151,8 +151,8 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
     // convert to INRIA representation
     output.positions.swap(cloud.positions);
     output.rotation.resize(cloud.rotations.size());
-    const uint32_t numSplats = output.positions.size() / 3;
-    for(auto i = 0; i < numSplats; i++)
+    const uint32_t numSplats = uint32_t(output.positions.size() / 3);
+    for(uint32_t i = 0; i < numSplats; i++)
     {
       const uint32_t offset       = i * 4;
       output.rotation[offset + 0] = cloud.rotations[offset + 3];
@@ -164,23 +164,23 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
     output.opacity.swap(cloud.alphas);
     output.f_dc = cloud.colors;
     // reorganize SH per components to match INRIA
-    const uint32_t shCoefsCount = cloud.sh.size() / numSplats / 3;
+    const size_t shCoefsCount = cloud.sh.size() / numSplats / 3;
     output.f_rest.resize(cloud.sh.size());
-    for(auto i = 0; i < numSplats; i++)
+    for(size_t i = 0; i < numSplats; i++)
     {
-      const uint32_t offset = i * shCoefsCount * 3;
+      const size_t offset = i * shCoefsCount * 3;
 
       // Spherical harmonics: Interleave so the coefficients are the fastest-changing axis and
       // the channel (r, g, b) is slower-changing axis.
-      for(int32_t j = 0; j < shCoefsCount; j++)
+      for(size_t j = 0; j < shCoefsCount; j++)
       {
         output.f_rest[offset + j] = cloud.sh[(i * shCoefsCount + j) * 3];
       }
-      for(int32_t j = 0; j < shCoefsCount; j++)
+      for(size_t j = 0; j < shCoefsCount; j++)
       {
         output.f_rest[offset + shCoefsCount + j] = cloud.sh[(i * shCoefsCount + j) * 3 + 1];
       }
-      for(int32_t j = 0; j < shCoefsCount; j++)
+      for(size_t j = 0; j < shCoefsCount; j++)
       {
         output.f_rest[offset + shCoefsCount * 2 + j] = cloud.sh[(i * shCoefsCount + j) * 3 + 2];
       }

@@ -50,6 +50,8 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_fragment_shader_barycentric : require
+
+#include "wireframe.glsl"
 #include "shaderio.h"
 
 precision highp float;
@@ -71,16 +73,9 @@ void main()
 {
 
 #if WIREFRAME
-  // Compute the fragment position in world space using barycentric coordinates
-  const float u = gl_BaryCoordEXT.x;
-  const float v = gl_BaryCoordEXT.y;
-  const float w = 1.0 - u - v;
-
-  // Define wireframe thickness threshold
-  float threshold = 0.02;
-  if(u < threshold || v < threshold || w < threshold)
+  if(processWireframe(wireframeDefaultSettings(), gl_BaryCoordEXT) > 0.0)
   {
-    outColor = vec4(1.0, 0.0, 0.0, 1.0);  // wireframe color
+    outColor = vec4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
     return;
   }
 #endif
@@ -88,7 +83,7 @@ void main()
 #if USE_BARYCENTRIC
   // Use barycentric extension to find the position of the fragment
   const float sqrt8 = sqrt(8.0);
-  vec2 inFragPos = (gl_BaryCoordEXT.x * vec2(-1,-1) +  gl_BaryCoordEXT.y * vec2(1,1) + gl_BaryCoordEXT.z * vec2(-1,1)) * sqrt8;
+  vec2 inFragPos = (gl_BaryCoordEXT.x * vec2(-1, -1) + gl_BaryCoordEXT.y * vec2(1, 1) + gl_BaryCoordEXT.z * vec2(-1, 1)) * sqrt8;
 #endif
 
   // Compute the positional squared distance from the center of the splat to the current fragment.

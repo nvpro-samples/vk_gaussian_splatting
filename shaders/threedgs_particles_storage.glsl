@@ -19,6 +19,9 @@
 
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
+#ifndef _THREEDGS_PARTICLE_STORAGE_H_
+#define _THREEDGS_PARTICLE_STORAGE_H_
+
 #if DATA_STORAGE == STORAGE_TEXTURES
 // textures map describing the 3DGS model
 layout(set = 0, binding = BINDING_CENTERS_TEXTURE) uniform sampler2D centersTexture;
@@ -512,3 +515,5 @@ vec3 fetchViewDependentRadiance(in uint splatIndex, in vec3 worldViewDir)
 
   return rgb;
 }
+
+#endif

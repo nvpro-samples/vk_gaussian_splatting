@@ -148,6 +148,8 @@ private:
 
   void guiDrawMemoryStatisticsWindow(void);
 
+  void guiDrawFooterBar(void);
+
   bool guiGetTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& translation, glm::mat4& transform, glm::mat4& transformInv, bool disabled /*=false*/);
 
   // methods to handle recent files in file menu
@@ -179,6 +181,7 @@ private:
     GUI_STORAGE,              // model storage in VRAM (in texture or buffer)
     GUI_SORTING,              // the sorting method to use
     GUI_PIPELINE,             // the rendering pipeline to use
+    GUI_CAMERA_TYPE,          // type of camera
     GUI_FRUSTUM_CULLING,      // where to perform frustum culling (or disabled)
     GUI_SH_FORMAT,            // data format for storage of SH in VRAM
     GUI_PARTICLE_FORMAT,      // Particle tracing mode for RTX
@@ -187,22 +190,14 @@ private:
     GUI_ILLUM_MODEL,          // TODO rename, "illumination" model is not the proper name
     GUI_DIST_SHADER_WG_SIZE,  // Distance shader workgroup size
     GUI_MESH_SHADER_WG_SIZE,  // Mesh shader workgroup size
-    GUI_RAY_HIT_PER_PASS      // Max number of ray hits stored per pass (payload array size)
+    GUI_RAY_HIT_PER_PASS,     // Max number of ray hits stored per pass (payload array size)
+    GUI_TEMPORAL_SAMPLING,    // Temporal sampling mode
+    GUI_LIGHT_TYPE,           // Type of light
+    GUI_EXTENT_METHOD         // extent projection method
   };
 
   // UI utility for choice (a.k.a. "combo") menus
   nvgui::EnumRegistry m_ui;
-
-  // Which asset is selected in the scene tree
-  enum
-  {
-    NONE,
-    RENDERER,
-    CAMERAS,
-    LIGHTS,
-    SPLATSET,
-    OBJECTS
-  } m_selectedAsset = RENDERER;
 
   // which property to display in the property editor
   enum
@@ -212,11 +207,11 @@ private:
     GUI_CAMERA,
     GUI_LIGHT,
     GUI_SPLATSET,
-    GUI_MATERIAL,
-  } m_selectedProperty = GUI_RENDERER;
+    GUI_MESH,
+  } m_selectedAsset = GUI_RENDERER;
 
-  bool        m_objJustImported = false;
-  const float TREE_INDENT       = 16.0f;
+  bool        m_objListUpdated = false;
+  const float TREE_INDENT      = 16.0f;
 
   // Project loading
   bool loadingProject = false;

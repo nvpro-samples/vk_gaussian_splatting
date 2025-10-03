@@ -55,7 +55,7 @@ objDesc;
 
 layout(set = 0, binding = BINDING_LIGHT_SET, scalar) buffer LightSet_
 {
-  LightSource l[];
+  LightSource l[4];
 }
 lights;
 
@@ -80,53 +80,11 @@ void main()
   ObjDesc         objResource = objDesc.i[pcRaster.objIndex];
   Materials       materials   = Materials(objResource.materialAddress);
   MaterialIndices matIndices  = MaterialIndices(objResource.materialIndexAddress);
-  ObjMaterial     mat         = materials.m[matIndices.i[pcRaster.objIndex]];
-
-  // Material of the object
-  vec3  matDiffuse    = mat.diffuse;
-  vec3  matAmbient    = mat.ambient;
-  vec3  matSpecular   = mat.specular;
-  vec3  matRefractive = mat.transmittance;
-  float ior           = mat.ior;  // 1.0 = pure transparency, 1.5111 window glass
-  float matShininess  = mat.shininess;
-  int   model         = mat.illum;
+  ObjMaterial     material    = materials.m[matIndices.i[pcRaster.objIndex]];
 
   vec3 color = vec3(0.0);
 
-  for(int i = 0; i < frameInfo.lightCount; ++i)
-  {
-    const LightSource light = lights.l[i];
-
-    // Light source
-    const int  lightType      = light.type;
-    const vec3 lightPosition  = light.position;
-    float      lightIntensity = light.intensity;
-
-    // Vector toward the light
-    vec3 L;
-
-    // Point light
-    if(lightType == 0)
-    {
-      const vec3  lDir = lightPosition - i_worldPos;
-      const float d    = length(lDir);
-      lightIntensity   = lightIntensity / (d * d);
-      L                = normalize(lDir);
-    }
-    else  // Directional light
-    {
-      L = normalize(lightPosition);
-    }
-
-    // Diffuse
-    const vec3 fragDiffuse = computeDiffuse(matDiffuse, matAmbient, L, i_worldNrm);
-
-    // Specular
-    const vec3 fragSpecular = computeSpecular(matSpecular, matShininess, i_viewDir, L, i_worldNrm);
-
-    // Result
-    color += (fragDiffuse + fragSpecular) * lightIntensity;
-  }
+  wavefrontComputeShadingDirectOnly(lights.l, frameInfo.lightCount, i_worldPos, i_worldNrm, material, i_viewDir, color);
 
   o_color = vec4(color, 1);
 
