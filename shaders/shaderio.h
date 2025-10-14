@@ -124,38 +124,33 @@
 #define ATTRIBUTE_LOC_MESH_NORMAL 1
 
 #ifdef __cplusplus
-#include <glm/glm.hpp>
+#include "nvshaders/slang_types.h"
 #include "wavefront.h"  // must be included before definition of DEFAULT
 // used to assign fields defaults
 #define DEFAULT(val) = val
 namespace shaderio {
-using namespace glm;
 #else
-// we are in glsl here
-// common extensions
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-#extension GL_GOOGLE_include_directive : require
+// we are in Slang here
 #include "wavefront.h"  // must be included before definition of DEFAULT
 // used to skip fields init
-// when included in glsl
+// when included in shaders
 #define DEFAULT(val)
 #endif
 
 struct FrameInfo
 {
-  vec3 cameraPosition;  // position in world space
-  vec4 viewQuat;        // quaternion storing the rotation part of the view matrix
-  vec3 viewTrans;       // translation part of the view matrix
-  mat4 viewMatrix;
-  mat4 viewInverse;  // Camera inverse view matrix
+  float3   cameraPosition;  // position in world space
+  float4   viewQuat;        // quaternion storing the rotation part of the view matrix
+  float3   viewTrans;       // translation part of the view matrix
+  float4x4 viewMatrix;
+  float4x4 viewInverse;  // Camera inverse view matrix
 
-  mat4 projectionMatrix;
-  mat4 projInverse;  // Camera inverse projection matrix
-  vec2 nearFar;
-  vec2 focal;
-  vec2 viewport;
-  vec2 basisViewport;
+  float4x4 projectionMatrix;
+  float4x4 projInverse;  // Camera inverse projection matrix
+  float2   nearFar;
+  float2   focal;
+  float2   viewport;
+  float2   basisViewport;
 
   float fovRad                 DEFAULT(0.009f);  // Field of view in radians for fisheye camera
   float inverseFocalAdjustment DEFAULT(1.0f);
@@ -171,7 +166,7 @@ struct FrameInfo
   float alphaCullThreshold DEFAULT(1.0f / 255.0f);  // for alpha culling
 
   int32_t lightCount DEFAULT(0);
-  ivec2              cursor;        // position of the mouse cursor for debug
+  int2               cursor;        // position of the mouse cursor for debug
   int32_t maxPasses  DEFAULT(200);  // RTX maximum hits during marching
 
   float alphaClamp       DEFAULT(0.99f);  // 0.99 in original paper
@@ -191,9 +186,9 @@ struct FrameInfo
 struct PushConstant
 {
   // model transformation
-  mat4     modelMatrix;
-  mat4     modelMatrixInverse;
-  mat4     modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
+  float4x4 modelMatrix;
+  float4x4 modelMatrixInverse;
+  float4x4 modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
   uint32_t objIndex;                    // index of the mesh being rendered if any
 };
 
@@ -232,9 +227,9 @@ struct IndirectParams
 struct PushConstantRay
 {
   // model transformation
-  mat4 modelMatrix;
-  mat4 modelMatrixInverse;
-  mat4 modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
+  float4x4 modelMatrix;
+  float4x4 modelMatrixInverse;
+  float4x4 modelMatrixRotScaleInverse;  // inverse of the rotation/scale part of the modelMatrix
   // stores the geometry of the splat primitive
   // provisionaly placed here, shall not be in push constant,
   // rather in some objects description buffer
@@ -248,21 +243,13 @@ struct PushConstantRay
 }  // namespace shaderio
 #endif
 
-struct HitBufferPayload
-{
-  int   id;
-  float dist;
-};
-
 #ifndef __cplusplus
-struct hitPayload
+struct HitPayload
 {
-#if USE_RTX_PAYLOAD_BUFFER == 0
   int   id[PAYLOAD_ARRAY_SIZE];
   float dist[PAYLOAD_ARRAY_SIZE];
 #if WIREFRAME
-  vec2 bary[PAYLOAD_ARRAY_SIZE];  // hit barycentrics
-#endif
+  float2 bary[PAYLOAD_ARRAY_SIZE];  // hit barycentrics
 #endif
 };
 #endif

@@ -66,6 +66,7 @@
 #include <nvvk/sbt_generator.hpp>
 
 #include <nvvkglsl/glsl.hpp>
+#include <nvslang/slang.hpp>
 
 #include <nvapp/application.hpp>
 #include <nvapp/elem_camera.hpp>
@@ -161,8 +162,9 @@ private:
 
   void deinitRendererBuffers();
 
-  shaderc::SpvCompilationResult compileGlslShader(const std::string& filename, shaderc_shader_kind shaderKind);
-  void createVkShaderModule(shaderc::SpvCompilationResult& spvShader, VkShaderModule& vkShaderModule);
+  void updateSlangMacros(void);
+
+  bool compileSlangShader(const std::string& filename, VkShaderModule& module);
 
   bool initShaders(void);
 
@@ -311,8 +313,10 @@ protected:
   nvvk::Buffer m_splatDistancesDevice;  // Buffer of splat indices on device (used by CPU and GPU sort)
   nvvk::Buffer m_vrdxStorageDevice;     // Used internally by VrdxSorter, GPU sort
 
+  // macro definitions shared by all shaders
+  std::vector<std::pair<std::string, std::string>> m_shaderMacros;
   // used to load and compile shaders
-  nvvkglsl::GlslCompiler m_glslCompiler{};
+  nvslang::SlangCompiler m_slangCompiler{};
 
   // The different shaders that are used in the pipelines
   struct Shaders
@@ -336,20 +340,14 @@ protected:
     VkShaderModule rtxRintShader{};    // Interrsection
     // Post processings
     VkShaderModule postComputeShader{};
+    // Utility storage to process shaders in loop
+    std::vector<VkShaderModule*> modules{};
     // true if all the shaders are succesfully build
     bool valid = false;
   } m_shaders;
 
-  // Utility storage to process m_shaders in loop
-  struct ShaderEntry
-  {
-    shaderc::SpvCompilationResult spv;
-    VkShaderModule*               mod;
-  };
-  std::vector<ShaderEntry> m_allShaders{};
-
   // 3D Gaussians Pipelines
-  VkPipeline m_computePipelineGsDistCull{};  // The compute pipeline to compute gaussian splats distances to eye and cull
+  VkPipeline m_computePipelineGsDistCull = VK_NULL_HANDLE;  // The compute pipeline to compute gaussian splats distances to eye and cull
   VkPipeline m_graphicsPipelineGsVert = VK_NULL_HANDLE;  // The graphic pipeline to rasterize gaussian splats using vertex shaders
   VkPipeline m_graphicsPipelineGsMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize gaussian splats using mesh shaders
   VkPipeline m_graphicsPipeline3dgutMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize 3DGUT splats using mesh shaders
@@ -357,10 +355,10 @@ protected:
   VkPipeline m_graphicsPipelineMesh = VK_NULL_HANDLE;  // The graphic pipeline to rasterize meshes
 
   // Common to 3D meshes and 3D Gaussians pipeline
-  VkPipelineLayout      m_pipelineLayout{};       // Raster Pipelines layout
-  VkDescriptorSetLayout m_descriptorSetLayout{};  // Descriptor set layout
-  VkDescriptorSet       m_descriptorSet{};        // Raster Descriptor set
-  VkDescriptorPool      m_descriptorPool{};       // Raster Descriptor pool
+  VkPipelineLayout      m_pipelineLayout      = VK_NULL_HANDLE;  // Raster Pipelines layout
+  VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;  // Descriptor set layout
+  VkDescriptorSet       m_descriptorSet       = VK_NULL_HANDLE;  // Raster Descriptor set
+  VkDescriptorPool      m_descriptorPool      = VK_NULL_HANDLE;  // Raster Descriptor pool
 
   nvvk::Buffer m_frameInfoBuffer;  // uniform buffer to store frame parameters defined by global variable prmFrame
 
@@ -407,13 +405,13 @@ protected:
   VkPhysicalDeviceAccelerationStructurePropertiesKHR m_accelStructProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
 
   std::vector<VkRayTracingShaderGroupCreateInfoKHR> m_rtShaderGroups;
-  VkPipelineLayout                                  m_rtPipelineLayout;
-  VkPipeline m_rtPipeline;  // The RTX pipeline to ray trace gaussian splats and meshes
+  VkPipelineLayout                                  m_rtPipelineLayout = VK_NULL_HANDLE;
+  VkPipeline m_rtPipeline = VK_NULL_HANDLE;  // The RTX pipeline to ray trace gaussian splats and meshes
 
-  nvvk::DescriptorBindings m_rtDescriptorBindings{};
-  VkDescriptorSetLayout    m_rtDescriptorSetLayout{};
-  VkDescriptorSet          m_rtDescriptorSet{};
-  VkDescriptorPool         m_rtDescriptorPool{};
+  nvvk::DescriptorBindings m_rtDescriptorBindings  = {};
+  VkDescriptorSetLayout    m_rtDescriptorSetLayout = VK_NULL_HANDLE;
+  VkDescriptorSet          m_rtDescriptorSet       = VK_NULL_HANDLE;
+  VkDescriptorPool         m_rtDescriptorPool      = VK_NULL_HANDLE;
 
   nvvk::Buffer m_payloadDevice;
 
@@ -426,13 +424,13 @@ protected:
   ///////////////////////////////
   // Post processing
 
-  VkPipeline       m_computePipelinePostProcess{};
-  VkPipelineLayout m_pipelineLayoutPostProcess{};
+  VkPipeline       m_computePipelinePostProcess = VK_NULL_HANDLE;
+  VkPipelineLayout m_pipelineLayoutPostProcess  = VK_NULL_HANDLE;
 
   nvvk::DescriptorBindings m_descriptorBindingsPostProcess{};
-  VkDescriptorSetLayout    m_descriptorSetLayoutPostProcess{};
-  VkDescriptorSet          m_descriptorSetPostProcess{};
-  VkDescriptorPool         m_descriptorPoolPostProcess{};
+  VkDescriptorSetLayout    m_descriptorSetLayoutPostProcess = VK_NULL_HANDLE;
+  VkDescriptorSet          m_descriptorSetPostProcess       = VK_NULL_HANDLE;
+  VkDescriptorPool         m_descriptorPoolPostProcess      = VK_NULL_HANDLE;
 };
 
 }  // namespace vk_gaussian_splatting

@@ -48,12 +48,12 @@ The Ray Payload (also known as Per Ray Data - PRD) is used to exchange data betw
 The example of the above diagram is developed hereafter:
 * We configure the Ray Payload as an array of intersection results containing a distance and a particle ID.
     * Let $K$ be the maximum number of results that can be stored in the array of intersections.
-* In this example, three rays are traced by the [**ray generation**](../shaders/threedgrt_raytrace.rgen.glsl) shader (for the same pixel).
+* In this example, three rays are traced by the [**ray generation**](../shaders/threedgrt_raytrace.rgen.slang) shader (for the same pixel).
     * Before each `traceRayEXT` call, each entry of the payload array is reset to infinite distance.
 * Each `traceRayEXT` of index $n$ will systematically go:
     * Through all the splats between $Tmin_n$ and $Tmax_n$, invoking the **any hit shader** for each intersection.
-    * The [**any hit shader**](../shaders/threedgrt_raytrace.rahit.glsl) handles the insertion and sorting of the $k \leq K$ closest particles within the payload buffer.
-* After each ray trace, the raygen shader (using the `particleProcessHit` function, see file [threedgrt.glsl](../shaders/threedgrt.glsl)):
+    * The [**any hit shader**](../shaders/threedgrt_raytrace.rahit.slang) handles the insertion and sorting of the $k \leq K$ closest particles within the payload buffer.
+* After each ray trace, the raygen shader (using the `particleProcessHit` function, see file [threedgrt.h.slang](../shaders/threedgrt.h.slang)):
     * Computes the radiance of each intersected splat and blends the result to the pixel radiance.
     * The $transmittance$ is decreased by the opacity of the blended values.
     * $Tmin_{n+1}$ is set to the distance to the last intersected splat.
@@ -81,7 +81,7 @@ Finally, the **BLAS compaction** option allows compressing the BLAS, which leads
 
 ## Compositing with 3D Meshes and Secondary Rays
 
-The provided implementation allows composing scenes with 3D meshes and a particle set. For this, the ray tracing loop is extended so that meshes occlude particles placed behind them and are overlaid by closer particles. To do so efficiently, the meshes are stored in a separate acceleration structure (`topLevelASMesh` in the file [threedgrt_raytrace.rgen.glsl](../shaders/threedgrt_raytrace.rgen.glsl)).
+The provided implementation allows composing scenes with 3D meshes and a particle set. For this, the ray tracing loop is extended so that meshes occlude particles placed behind them and are overlaid by closer particles. To do so efficiently, the meshes are stored in a separate acceleration structure (`topLevelASMesh` in the file [threedgrt_raytrace.rgen.slang](../shaders/threedgrt_raytrace.rgen.slang)).
 
 1. The meshes are traced before the particle set. While particle sets make use of the `any hit shader`, the 3D meshes use the `closest hit shader` of the same pipeline. In case of a hit, the `closest hit shader` uses the same payload array to return the distance $meshHitDist$ to the intersection, the object ID, the material ID of the object, the position, and the normal of the intersection point in world coordinates. These are stored for later use, and shading of the mesh is postponed. In this way, if some particles in front of the mesh are opaque enough, the shading of the mesh (including potential secondary rays evaluations) will not be computed for better performance.
 2. The tracing of the particles acceleration structure (`topLevelAS`) occurs from $min$ to $meshHitDist$. This prevents the need for costly tracing of particles placed behind the mesh if any. The $radiance$ for this pixel is updated by the `processHit` function as described in the previous section.
@@ -93,19 +93,19 @@ The provided implementation allows composing scenes with 3D meshes and a particl
 ![Raytracing depth of field, using a single sample frame](./raytracing_dof_one_frame.png)
 *Raytracing depth of field, using a single sample frame*
 
-Depth of field (DoF) is implemented in the [ray generation shader](../shaders/raytrace.rgen.glsl) main function using a sampling approach. We initialize a random number seed based on the launch ID and frame sample ID:
+Depth of field (DoF) is implemented in the [ray generation shader](../shaders/raytrace.rgen.slang) main function using a sampling approach. We initialize a random number seed based on the launch ID and frame sample ID:
 
-```glsl
-// Initialize the random number
-uint seed = xxhash32(uvec3(gl_LaunchIDEXT.xy, frameInfo.frameSampleId));
+```c
+// Initialize the random number 
+uint seed = xxhash32(uint3(launchID, frameInfo.frameSampleId));
 
-vec3  focalPoint        = rayDirection * frameInfo.focusDist;
-float cam_r1            = rand(seed) * TWO_PI;
-float cam_r2            = rand(seed) * frameInfo.aperture;
-vec4  cam_right         = frameInfo.viewInverse * vec4(1, 0, 0, 0);
-vec4  cam_up            = frameInfo.viewInverse * vec4(0, 1, 0, 0);
-vec3  randomAperturePos = (cos(cam_r1) * cam_right.xyz + sin(cam_r1) * cam_up.xyz) * sqrt(cam_r2);
-vec3  finalRayDir       = normalize(focalPoint - randomAperturePos);
+const float3  focalPoint       = rayDirection * frameInfo.focusDist;
+const float cam_r1             = rand(seed) * TWO_PI;
+const float cam_r2             = rand(seed) * frameInfo.aperture;
+const float4 cam_right         = frameInfo.viewInverse * float4(1, 0, 0, 0);
+const float4 cam_up            = frameInfo.viewInverse * float4(0, 1, 0, 0);
+const float3 randomAperturePos = (cos(cam_r1) * cam_right.xyz + sin(cam_r1) * cam_up.xyz) * sqrt(cam_r2);
+const float3 finalRayDir       = normalize(focalPoint - randomAperturePos);
 
 // Set the new ray origin and direction with depth-of-field
 rayOrigin += randomAperturePos;
@@ -119,16 +119,16 @@ This method calculates a new ray origin and direction to simulate the blur effec
 
 Using this method on a single frame ($frameInfo.frameSampleId = 0$) leads to a noisy image result due to the random approach. To achieve a clean denoised blur effect, we use **temporal sampling** and **accumulation over multiple frames** with a random seed evolving as a function of $frameInfo.frameSampleId$. By averaging the contributions from each frame, at the end of the ray generation main function, the noise is reduced:
 
-```glsl
+```c
 if(frameInfo.frameSampleId > 0)
 {
   // Do accumulation over time
-  const float a        = 1.0F / float(frameInfo.frameSampleId + 1);
-  const vec4  oldColor = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
-  fragRadiance         = mix(oldColor, vec4(fragRadiance, 1.0), a).xyz;
+  const float  a        = 1.0F / float(frameInfo.frameSampleId + 1);
+  const float4 oldColor = image[launchID];
+  fragRadiance          = lerp(oldColor, float4(fragRadiance, 1.0), a).xyz;
 }
 
-imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));
+image[launchID] = float4(fragRadiance, 1.0);
 ```
 
 Here, the color from previous frames is blended with the current frame's color. The accumulation factor $$a = \frac{1.0}{\text{frameSampleId} + 1}$$ ensures that the contribution of each frame decreases over time, resulting in a smoother and cleaner image.

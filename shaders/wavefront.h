@@ -25,35 +25,21 @@
 #define LIGHT_TYPE_DIRECTIONAL 1
 
 #ifdef __cplusplus
-#include <glm/glm.hpp>
+#include "nvshaders/slang_types.h"
 // used to assign fields defaults
 #define DEFAULT(val) = val
 namespace shaderio {
-using namespace glm;
 #else
-// we are in glsl here
+// we are in Slang here
 // used to skip fields init
-// when included in glsl
+// when included in shaders
 #define DEFAULT(val)
-// common extensions
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_shader_explicit_arithmetic_types : require
 #endif
 
-// Information of a obj model when referenced in a shader
-struct ObjDesc
+struct ObjVertex  // See ObjLoader, copy of VertexObj
 {
-  //int      txtOffset;             // Texture index offset in the array of textures
-  uint64_t vertexAddress;         // Address of the Vertex buffer
-  uint64_t indexAddress;          // Address of the index buffer
-  uint64_t materialAddress;       // Address of the material buffer
-  uint64_t materialIndexAddress;  // Address of the triangle material index buffer
-};
-
-struct Vertex  // See ObjLoader, copy of VertexObj
-{
-  vec3 pos;
-  vec3 nrm;
+  float3 pos;
+  float3 nrm;
   //vec3 color;
   //vec2 texCoord;
 };
@@ -61,22 +47,32 @@ struct Vertex  // See ObjLoader, copy of VertexObj
 // Structure holding the material for mesh objects
 struct ObjMaterial
 {
-  vec3  ambient;
-  vec3  diffuse;
-  vec3  specular;
-  vec3  transmittance;
-  vec3  emission;
-  float shininess;
-  float ior;
-  float dissolve;
-  int   illum;
-  int   textureID;
+  float3 ambient;
+  float3 diffuse;
+  float3 specular;
+  float3 transmittance;
+  float3 emission;
+  float  shininess;
+  float  ior;
+  float  dissolve;
+  int    illum;
+  int    textureID;
+};
+
+// Information of a obj model when referenced in a shader
+struct ObjDesc
+{
+  //int      txtOffset;             // Texture index offset in the array of textures
+  ObjVertex*   vertexAddress;         // Address of the Vertex buffer
+  uint32_t*    indexAddress;          // Address of the index buffer
+  ObjMaterial* materialAddress;       // Address of the material buffer
+  uint32_t*    materialIndexAddress;  // Address of the triangle material index buffer
 };
 
 // Structure holding light source attributes
 struct LightSource
 {
-  vec3 position   DEFAULT(vec3(0.0, 4.0, 0.0));
+  float3 position DEFAULT(float3(0.0, 4.0, 0.0));
   float intensity DEFAULT(1.0);
   int type        DEFAULT(LIGHT_TYPE_DIRECTIONAL);
 };

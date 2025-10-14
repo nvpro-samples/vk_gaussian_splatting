@@ -17,46 +17,47 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _3DGS_CORE_H_
 #define _3DGS_CORE_H_
 
 // cov3Dm: 3D covariance matrix
 // splatCenterView: splat center in view coordinates
 // returns: the upper-left 2x2 portion of the projected 3D covariance matrix (see comments in function body). 
-vec3 threedgsCovarianceProjection(mat3 cov3Dm, vec4 splatCenterView, vec2 focal, mat4 modelViewTransform)
+float3 threedgsCovarianceProjection(float3x3 cov3Dm, float4 splatCenterView, float2 focal, float4x4 modelViewTransform)
 {
   // TODO: the ortho mode is not supported yet
 #if ORTHOGRAPHIC_MODE == 1
   // Since the projection is linear, we don't need an approximation
-  const mat3 J = transpose(mat3(orthoZoom, 0.0, 0.0, 0.0, orthoZoom, 0.0, 0.0, 0.0, 0.0));
+  const float3x3 J = transpose(float3x3(orthoZoom, 0.0, 0.0, 0.0, orthoZoom, 0.0, 0.0, 0.0, 0.0));
 #else
   // Construct the Jacobian of the affine approximation of the projection matrix. It will be used to transform the
   // 3D covariance matrix instead of using the actual projection matrix because that transformation would
   // require a non-linear component (perspective division) which would yield a non-gaussian result.
   const float s = 1.0 / (splatCenterView.z * splatCenterView.z);
-  const mat3  J = mat3(focal.x / splatCenterView.z, 0., -(focal.x * splatCenterView.x) * s, 0.,
+  const float3x3  J = float3x3(focal.x / splatCenterView.z, 0., -(focal.x * splatCenterView.x) * s, 0.,
                        focal.y / splatCenterView.z, -(focal.y * splatCenterView.y) * s, 0., 0., 0.);
 #endif
 
   // Concatenate the projection approximation with the model-view transformation
-  const mat3 W = transpose(mat3(modelViewTransform));
-  const mat3 T = W * J;
+  // Row-major: extract 3x3 from the model-view transform (already in row-major)
+  const float3x3 W = transpose(float3x3(modelViewTransform));
+  // Row-major: matrix multiplication order (J * W instead of W * J)
+  const float3x3 T = mul(J, W);
 
   // Transform the 3D covariance matrix (cov3Dm) to compute the 2D covariance matrix
-  const mat3 cov2Dm = transpose(T) * cov3Dm * T;
+  // Row-major: T^T * cov3Dm * T becomes T * cov3Dm * T^T
+  const float3x3 cov2Dm = mul(mul(T, cov3Dm), transpose(T));
 
   // We are interested in the upper-left 2x2 portion of the projected 3D covariance matrix because
   // we only care about the X and Y values. We want the X-diagonal, cov2Dm[0][0],
   // the Y-diagonal, cov2Dm[1][1], and the correlation between the two cov2Dm[0][1]. We don't
   // need cov2Dm[1][0] because it is a symetric matrix.
-  return vec3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
+  return float3(cov2Dm[0][0], cov2Dm[0][1], cov2Dm[1][1]);
 }
 
 // This function ingests the projected 2D covariance and outputs the basis vectors of its 2D extent
 // opacity is updated if MipSplatting antialiasing is applied.
-bool threedgsProjectedExtentBasis(vec3 cov2Dv, float stdDev, float splatScale, inout float opacity, out vec2 basisVector1, out vec2 basisVector2)
+bool threedgsProjectedExtentBasis(float3 cov2Dv, float stdDev, float splatScale, inout float opacity, out float2 basisVector1, out float2 basisVector2)
 {
 
 #if MS_ANTIALIASING == 1
@@ -99,16 +100,18 @@ bool threedgsProjectedExtentBasis(vec3 cov2Dv, float stdDev, float splatScale, i
 
   if(eigenValue2 <= 0.0)
   {
+#pragma warning(disable: 41018) // Disable warning 41018 : returning without initializing some variables/parameters
     return false;
+#pragma warning(default: 41018)
   }
 
 #if POINT_CLOUD_MODE
   eigenValue1 = eigenValue2 = 0.2;
 #endif
 
-  const vec2 eigenVector1 = normalize(vec2(b, eigenValue1 - a));
+  const float2 eigenVector1 = normalize(float2(b, eigenValue1 - a));
   // since the eigen vectors are orthogonal, we derive the second one from the first
-  const vec2 eigenVector2 = vec2(eigenVector1.y, -eigenVector1.x);
+  const float2 eigenVector2 = float2(eigenVector1.y, -eigenVector1.x);
 
   basisVector1 = eigenVector1 * splatScale * min(stdDev * sqrt(eigenValue1), 2048.0);
   basisVector2 = eigenVector2 * splatScale * min(stdDev * sqrt(eigenValue2), 2048.0);

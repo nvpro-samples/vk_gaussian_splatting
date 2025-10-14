@@ -98,12 +98,19 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
       .descriptorPool = m_app->getTextureDescriptorPool(),
   });
 
-  // Setting up the GLSL compiler
-  // Where to find shaders source code
-  m_glslCompiler.addSearchPaths(getShaderDirs());
-  // SPIRV 1.6 and VULKAN 1.4
-  m_glslCompiler.defaultTarget();
-  m_glslCompiler.defaultOptions();
+  // Setting up the Slang compiler
+  {
+    // Where to find shaders source code
+    m_slangCompiler.addSearchPaths(getShaderDirs());
+    // SPIRV 1.6 and VULKAN 1.4
+    m_slangCompiler.defaultTarget();
+    m_slangCompiler.defaultOptions();
+    m_slangCompiler.addOption({slang::CompilerOptionName::MatrixLayoutRow, {slang::CompilerOptionValueKind::Int, 1}});
+    m_slangCompiler.addOption({slang::CompilerOptionName::DebugInformation,
+                               {slang::CompilerOptionValueKind::Int, SLANG_DEBUG_INFO_LEVEL_MAXIMAL}});
+    m_slangCompiler.addOption({slang::CompilerOptionName::Optimization,
+                               {slang::CompilerOptionValueKind::Int, SLANG_OPTIMIZATION_LEVEL_DEFAULT}});
+  }
 
   // Get device information
   m_physicalDeviceInfo.init(m_app->getPhysicalDevice(), VK_API_VERSION_1_4);
@@ -890,126 +897,111 @@ void GaussianSplatting::deinitScene()
   m_loadedSceneFilename = "";
 }
 
-shaderc::SpvCompilationResult GaussianSplatting::compileGlslShader(const std::string& filename, shaderc_shader_kind shaderKind)
+void GaussianSplatting::updateSlangMacros()
 {
-  m_glslCompiler.options().AddMacroDefinition("PIPELINE", std::to_string(prmSelectedPipeline));
-  m_glslCompiler.options().AddMacroDefinition(
-      "HYBRID_ENABLED",
-      std::to_string((int)(prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT)));
+  m_shaderMacros =  // comment to force clang new line and better indent
+      {{"PIPELINE", std::to_string(prmSelectedPipeline)},
+       {"HYBRID_ENABLED", std::to_string((int)(prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT))},
+       {"CAMERA_TYPE", std::to_string(m_cameraSet.getCamera().model)},
+       {"VISUALIZE", std::to_string((int)prmRender.visualize)},
+       {"DISABLE_OPACITY_GAUSSIAN", std::to_string((int)prmRender.opacityGaussianDisabled)},
+       {"FRUSTUM_CULLING_MODE", std::to_string(prmRaster.frustumCulling)},
+       // Disabled, TODO do we enable ortho cam in the UI/camera controller
+       {"ORTHOGRAPHIC_MODE", "0"},
+       {"SHOW_SH_ONLY", std::to_string((int)prmRender.showShOnly)},
+       {"MAX_SH_DEGREE", std::to_string(prmRender.maxShDegree)},
+       {"DATA_STORAGE", std::to_string(prmData.dataStorage)},
+       {"SH_FORMAT", std::to_string(prmData.shFormat)},
+       {"POINT_CLOUD_MODE", std::to_string((int)prmRaster.pointCloudModeEnabled)},
+       {"USE_BARYCENTRIC", std::to_string((int)prmRaster.fragmentBarycentric)},
+       {"WIREFRAME", std::to_string((int)prmRender.wireframe)},
+       {"DISTANCE_COMPUTE_WORKGROUP_SIZE", std::to_string((int)prmRaster.distShaderWorkgroupSize)},
+       {"RASTER_MESH_WORKGROUP_SIZE", std::to_string((int)prmRaster.meshShaderWorkgroupSize)},
+       {"MS_ANTIALIASING", std::to_string((int)prmRaster.msAntialiasing)},
+       {"EXTENT_METHOD", std::to_string((int)prmRaster.extentProjection)},
+       // RTX
+       {"TEMPORAL_SAMPLING", std::to_string((int)prmRtx.temporalSampling)},
+       {"KERNEL_DEGREE", std::to_string(prmRtx.kernelDegree)},
+       {"KERNEL_MIN_RESPONSE", std::to_string(prmRtx.kernelMinResponse)},
+       {"KERNEL_ADAPTIVE_CLAMPING", std::to_string((int)prmRtx.kernelAdaptiveClamping)},
+       {"PAYLOAD_ARRAY_SIZE", std::to_string(prmRtx.payloadArraySize)},
+       {"RTX_USE_INSTANCES", std::to_string((int)prmRtxData.useTlasInstances)},
+       {"RTX_USE_AABBS", std::to_string((int)prmRtxData.useAABBs)},
+       {"RTX_USE_MESHES", std::to_string((int)m_meshSetVk.instances.size())},
+       {"RTX_DOF_ENABLED", std::to_string((int)m_cameraSet.getCamera().dofEnabled)}};
 
-  m_glslCompiler.options().AddMacroDefinition("CAMERA_TYPE", std::to_string(m_cameraSet.getCamera().model));
-  m_glslCompiler.options().AddMacroDefinition("VISUALIZE", std::to_string((int)prmRender.visualize));
-  m_glslCompiler.options().AddMacroDefinition("DISABLE_OPACITY_GAUSSIAN", std::to_string((int)prmRender.opacityGaussianDisabled));
-  m_glslCompiler.options().AddMacroDefinition("FRUSTUM_CULLING_MODE", std::to_string(prmRaster.frustumCulling));
+  m_slangCompiler.clearMacros();
 
-  // Disabled, TODO do we enable ortho cam in the UI/camera controller
-  m_glslCompiler.options().AddMacroDefinition("ORTHOGRAPHIC_MODE", "0");
-  m_glslCompiler.options().AddMacroDefinition("SHOW_SH_ONLY", std::to_string((int)prmRender.showShOnly));
-  m_glslCompiler.options().AddMacroDefinition("MAX_SH_DEGREE", std::to_string(prmRender.maxShDegree));
-  m_glslCompiler.options().AddMacroDefinition("DATA_STORAGE", std::to_string(prmData.dataStorage));
-  m_glslCompiler.options().AddMacroDefinition("SH_FORMAT", std::to_string(prmData.shFormat));
-  m_glslCompiler.options().AddMacroDefinition("POINT_CLOUD_MODE", std::to_string((int)prmRaster.pointCloudModeEnabled));
-  m_glslCompiler.options().AddMacroDefinition("USE_BARYCENTRIC", std::to_string((int)prmRaster.fragmentBarycentric));
-  m_glslCompiler.options().AddMacroDefinition("WIREFRAME", std::to_string((int)prmRender.wireframe));
-  m_glslCompiler.options().AddMacroDefinition("DISTANCE_COMPUTE_WORKGROUP_SIZE",
-                                              std::to_string((int)prmRaster.distShaderWorkgroupSize));
-  m_glslCompiler.options().AddMacroDefinition("RASTER_MESH_WORKGROUP_SIZE", std::to_string((int)prmRaster.meshShaderWorkgroupSize));
-  m_glslCompiler.options().AddMacroDefinition("MS_ANTIALIASING", std::to_string((int)prmRaster.msAntialiasing));
-  m_glslCompiler.options().AddMacroDefinition("EXTENT_METHOD", std::to_string((int)prmRaster.extentProjection));
-
-  // RTX
-  m_glslCompiler.options().AddMacroDefinition("TEMPORAL_SAMPLING", std::to_string((int)prmRtx.temporalSampling));
-  m_glslCompiler.options().AddMacroDefinition("KERNEL_DEGREE", std::to_string(prmRtx.kernelDegree));
-  m_glslCompiler.options().AddMacroDefinition("KERNEL_MIN_RESPONSE", std::to_string(prmRtx.kernelMinResponse));
-  m_glslCompiler.options().AddMacroDefinition("KERNEL_ADAPTIVE_CLAMPING", std::to_string((int)prmRtx.kernelAdaptiveClamping));
-  m_glslCompiler.options().AddMacroDefinition("PAYLOAD_ARRAY_SIZE", std::to_string(prmRtx.payloadArraySize));
-  m_glslCompiler.options().AddMacroDefinition("USE_RTX_PAYLOAD_BUFFER", std::to_string((int)prmRtx.usePayloadBuffer));
-  m_glslCompiler.options().AddMacroDefinition("RTX_USE_INSTANCES", std::to_string((int)prmRtxData.useTlasInstances));
-  m_glslCompiler.options().AddMacroDefinition("RTX_USE_AABBS", std::to_string((int)prmRtxData.useAABBs));
-  m_glslCompiler.options().AddMacroDefinition("RTX_USE_MESHES", std::to_string((int)m_meshSetVk.instances.size()));
-  m_glslCompiler.options().AddMacroDefinition("RTX_DOF_ENABLED", std::to_string((int)m_cameraSet.getCamera().dofEnabled));
-
-  return m_glslCompiler.compileFile(filename, shaderKind);
+  // then provide the char* strings to the compiler
+  for(auto& macro : m_shaderMacros)
+  {
+    m_slangCompiler.addMacro({macro.first.c_str(), macro.second.c_str()});
+  }
 }
 
-void GaussianSplatting::createVkShaderModule(shaderc::SpvCompilationResult& spvShader, VkShaderModule& vkShaderModule)
+bool GaussianSplatting::compileSlangShader(const std::string& filename, VkShaderModule& module)
 {
 
-  VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                      .codeSize = m_glslCompiler.getSpirvSize(spvShader),
-                                      .pCode    = m_glslCompiler.getSpirv(spvShader)};
+  if(!m_slangCompiler.compileFile(filename))
+  {
+    return false;
+  }
 
-  NVVK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &vkShaderModule));
+  if(module != VK_NULL_HANDLE)
+    vkDestroyShaderModule(m_device, module, nullptr);
+
+  // Create the VK module
+  VkShaderModuleCreateInfo createInfo{.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                      .codeSize = m_slangCompiler.getSpirvSize(),
+                                      .pCode    = m_slangCompiler.getSpirv()};
+
+  if(m_slangCompiler.getSpirvSize() == 0)
+  {
+    std::cerr << "\033[31m"
+              << "Missing entry point in shader " << std::endl;
+    std::cerr << filename << "\033[0m" << std::endl;
+    return false;
+  }
+  NVVK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &module));
+  NVVK_DBG_NAME(module);
+
+  m_shaders.modules.emplace_back(&module);
+
+  return true;
 }
 
 bool GaussianSplatting::initShaders(void)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 
-  m_shaders.valid = false;
+  bool success = true;
+
+  updateSlangMacros();
 
   // Particles distance to viewpoint and frustum culling
-  m_allShaders.emplace_back(compileGlslShader("dist.comp.glsl", shaderc_shader_kind::shaderc_compute_shader), &m_shaders.distShader);
-
+  success &= compileSlangShader("dist.comp.slang", m_shaders.distShader);
   // 3DGS raster
-  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
-                            &m_shaders.vertexShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.mesh.glsl", shaderc_shader_kind::shaderc_mesh_shader),
-                            &m_shaders.meshShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgs_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
-                            &m_shaders.fragmentShader);
+  success &= compileSlangShader("threedgs_raster.vert.slang", m_shaders.vertexShader);
+  success &= compileSlangShader("threedgs_raster.mesh.slang", m_shaders.meshShader);
+  success &= compileSlangShader("threedgs_raster.frag.slang", m_shaders.fragmentShader);
   // 3DGUT raster
-  m_allShaders.emplace_back(compileGlslShader("threedgut_raster.mesh.glsl", shaderc_shader_kind::shaderc_mesh_shader),
-                            &m_shaders.threedgutMeshShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgut_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
-                            &m_shaders.threedgutFragmentShader);
+  success &= compileSlangShader("threedgut_raster.mesh.slang", m_shaders.threedgutMeshShader);
+  success &= compileSlangShader("threedgut_raster.frag.slang", m_shaders.threedgutFragmentShader);
   // Mesh raster
-  m_allShaders.emplace_back(compileGlslShader("threedmesh_raster.vert.glsl", shaderc_shader_kind::shaderc_vertex_shader),
-                            &m_shaders.meshVertexShader);
-  m_allShaders.emplace_back(compileGlslShader("threedmesh_raster.frag.glsl", shaderc_shader_kind::shaderc_fragment_shader),
-                            &m_shaders.meshFragmentShader);
+  success &= compileSlangShader("threedmesh_raster.vert.slang", m_shaders.meshVertexShader);
+  success &= compileSlangShader("threedmesh_raster.frag.slang", m_shaders.meshFragmentShader);
   // Ray trace
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rgen.glsl", shaderc_shader_kind::shaderc_raygen_shader),
-                            &m_shaders.rtxRgenShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
-                            &m_shaders.rtxRmissShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace_shadow.rmiss.glsl", shaderc_shader_kind::shaderc_miss_shader),
-                            &m_shaders.rtxRmiss2Shader);
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rchit.glsl", shaderc_shader_kind::shaderc_closesthit_shader),
-                            &m_shaders.rtxRchitShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rahit.glsl", shaderc_shader_kind::shaderc_anyhit_shader),
-                            &m_shaders.rtxRahitShader);
-  m_allShaders.emplace_back(compileGlslShader("threedgrt_raytrace.rint.glsl", shaderc_shader_kind::shaderc_intersection_shader),
-                            &m_shaders.rtxRintShader);
-
+  success &= compileSlangShader("threedgrt_raytrace.rgen.slang", m_shaders.rtxRgenShader);
+  success &= compileSlangShader("threedgrt_raytrace.rmiss.slang", m_shaders.rtxRmissShader);
+  success &= compileSlangShader("threedgrt_raytrace_shadow.rmiss.slang", m_shaders.rtxRmiss2Shader);
+  success &= compileSlangShader("threedgrt_raytrace.rchit.slang", m_shaders.rtxRchitShader);
+  success &= compileSlangShader("threedgrt_raytrace.rahit.slang", m_shaders.rtxRahitShader);
+  success &= compileSlangShader("threedgrt_raytrace.rint.slang", m_shaders.rtxRintShader);
   // Post processings
-  m_allShaders.emplace_back(compileGlslShader("post.comp.glsl", shaderc_shader_kind::shaderc_compute_shader),
-                            &m_shaders.postComputeShader);
+  success &= compileSlangShader("post.comp.slang", m_shaders.postComputeShader);
 
-  size_t      errors = 0;
-  std::string errorMsg;
-  for(auto& shader : m_allShaders)
-  {
-    if(const auto numErrors = shader.spv.GetNumErrors())
-    {
-      errors += numErrors;
-      errorMsg += shader.spv.GetErrorMessage();
-    }
-  }
-
-  if(errors)
-  {
-    std::cerr << "\033[31m"
-              << "Shader compilation failed:" << std::endl;
-    std::cerr << errorMsg.c_str() << "\033[0m" << std::endl;
-    return false;
-  }
-
-  for(auto& shader : m_allShaders)
-  {
-    createVkShaderModule(shader.spv, *shader.mod);
-    NVVK_DBG_NAME(*shader.mod);
-  }
+  if(!success)
+    return (m_shaders.valid = false);
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
@@ -1020,14 +1012,14 @@ bool GaussianSplatting::initShaders(void)
 
 void GaussianSplatting::deinitShaders(void)
 {
-  for(auto& shader : m_allShaders)
+  for(auto& shader : m_shaders.modules)
   {
-    vkDestroyShaderModule(m_device, *shader.mod, nullptr);
-    *shader.mod = VK_NULL_HANDLE;
+    vkDestroyShaderModule(m_device, *shader, nullptr);
+    *shader = VK_NULL_HANDLE;
   }
 
   m_shaders.valid = false;
-  m_allShaders.clear();
+  m_shaders.modules.clear();
 }
 
 void GaussianSplatting::initPipelines()
@@ -1132,7 +1124,8 @@ void GaussianSplatting::initPipelines()
     writeContainer.append(bindings.getWriteSet(BINDING_COVARIANCES_BUFFER, m_descriptorSet), m_splatSetVk.covariancesBuffer);
 
     writeContainer.append(bindings.getWriteSet(BINDING_COLORS_BUFFER, m_descriptorSet), m_splatSetVk.colorsBuffer);
-    writeContainer.append(bindings.getWriteSet(BINDING_SH_BUFFER, m_descriptorSet), m_splatSetVk.sphericalHarmonicsBuffer);
+    if(m_splatSetVk.sphericalHarmonicsBuffer.buffer != NULL)
+      writeContainer.append(bindings.getWriteSet(BINDING_SH_BUFFER, m_descriptorSet), m_splatSetVk.sphericalHarmonicsBuffer);
   }
 
   if(m_meshSetVk.instances.size())
@@ -1165,7 +1158,7 @@ void GaussianSplatting::initPipelines()
     vkCreateComputePipelines(m_device, {}, 1, &pipelineInfo, nullptr, &m_computePipelineGsDistCull);
     NVVK_DBG_NAME(m_computePipelineGsDistCull);
   }
-  // Create the two GS rasterization pipelines
+  // Create the GS rasterization pipelines
   {
     // Preparing the common states
     nvvk::GraphicsPipelineState pipelineState;
@@ -1200,7 +1193,7 @@ void GaussianSplatting::initPipelines()
       creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
 
       creator.addShader(VK_SHADER_STAGE_MESH_BIT_EXT, "main", m_shaders.meshShader);
-      creator.addShader(VK_SHADER_STAGE_FRAGMENT_BIT, "main", m_shaders.fragmentShader);
+      creator.addShader(VK_SHADER_STAGE_FRAGMENT_BIT, "main_mesh", m_shaders.fragmentShader);
 
       creator.createGraphicsPipeline(m_device, nullptr, pipelineState, &m_graphicsPipelineGsMesh);
       NVVK_DBG_NAME(m_graphicsPipelineGsMesh);
@@ -1316,37 +1309,33 @@ void GaussianSplatting::deinitPipelines()
   if(m_graphicsPipelineGsVert == VK_NULL_HANDLE)
     return;
 
-  vkDestroyPipeline(m_device, m_graphicsPipelineGsVert, nullptr);
-  m_graphicsPipelineGsVert = VK_NULL_HANDLE;
-  vkDestroyPipeline(m_device, m_graphicsPipelineGsMesh, nullptr);
-  m_graphicsPipelineGsMesh = VK_NULL_HANDLE;
-  vkDestroyPipeline(m_device, m_graphicsPipeline3dgutMesh, nullptr);
-  m_graphicsPipeline3dgutMesh = VK_NULL_HANDLE;
-  vkDestroyPipeline(m_device, m_graphicsPipelineMesh, nullptr);
-  m_graphicsPipelineGsMesh = VK_NULL_HANDLE;
-  vkDestroyPipeline(m_device, m_computePipelineGsDistCull, nullptr);
-  m_computePipelineGsDistCull = VK_NULL_HANDLE;
+  TEST_DESTROY_AND_RESET(m_graphicsPipelineGsVert, vkDestroyPipeline(m_device, m_graphicsPipelineGsVert, nullptr));
+  TEST_DESTROY_AND_RESET(m_graphicsPipelineGsMesh, vkDestroyPipeline(m_device, m_graphicsPipelineGsMesh, nullptr));
+  TEST_DESTROY_AND_RESET(m_graphicsPipeline3dgutMesh, vkDestroyPipeline(m_device, m_graphicsPipeline3dgutMesh, nullptr));
+  TEST_DESTROY_AND_RESET(m_graphicsPipelineMesh, vkDestroyPipeline(m_device, m_graphicsPipelineMesh, nullptr));
+  TEST_DESTROY_AND_RESET(m_computePipelineGsDistCull, vkDestroyPipeline(m_device, m_computePipelineGsDistCull, nullptr));
 
-  vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-  vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
-  vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+  TEST_DESTROY_AND_RESET(m_pipelineLayout, vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr));
+  TEST_DESTROY_AND_RESET(m_descriptorSetLayout, vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr));
+  TEST_DESTROY_AND_RESET(m_descriptorPool, vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr));
 
   // RTX TODO move this in rtDeinitPipeline and invoke in proper location
-  vkDestroyPipeline(m_device, m_rtPipeline, nullptr);
+  TEST_DESTROY_AND_RESET(m_rtPipeline, vkDestroyPipeline(m_device, m_rtPipeline, nullptr));
 
-  vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
-  vkDestroyDescriptorPool(m_device, m_rtDescriptorPool, nullptr);
-  vkDestroyDescriptorSetLayout(m_device, m_rtDescriptorSetLayout, nullptr);
+  TEST_DESTROY_AND_RESET(m_rtPipelineLayout, vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr));
+  TEST_DESTROY_AND_RESET(m_rtDescriptorPool, vkDestroyDescriptorPool(m_device, m_rtDescriptorPool, nullptr));
+  TEST_DESTROY_AND_RESET(m_rtDescriptorSetLayout, vkDestroyDescriptorSetLayout(m_device, m_rtDescriptorSetLayout, nullptr));
 
   m_alloc.destroyBuffer(m_rtSBTBuffer);
   m_rtShaderGroups.clear();
 
   // Post process
-  vkDestroyPipeline(m_device, m_computePipelinePostProcess, nullptr);
+  TEST_DESTROY_AND_RESET(m_computePipelinePostProcess, vkDestroyPipeline(m_device, m_computePipelinePostProcess, nullptr));
 
-  vkDestroyPipelineLayout(m_device, m_pipelineLayoutPostProcess, nullptr);
-  vkDestroyDescriptorPool(m_device, m_descriptorPoolPostProcess, nullptr);
-  vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayoutPostProcess, nullptr);
+  TEST_DESTROY_AND_RESET(m_pipelineLayoutPostProcess, vkDestroyPipelineLayout(m_device, m_pipelineLayoutPostProcess, nullptr));
+  TEST_DESTROY_AND_RESET(m_descriptorPoolPostProcess, vkDestroyDescriptorPool(m_device, m_descriptorPoolPostProcess, nullptr));
+  TEST_DESTROY_AND_RESET(m_descriptorSetLayoutPostProcess,
+                         vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayoutPostProcess, nullptr));
 }
 
 void GaussianSplatting::initRendererBuffers()
@@ -1360,7 +1349,7 @@ void GaussianSplatting::initRendererBuffers()
     vrdxCreateSorter(&gpuSorterInfo, &m_gpuSorter);
 
     {  // Create some buffer for GPU and/or CPU sorting
-      // shall use minStorageBufferOffsetAlignment 
+      // shall use minStorageBufferOffsetAlignment
       const VkDeviceSize bufferSize = ((splatCount * sizeof(uint32_t) + 15) / 16) * 16;
 
       m_alloc.createBuffer(m_splatIndicesHost, bufferSize, VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
@@ -1497,11 +1486,6 @@ void GaussianSplatting::initRtDescriptorSet()
   m_rtDescriptorBindings.addBinding(RTX_BINDING_TLAS_MESH, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1,
                                     VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
-  if(prmRtx.usePayloadBuffer)
-  {
-    m_rtDescriptorBindings.addBinding(RTX_BINDING_PAYLOAD_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
-  }
-
   NVVK_CHECK(m_rtDescriptorBindings.createDescriptorSetLayout(m_device, 0, &m_rtDescriptorSetLayout));
   NVVK_DBG_NAME(m_rtDescriptorSetLayout);
 
@@ -1540,18 +1524,14 @@ void GaussianSplatting::initRtDescriptorSet()
                         m_gBuffers.getDepthImageView(), VK_IMAGE_LAYOUT_GENERAL);
 
   // splats TLAS
-  writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_TLAS_SPLATS, m_rtDescriptorSet),
-                        m_splatSetVk.rtAccelerationStructures.tlas);
+  if(m_splatSetVk.rtAccelerationStructures.tlas.accel != NULL)
+    writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_TLAS_SPLATS, m_rtDescriptorSet),
+                          m_splatSetVk.rtAccelerationStructures.tlas);
   // mesh TLAS
-  if(m_meshSetVk.instances.size())
+  if(m_meshSetVk.instances.size() && (m_meshSetVk.rtAccelerationStructures.tlas.accel != NULL))
   {
     writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_TLAS_MESH, m_rtDescriptorSet),
                           m_meshSetVk.rtAccelerationStructures.tlas);
-  }
-  // payload buffer if any
-  if(prmRtx.usePayloadBuffer)
-  {
-    writeContainer.append(m_rtDescriptorBindings.getWriteSet(RTX_BINDING_PAYLOAD_BUFFER, m_rtDescriptorSet), m_payloadDevice);
   }
 
   // actually write
@@ -1700,7 +1680,6 @@ void GaussianSplatting::initRtPipeline()
   pipelineLayoutCreateInfo.pSetLayouts                = rtDescSetLayouts.data();
 
   vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_rtPipelineLayout);
-
 
   // Assemble the shader stages and recursion depth info into the ray tracing pipeline
   VkRayTracingPipelineCreateInfoKHR rayPipelineInfo{VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR};

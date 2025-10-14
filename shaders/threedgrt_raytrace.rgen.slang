@@ -17,103 +17,56 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-#extension GL_EXT_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : require
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_control_flow_attributes : require  // for [[unroll]]
-#extension GL_GOOGLE_include_directive : require
-#extension GL_ARB_shader_clock : require  // profiling timers
-
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_buffer_reference2 : require
-
-#extension GL_NV_shader_invocation_reorder : enable
-
-#include "nvshaders/slang_types.h"
 #include "nvshaders/random.h.slang"
 
 #include "shaderio.h"
-#include "cameras.glsl"
-#include "color.glsl"
-#include "wavefront.glsl"
+#include "cameras.h.slang"
+#include "color.h.slang"
+#include "wavefront.h.slang"
 
-#include "threedgs_particles_storage.glsl"
-#include "threedgrt.glsl"
-#define USED_FROM_RAY_GEN
-#include "threedgrt_payload.glsl"
+#include "threedgs_particles_storage.h.slang"
+#include "threedgrt.h.slang"
+#include "threedgrt_payload.h.slang"
 
-layout(set = 1, binding = RTX_BINDING_TLAS_SPLATS) uniform accelerationStructureEXT topLevelAS;
-layout(set = 1, binding = RTX_BINDING_OUTIMAGE, rgba8) uniform image2D image;
-layout(set = 1, binding = RTX_BINDING_AUX1, rgba8) uniform image2D imageAux;
-// for proper use of depth buffer as an output image2D we must specify writeonly and remove the format
-// layout(set = 1, binding = RTX_BINDING_OUTDEPTH, r32f) uniform image2D depthBuffer;
-layout(set = 1, binding = RTX_BINDING_OUTDEPTH) writeonly uniform image2D depthBuffer;
+// clang-format off
+[[vk::binding(RTX_BINDING_TLAS_SPLATS, 1)]] RaytracingAccelerationStructure topLevelAS;
+[[vk::binding(RTX_BINDING_OUTIMAGE, 1)]] RWTexture2D<float4> image;
+[[vk::binding(RTX_BINDING_AUX1, 1)]] RWTexture2D<float4> imageAux;
+[[vk::binding(RTX_BINDING_OUTDEPTH, 1)]] RWTexture2D<float> depthBuffer;
 #if RTX_USE_MESHES
-layout(set = 1, binding = RTX_BINDING_TLAS_MESH) uniform accelerationStructureEXT topLevelASMesh;
+[[vk::binding(RTX_BINDING_TLAS_MESH, 1)]] RaytracingAccelerationStructure topLevelASMesh;
 #endif
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
-{
-  FrameInfo frameInfo;
-};
-
-layout(push_constant) uniform _PushConstantRay
-{
-  PushConstantRay pcRay;
-};
-
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstantRay> pcRay;
 // TODO to be removed, just for debug readback
-layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) writeonly buffer _indirect
-{
-  IndirectParams indirect;
-};
-
+[[vk::binding(BINDING_INDIRECT_BUFFER, 0)]] RWStructuredBuffer<IndirectParams> indirectBuffer;
 #if RTX_USE_MESHES
-layout(set = 0, binding = BINDING_MESH_DESCRIPTORS, scalar) buffer ObjDesc_
-{
-  ObjDesc i[];
-}
-objDesc;
+[[vk::binding(BINDING_MESH_DESCRIPTORS, 0)]] StructuredBuffer<ObjDesc> objDesc;
+[[vk::binding(BINDING_LIGHT_SET, 0)]] StructuredBuffer<LightSource> lights;
 #endif
+// clang-format on
 
-layout(buffer_reference, scalar) buffer Vertices  // vertex positions of a icosa or an obj mesh
-{
-  vec3 v[];
-};
-layout(buffer_reference, scalar) buffer Indices  // Triangle indices
-{
-  ivec3 i[];
-};
-layout(buffer_reference, scalar) buffer Materials  // Materials
-{
-  ObjMaterial m[];
-};
-layout(set = 0, binding = BINDING_LIGHT_SET, scalar) buffer LightSet_
-{
-  LightSource l[4];
-}
-lights;
-
-double maxComponent(in dvec3 v)
+double maxComponent(in double3 v)
 {
   return max(v.x, max(v.y, v.z));
 }
 
+[shader("raygeneration")]
 void main()
 {
-  vec3 rayOrigin;
-  vec3 rayDirection;
+  float3 rayOrigin;
+  float3 rayDirection;
+
+  uint2 launchID   = DispatchRaysIndex().xy;
+  uint2 launchSize = DispatchRaysDimensions().xy;
 
   // generate the ray for this pixel
 #if CAMERA_TYPE == CAMERA_PINHOLE
-  generatePinholeRay(gl_LaunchIDEXT.xy, vec2(gl_LaunchSizeEXT.xy), frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
+  generatePinholeRay(launchID, float2(launchSize), frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
 #else
-  if(!generateFisheyeRay(gl_LaunchIDEXT.xy, vec2(gl_LaunchSizeEXT.xy), frameInfo.fovRad, vec2(0.0),
-                         frameInfo.viewInverse, rayOrigin, rayDirection))
+  if(!generateFisheyeRay(launchID, float2(launchSize), frameInfo.fovRad, float2(0.0), frameInfo.viewInverse, rayOrigin, rayDirection))
   {
-    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.0, 1.0));
+    image[launchID] = float4(0.0, 0.0, 0.0, 1.0);
     return;
   }
 #endif
@@ -121,23 +74,23 @@ void main()
   // add Depth-of-Field perturbation to the ray
 #if((PIPELINE != PIPELINE_HYBRID) && RTX_DOF_ENABLED)
   // Initialize the random number
-  uint seed = xxhash32(uvec3(gl_LaunchIDEXT.xy, frameInfo.frameSampleId));
+  uint seed = xxhash32(uint3(launchID, frameInfo.frameSampleId));
 
   depthOfField(seed, frameInfo.focusDist, frameInfo.aperture, frameInfo.viewInverse, rayOrigin, rayDirection);
 #endif
 
   // will use Any hit only
-  uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT | gl_RayFlagsNoOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+  uint rayFlags = RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
   // will use Closest hit only
-  uint rayFlagsMesh = gl_RayFlagsCullBackFacingTrianglesEXT;
+  uint rayFlagsMesh = RAY_FLAG_CULL_BACK_FACING_TRIANGLES;
 
   float       tMax = 10000.0;
   const float epsT = 1e-9;
 
   int rayHitsCount = 0;
 
-  vec3  radiance      = vec3(0.0f);
-  dvec3 transmittance = vec3(1.0f);
+  float3  radiance      = float3(0.0f);
+  double3 transmittance = float3(1.0f);
 
   bool meshHit = false;  // did we have a mesh hit by primary ray
   int  bounce  = 0;
@@ -151,14 +104,17 @@ void main()
   int   closestParticleId    = PAYLOAD_INVALID_ID;
 
 #if HYBRID_ENABLED
-  vec4 pixel;
+  float4 pixel;
   if(frameInfo.frameSampleId <= 0)  // no temporal or first frame
-    pixel = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
+    pixel = image[launchID];
   else
-    pixel = imageLoad(imageAux, ivec2(gl_LaunchIDEXT.xy));
-  radiance      = vec3(pixel);
-  transmittance = vec3(1.0 - pixel.w);
+    pixel = imageAux[launchID];
+  radiance      = pixel.xyz;
+  transmittance = float3(1.0 - pixel.w);
 #endif
+
+  // Create the payload
+  HitPayload payload = {};
 
   // bounce loop
   while(true)
@@ -173,14 +129,14 @@ void main()
 
 #if RTX_USE_MESHES
 
-    vec3 meshHitWorldPos;
-    vec3 meshHitWorldNrm;
-    int  meshHitObjId;
-    int  meshHitMatId;
+    float3 meshHitWorldPos;
+    float3 meshHitWorldNrm;
+    int    meshHitObjId;
+    int    meshHitMatId;
 
-    writeDist(0, PAYLOAD_INF_DISTANCE);
-    writeId(0, PAYLOAD_INVALID_ID);
-    writeId(1, PAYLOAD_INVALID_ID);
+    payload.dist[0] = PAYLOAD_INF_DISTANCE;
+    payload.id[0]   = PAYLOAD_INVALID_ID;
+    payload.id[1]   = PAYLOAD_INVALID_ID;
 
 // #define USE_SER
 #ifdef USE_SER
@@ -202,40 +158,43 @@ void main()
     reorderThreadNV(hObj);
     hitObjectExecuteShaderNV(hObj, 0);
 #else
-    traceRayEXT(topLevelASMesh,             // acceleration structure
-                rayFlagsMesh,               // rayFlags
-                0xFF,                       // cullMask
-                0,                          // sbtRecordOffset
-                0,                          // sbtRecordStride
-                0,                          // missIndex
-                rayOrigin,                  // ray origin
-                rayLastHitDistance + epsT,  // ray min range
-                rayDirection,               // ray direction
-                tMax + epsT,                // ray max range
-                0                           // payload (location = 0)
+    RayDesc rayMesh;
+    rayMesh.Origin    = rayOrigin;
+    rayMesh.Direction = rayDirection;
+    rayMesh.TMin      = rayLastHitDistance + epsT;
+    rayMesh.TMax      = tMax + epsT;
+
+    TraceRay(topLevelASMesh,  // acceleration structure
+             rayFlagsMesh,    // rayFlags
+             0xFF,            // cullMask
+             0,               // sbtRecordOffset
+             0,               // sbtRecordStride
+             0,               // missIndex
+             rayMesh,         // ray
+             payload          // payload (location = 0)
     );
 #endif
-    meshHitDist = readDist(0);
+    meshHitDist = payload.dist[0];
     //
     if(meshHitDist < PAYLOAD_INF_DISTANCE)
     {
       tMax = meshHitDist;
       // collect info to compute shading and potential new ray later on
-      meshHitObjId    = readId(0);
-      meshHitMatId    = readId(1);
-      meshHitWorldPos = vec3(readDist(1), readDist(2), readDist(3));
-      meshHitWorldNrm = vec3(readDist(4), readDist(5), readDist(6));
+      meshHitObjId    = payload.id[0];
+      meshHitMatId    = payload.id[1];
+      meshHitWorldPos = float3(payload.dist[1], payload.dist[2], payload.dist[3]);
+      meshHitWorldNrm = float3(payload.dist[4], payload.dist[5], payload.dist[6]);
       // Early return if meshDepthOnly pre-pass
       if(pcRay.meshDepthOnly)
       {
-        const vec4 clip = frameInfo.projectionMatrix * frameInfo.viewMatrix * vec4(meshHitWorldPos, 1.0);
-        const vec3 ndc  = clip.xyz / clip.w;
-        imageStore(depthBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(ndc.z, 0.0, 0.0, 0.0));
+        const float4 clip = mul(mul(float4(meshHitWorldPos, 1.0), frameInfo.viewMatrix), frameInfo.projectionMatrix);
+        const float3 ndc  = clip.xyz / clip.w;
+        depthBuffer[launchID] = ndc.z;
         // clear image buffer
         if(frameInfo.frameSampleId <= 0)  // < 0 means temporal sampling off, 0 means first frame
-          imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.0, 1.0));
+          image[launchID] = float4(0.0, 0.0, 0.0, 1.0);
         else
-          imageStore(imageAux, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.0, 1.0));
+          imageAux[launchID] = float4(0.0, 0.0, 0.0, 1.0);
         return;
       }
       //
@@ -245,12 +204,12 @@ void main()
     else if(pcRay.meshDepthOnly)
     {
       // Early return if meshDepthOnly pre-pass
-      imageStore(depthBuffer, ivec2(gl_LaunchIDEXT.xy), vec4(1.0, 0.0, 0.0, 0.0));
+      depthBuffer[launchID] = 1.0;
       // clear image buffer
       if(frameInfo.frameSampleId <= 0)  // < 0 means temporal sampling off, 0 means first frame
-        imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.0, 1.0));
+        image[launchID] = float4(0.0, 0.0, 0.0, 1.0);
       else
-        imageStore(imageAux, ivec2(gl_LaunchIDEXT.xy), vec4(0.0, 0.0, 0.0, 1.0));
+        imageAux[launchID] = float4(0.0, 0.0, 0.0, 1.0);
       return;
     }
 #endif
@@ -264,35 +223,40 @@ void main()
       int outerIdx = 0;
 
       // The two following are to compute particleProcessHit with transformed splat set model
-      const vec3 splatSetModelRayOrigin = vec3(pcRay.modelMatrixInverse * vec4(rayOrigin, 1.0));
+      const float3 splatSetModelRayOrigin = mul(float4(rayOrigin, 1.0), pcRay.modelMatrixInverse).xyz;
       // Since the ray direction should not be affected by translation,
       // uses the inverse of the rotation-scale part of the model matrix.
-      const vec3 splatSetModelRayDirection = normalize(mat3(pcRay.modelMatrixRotScaleInverse) * rayDirection);
+      const float3 splatSetModelRayDirection = normalize(mul(rayDirection, float3x3(pcRay.modelMatrixRotScaleInverse)));
 
-      while(outerIdx < frameInfo.maxPasses && (rayLastHitDistance <= tMax) && (maxComponent(transmittance) > frameInfo.minTransmittance))
+      while(outerIdx < frameInfo.maxPasses && (rayLastHitDistance <= tMax)
+            && (maxComponent(transmittance) > double(frameInfo.minTransmittance)))
       {
         // prepare the payload
-        [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+        [[unroll]]
+        for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
         {
-          writeId(i, PAYLOAD_INVALID_ID);
-          writeDist(i, PAYLOAD_INF_DISTANCE);
+          payload.id[i]   = PAYLOAD_INVALID_ID;
+          payload.dist[i] = PAYLOAD_INF_DISTANCE;
         }
 
         // trace the PAYLOAD_ARRAY_SIZE any hits
-        traceRayEXT(topLevelAS,                 // acceleration structure
-                    rayFlags,                   // rayFlags
-                    0xFF,                       // cullMask
-                    0,                          // sbtRecordOffset
-                    0,                          // sbtRecordStride
-                    0,                          // missIndex
-                    rayOrigin,                  // ray origin
-                    rayLastHitDistance + epsT,  // ray min range
-                    rayDirection,               // ray direction
-                    tMax + epsT,                // ray max range
-                    0                           // payload (location = 0)
+        RayDesc raySplat;
+        raySplat.Origin    = rayOrigin;
+        raySplat.Direction = rayDirection;
+        raySplat.TMin      = rayLastHitDistance + epsT;
+        raySplat.TMax      = tMax + epsT;
+
+        TraceRay(topLevelAS,  // acceleration structure
+                 rayFlags,    // rayFlags
+                 0xFF,        // cullMask
+                 0,           // sbtRecordOffset
+                 0,           // sbtRecordStride
+                 0,           // missIndex
+                 raySplat,    // ray
+                 payload      // payload (location = 0)
         );
 
-        const int firstId = readId(0);
+        const int firstId = payload.id[0];
 
         // no more hits found
         if(firstId == PAYLOAD_INVALID_ID)
@@ -301,23 +265,25 @@ void main()
         }
 
         // evaluate the sorted hits
-        [[unroll]] for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+        [[unroll]]
+        for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
         {
-          const int   splatId = readId(i);
-          const float dist    = readDist(i);
+          const int   splatId = payload.id[i];
+          const float dist    = payload.dist[i];
 
-          if((splatId != PAYLOAD_INVALID_ID) && (maxComponent(transmittance) > frameInfo.minTransmittance))
+          if((splatId != PAYLOAD_INVALID_ID) && (maxComponent(transmittance) > double(frameInfo.minTransmittance)))
           {
 #if WIREFRAME
             // we render wireframe only for primary rays.
             if(bounce == 0)
             {
-              const vec3  bary      = readBary3(i);
-              const float threshold = 0.02;
+              const float2 uv        = payload.bary[i];
+              const float3 bary      = float3(1.0 - uv.x - uv.y, uv.x, uv.y);
+              const float  threshold = 0.02;
               if(bary.x < threshold || bary.y < threshold || bary.z < threshold)
               {
-                radiance      = vec3(1.0, 0.0, 0.0);  // wireframe color
-                transmittance = vec3(0.0);            // opaque
+                radiance      = float3(1.0, 0.0, 0.0);  // wireframe color
+                transmittance = float3(0.0);            // opaque
                 break;
               }
             }
@@ -351,14 +317,11 @@ void main()
 
 #if RTX_USE_MESHES
     // process mesh shading if needed
-    if((meshHitDist < PAYLOAD_INF_DISTANCE) && (maxComponent(transmittance) > frameInfo.minTransmittance))
+    if((meshHitDist < PAYLOAD_INF_DISTANCE) && (maxComponent(transmittance) > double(frameInfo.minTransmittance)))
     {
       // retrieve the material for this hit
-      ObjDesc     objResource     = objDesc.i[meshHitObjId];
-      Materials   materials       = Materials(objResource.materialAddress);
-      ObjMaterial meshHitMaterial = materials.m[meshHitMatId];
-
-      wavefrontComputeShading(lights.l, frameInfo.lightCount, meshHitWorldPos, meshHitWorldNrm, meshHitMaterial,
+      ObjMaterial meshHitMaterial = objDesc[meshHitObjId].materialAddress[meshHitMatId];
+      wavefrontComputeShading(lights, frameInfo.lightCount, meshHitWorldPos, meshHitWorldNrm, meshHitMaterial,
                               rayDirection, transmittance, radiance, done, rayOrigin, rayDirection);
     }
 #endif
@@ -376,32 +339,32 @@ void main()
   }  // while(true)
 
   // debug feedback
-  if(closestParticleFound && gl_LaunchIDEXT.xy == frameInfo.cursor)
+  if(closestParticleFound && all(launchID == frameInfo.cursor))
   {
-    indirect.particleID   = closestParticleId;
-    indirect.particleDist = closestParticleDist;
+    indirectBuffer[0].particleID   = closestParticleId;
+    indirectBuffer[0].particleDist = closestParticleDist;
   }
 
   //
-  vec3 fragRadiance = radiance;
+  float3 fragRadiance = radiance;
 
   uint64_t clock = clockARB() - clockStart;
 
 #if VISUALIZE == VISUALIZE_CLOCK
-  fragRadiance =
-      hsbToRgb(vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * 0.1 * float(clock) / float(1 << 20))), 1.0, 1.));
+  fragRadiance = hsbToRgb(
+      float3(lerp(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * 0.1 * float(clock) / float(1 << 20))), 1.0, 1.));
 #endif
 
 #if VISUALIZE == VISUALIZE_DEPTH
   if(closestParticleFound)
   {
     fragRadiance = hsbToRgb(
-        vec3(mix(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * float(closestParticleDist) / 256.0F)), 1.0, 1.));
+        float3(lerp(0.65, 0.02, smoothstep(0.0, 1.0, frameInfo.multiplier * float(closestParticleDist) / 256.0F)), 1.0, 1.));
   }
 #endif
 
 #if VISUALIZE == VISUALIZE_RAYHITS
-  fragRadiance = vec3(frameInfo.multiplier * 10 * float(rayHitsCount) / 255, 0.0, 0.0);
+  fragRadiance = float3(frameInfo.multiplier * 10 * float(rayHitsCount) / 255, 0.0, 0.0);
 #endif
 
 #if VISUALIZE == VISUALIZE_FINAL
@@ -409,21 +372,23 @@ void main()
   if(meshHit)
   {
     if(frameInfo.frameSampleId <= 0)  // < 0 means temporal sampling off, 0 means first frame
-      imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));
+      image[launchID] = float4(fragRadiance, 1.0);
     else
-      imageStore(imageAux, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));
+      imageAux[launchID] = float4(fragRadiance, 1.0);
   }
   return;
 #else
   if(frameInfo.frameSampleId > 0)
   {
     // Do accumulation over time
-    const float a        = 1.0F / float(frameInfo.frameSampleId + 1);
-    const vec4  oldColor = imageLoad(image, ivec2(gl_LaunchIDEXT.xy));
-    fragRadiance         = mix(oldColor, vec4(fragRadiance, 1.0), a).xyz;
+    const float  a        = 1.0F / float(frameInfo.frameSampleId + 1);
+    const float4 oldColor = image[launchID];
+    fragRadiance          = lerp(oldColor, float4(fragRadiance, 1.0), a).xyz;
   }
 #endif
 #endif
 
-  imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(fragRadiance, 1.0));
+// depending on previous build conditions this code might become unreachable (which is normal)
+#pragma warning(disable: 41000)  // Disable warning warning 41000: unreachable code detected
+  image[launchID] = float4(fragRadiance, 1.0);
 }

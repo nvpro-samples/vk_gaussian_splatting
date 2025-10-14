@@ -17,14 +17,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _GUT_CAMERA_PROJECTIONS_H_
 #define _GUT_CAMERA_PROJECTIONS_H_
 
-#include "quaternions.glsl"
-#include "threedgut_definitions.glsl"
-#include "threedgut_sensors.glsl"
+#include "quaternions.h.slang"
+#include "threedgut_definitions.h.slang"
+#include "threedgut_sensors.h.slang"
 
 #define SensorModel CameraModelParameters
 
@@ -32,7 +30,7 @@
 // translated from github-grut\threedgut_tracer\include\3dgut\kernels\cuda\sensors\cameraProjections.cuh
 
 // Computes 2-norm of a [x,y] vector in a numerically stable way
-float stableNorm2(vec2 vec)
+float stableNorm2(float2 vec)
 {
   float absX   = abs(vec.x);
   float absY   = abs(vec.y);
@@ -60,7 +58,7 @@ float evalPolyHorner4(float[4] coeffs, float x)
   return y;
 }
 
-float relativeShutterTime(SensorModel sensorModel, vec2 resolution, vec2 position)
+float relativeShutterTime(SensorModel sensorModel, float2 resolution, float2 position)
 {
   switch(sensorModel.shutterType)
   {
@@ -77,26 +75,26 @@ float relativeShutterTime(SensorModel sensorModel, vec2 resolution, vec2 positio
   }
 }
 
-bool withinResolution(vec2 resolution, float tolerance, vec2 p)
+bool withinResolution(float2 resolution, float tolerance, float2 p)
 {
-  const vec2 tolMargin = resolution * tolerance;
+  const float2 tolMargin = resolution * tolerance;
   return (p.x > -tolMargin.x) && (p.y > -tolMargin.y) && (p.x < resolution.x + tolMargin.x)
          && (p.y < resolution.y + tolMargin.y);
 }
 
-bool projectPointPinhole(OpenCVPinholeProjectionParameters sensorParams, vec2 resolution, vec3 position, float tolerance, out vec2 projected)
+bool projectPointPinhole(OpenCVPinholeProjectionParameters sensorParams, float2 resolution, float3 position, float tolerance, out float2 projected)
 {
 
   if(position.z <= 0.0)
   {
-    projected = vec2(0.0);
+    projected = float2(0.0);
     return false;
   }
 
-  vec2 uvNormalized = position.xy / position.z;
+  float2 uvNormalized = position.xy / position.z;
 
   // computeDistortion
-  const vec2  uvSquared = uvNormalized * uvNormalized;
+  const float2  uvSquared = uvNormalized * uvNormalized;
   const float r2        = uvSquared.x + uvSquared.y;
   const float a1        = 2.0 * uvNormalized.x * uvNormalized.y;
   const float a2        = r2 + 2.0 * uvSquared.x;
@@ -108,14 +106,14 @@ bool projectPointPinhole(OpenCVPinholeProjectionParameters sensorParams, vec2 re
       1.0 + r2 * (sensorParams.radialCoeffs[3] + r2 * (sensorParams.radialCoeffs[4] + r2 * sensorParams.radialCoeffs[5]));
   const float icD = icD_numerator / icD_denominator;
 
-  const vec2 delta = vec2(sensorParams.tangentialCoeffs[0] * a1 + sensorParams.tangentialCoeffs[1] * a2
+  const float2 delta = float2(sensorParams.tangentialCoeffs[0] * a1 + sensorParams.tangentialCoeffs[1] * a2
                               + r2 * (sensorParams.thinPrismCoeffs[0] + r2 * sensorParams.thinPrismCoeffs[1]),
                           sensorParams.tangentialCoeffs[0] * a3 + sensorParams.tangentialCoeffs[1] * a1
                               + r2 * (sensorParams.thinPrismCoeffs[2] + r2 * sensorParams.thinPrismCoeffs[3]));
 
   // Project using ideal pinhole model (apply radial / tangential / thin-prism distortions)
   // in case radial distortion is within limits
-  const vec2 uvND = icD * uvNormalized + delta;
+  const float2 uvND = icD * uvNormalized + delta;
 
   const float kMinRadialDist = 0.8;
   const float kMaxRadialDist = 1.2;
@@ -137,9 +135,9 @@ bool projectPointPinhole(OpenCVPinholeProjectionParameters sensorParams, vec2 re
   return validRadial && withinResolution(resolution, tolerance, projected);
 }
 
-void applyRenderingResolution(vec2 nominalResolution, vec2 renderingResolution, inout vec2 projected)
+void applyRenderingResolution(float2 nominalResolution, float2 renderingResolution, inout float2 projected)
 {
-  if(renderingResolution != nominalResolution)
+  if(all(renderingResolution != nominalResolution))
   {
     const float rescalingFactor = renderingResolution.x / nominalResolution.x;
     // apply vertical offset for different aspect ratios
@@ -148,11 +146,11 @@ void applyRenderingResolution(vec2 nominalResolution, vec2 renderingResolution, 
   }
 }
 
-bool projectPointFisheye(OpenCVFisheyeProjectionParameters sensorParams, vec2 resolution, vec3 position, float tolerance, out vec2 projected)
+bool projectPointFisheye(OpenCVFisheyeProjectionParameters sensorParams, float2 resolution, float3 position, float tolerance, out float2 projected)
 {
   const float eps       = 1e-7;
   const float rho       = max(stableNorm2(position.xy), eps);
-  const float thetaFull = atan(rho, position.z);
+  const float thetaFull = atan2(rho, position.z);
   // Limit angles to max_angle to prevent projected points to leave valid cone around max_angle.
   // In particular for omnidirectional cameras, this prevents points outside the FOV to be
   // wrongly projected to in-image-domain points because of badly constrained polynomials outside
@@ -167,13 +165,13 @@ bool projectPointFisheye(OpenCVFisheyeProjectionParameters sensorParams, vec2 re
   projected          = sensorParams.focalLength * position.xy * delta + sensorParams.principalPoint;
 
   // We do not need this for our use case
-  // applyRenderingResolution(sensorParams.nominalResolution, vec2(resolution), projected);
+  // applyRenderingResolution(sensorParams.nominalResolution, float2(resolution), projected);
 
   return (theta < sensorParams.maxAngle) && withinResolution(resolution, tolerance, projected);
 }
 
 
-bool projectPoint(SensorModel sensorModel, vec2 resolution, vec3 position, float tolerance, out vec2 projected)
+bool projectPoint(SensorModel sensorModel, float2 resolution, float3 position, float tolerance, out float2 projected)
 {
   switch(sensorModel.modelType)
   {
@@ -182,23 +180,23 @@ bool projectPoint(SensorModel sensorModel, vec2 resolution, vec3 position, float
     case OpenCVFisheyeModel:
       return projectPointFisheye(sensorModel.ocvFisheyeParams, resolution, position, tolerance, projected);
     default:
-      projected = vec2(0.0);
+      projected = float2(0.0);
       return false;
   }
 }
 
 
-bool projectPointWithShutter(vec3 position, vec2 resolution, SensorModel sensorModel, SensorState sensorState, float tolerance, out vec2 projectedPosition)
+bool projectPointWithShutter(float3 position, float2 resolution, SensorModel sensorModel, SensorState sensorState, float tolerance, out float2 projectedPosition)
 {
   // Coordinate system conversion from Right Up Front to Right Up Back
-  vec3 rubToRufFlipPos  = vec3(1.0, 1.0, -1.0);
-  vec4 rubToRufFlipQuat = vec4(-1.0, -1.0, 1.0, 1.0);  // the scalar term w is always left unchanged
+  float3 rubToRufFlipPos  = float3(1.0, 1.0, -1.0);
+  float4 rubToRufFlipQuat = float4(-1.0, -1.0, 1.0, 1.0);  // the scalar term w is always left unchanged
 
-  const vec3 tStart = sensorState.startPose.translation * rubToRufFlipPos;
+  const float3 tStart = sensorState.startPose.translation * rubToRufFlipPos;
   const quat qStart = sensorState.startPose.quaternion * rubToRufFlipQuat;
 
   // Position of the particle in world coordinates
-  const vec3 wc_startPosition = rotateByQuaternion(position * rubToRufFlipPos, qStart) + tStart;
+  const float3 wc_startPosition = rotateByQuaternion(position * rubToRufFlipPos, qStart) + tStart;
 
   bool validProjection = projectPoint(sensorModel, resolution, wc_startPosition, tolerance, projectedPosition);
   if(sensorModel.shutterType == GlobalShutter)
@@ -211,10 +209,10 @@ bool projectPointWithShutter(vec3 position, vec2 resolution, SensorModel sensorM
   // the rest of the code has not been tested, we only support
   // sensorModel.shutterType == GlobalShutter for now
 
-  const vec3 tEnd = sensorState.endPose.translation * rubToRufFlipPos;
+  const float3 tEnd = sensorState.endPose.translation * rubToRufFlipPos;
   const quat qEnd = sensorState.endPose.quaternion * rubToRufFlipQuat;
 
-  const vec3 wc_endPosition = rotateByQuaternion(position * rubToRufFlipPos, qEnd) + tEnd;
+  const float3 wc_endPosition = rotateByQuaternion(position * rubToRufFlipPos, qEnd) + tEnd;
 
   if(!validProjection)
   {
@@ -230,8 +228,8 @@ bool projectPointWithShutter(vec3 position, vec2 resolution, SensorModel sensorM
   {
     const float alpha = relativeShutterTime(sensorModel, resolution, projectedPosition);
 
-    const vec3 wc_interPosition =
-        rotateByQuaternion(position * rubToRufFlipPos, quatSlerp(qStart, qEnd, alpha)) + mix(tStart, tEnd, alpha);
+    const float3 wc_interPosition =
+        rotateByQuaternion(position * rubToRufFlipPos, quatSlerp(qStart, qEnd, alpha)) + lerp(tStart, tEnd, alpha);
 
     validProjection = projectPoint(sensorModel, resolution, wc_interPosition, tolerance, projectedPosition);
   }

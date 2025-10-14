@@ -46,114 +46,122 @@
 * SOFTWARE.
 */
 
-#version 450
-
-#extension GL_EXT_control_flow_attributes : require
-#extension GL_GOOGLE_include_directive : require
-
 #include "shaderio.h"
-#include "threedgs.glsl"
-#include "threedgs_particles_storage.glsl"
+#include "threedgs.h.slang"
+#include "threedgs_particles_storage.h.slang"
 
-layout(location = ATTRIBUTE_LOC_POSITION) in vec3 inPosition;
-layout(location = ATTRIBUTE_LOC_SPLAT_INDEX) in uint32_t inSplatIndex;
+// clang-format off
 
-layout(location = 0) out vec4 outFragCol;
+// Vertex input
+struct VertexInput
+{
+  [[vk::location(ATTRIBUTE_LOC_POSITION)]]    float3   inPosition : POSITION;
+  [[vk::location(ATTRIBUTE_LOC_SPLAT_INDEX)]] uint32_t inSplatIndex : TEXCOORD0;
+};
+
+// Vertex output
+struct VertexOutput
+{
+  [[vk::location(0)]] nointerpolation float4 outFragCol : COLOR0;
 #if !USE_BARYCENTRIC
-layout(location = 1) out vec2 outFragPos;
+  [[vk::location(1)]] float2 outFragPos : TEXCOORD1;
 #endif
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
-{
-  FrameInfo frameInfo;
-};
-layout(push_constant) uniform _PushConstantRaster
-{
-  PushConstant pcRaster;
+  [[vk::location(2)]] float4 position : SV_Position;
 };
 
-void main()
-{
-  const uint splatIndex = inSplatIndex;
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 
-  const mat4 modelViewMatrix = frameInfo.viewMatrix * pcRaster.modelMatrix;
+// clang-format on
+
+[shader("vertex")]
+VertexOutput main(VertexInput input)
+{
+  VertexOutput output;
+
+  const uint splatIndex = input.inSplatIndex;
+
+  const float4x4 modelViewMatrix = mul(pcRaster.modelMatrix, frameInfo.viewMatrix);
 
   // Fetch data as early as possible
-  const mat3 cov3Dm      = fetchCovariance(splatIndex);
-  vec4       splatColor  = fetchColor(splatIndex);
-  const vec3 splatCenter = fetchCenter(splatIndex);
+  const float3x3 cov3Dm      = fetchCovariance(splatIndex);
+  float4         splatColor  = fetchColor(splatIndex);
+  const float3   splatCenter = fetchCenter(splatIndex);
 
-  const vec4 viewCenter = modelViewMatrix * vec4(splatCenter, 1.0);
-  const vec4 clipCenter = frameInfo.projectionMatrix * viewCenter;
+  const float4 viewCenter = mul(float4(splatCenter, 1.0), modelViewMatrix);
+  const float4 clipCenter = mul(viewCenter, frameInfo.projectionMatrix);
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
   const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
   if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
-     || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w || clipCenter.z > clipCenter.w)
+     || clipCenter.z < (0.0 - frameInfo.frustumDilation) * clipCenter.w || clipCenter.z > clipCenter.w)
   {
     // emit same vertex to get degenerate triangle
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    return;
+    output.position = float4(0.0, 0.0, 2.0, 1.0);
+    return output;
   }
 #endif
 
-  const vec2 fragPos = inPosition.xy;
+  const float2 fragPos = input.inPosition.xy;
 #if !USE_BARYCENTRIC
   // emit as early as possible
   // Scale the position data we send to the fragment shader
-  outFragPos = fragPos * sqrt8;
+  output.outFragPos = fragPos * sqrt8;
 #endif
 
   // alpha based culling
   if(splatColor.a < frameInfo.alphaCullThreshold)
   {
     // emit same vertex to get degenerate triangle
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    return;
+    output.position = float4(0.0, 0.0, 2.0, 1.0);
+    return output;
   }
 
 #if SHOW_SH_ONLY == 1
-  splatColor.rgb = vec3(0.5);
+  splatColor.rgb = float3(0.5, 0.5, 0.5);
 #endif
 
   // fetch radiance from SH coefs > degree 0
-  // const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-  const vec3 worldViewDir = normalize(splatCenter - vec3(pcRaster.modelMatrixInverse * vec4(frameInfo.cameraPosition, 1.0)));
+  // const float3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+  // Row-major: vector * matrix (camera position transformed by inverse model matrix)
+  const float3 worldViewDir =
+      normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
 
   splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
 
   // emit as early as possible for perf reasons, only for original 3DGS,
   // see later on for MipSplatting = on
 #if MS_ANTIALIASING == 0
-  outFragCol = splatColor;
+  output.outFragCol = splatColor;
 #endif
 
   // Computes the projected covariance
-  const vec3 cov2Dv = threedgsCovarianceProjection(cov3Dm, viewCenter, frameInfo.focal, modelViewMatrix);
+  const float3 cov2Dv = threedgsCovarianceProjection(cov3Dm, viewCenter, frameInfo.focal, modelViewMatrix);
 
   // computes the basis vectors of the extent of the projected covariance
   // We use sqrt(8) standard deviations instead of 3 to eliminate more of the splat with a very low opacity.
-  vec2 basisVector1, basisVector2;
+  float2 basisVector1, basisVector2;
   if(!threedgsProjectedExtentBasis(cov2Dv, sqrt8, frameInfo.splatScale, splatColor.a, basisVector1, basisVector2))
   {
     // emit same vertex to get degenerate triangle
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    return;
+    output.position = float4(0.0, 0.0, 2.0, 1.0);
+    return output;
   }
 
 #if MS_ANTIALIASING == 1
   // emit the color with alpha compensation
-  outFragCol = splatColor;
+  output.outFragCol = splatColor;
 #endif
 
-  const vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
+  const float3 ndcCenter = clipCenter.xyz / clipCenter.w;
 
-  const vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
-                         * frameInfo.inverseFocalAdjustment;
+  const float2 ndcOffset = float2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
+                           * frameInfo.inverseFocalAdjustment;
 
-  const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
+  const float4 quadPos = float4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 
   // Emit the vertex position
-  gl_Position = quadPos;
+  output.position = quadPos;
+
+  return output;
 }

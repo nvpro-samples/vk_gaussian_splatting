@@ -17,59 +17,51 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : require
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_control_flow_attributes : require  // for [[unroll]]
-#extension GL_ARB_shader_clock : require  // profiling timers
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_buffer_reference2 : require
-#extension GL_GOOGLE_include_directive : require
-
 #ifndef _THREEDGRT_H_
 #define _THREEDGRT_H_
 
-#include "quaternions.glsl"
+#include "quaternions.h.slang"
 #include "shaderio.h"
-
-#include "threedgs_particles_storage.glsl"
+#include "threedgs_particles_storage.h.slang"
 
 // fetch the position, scale and rotation
-void fetchParticlePSR(in int splatIndex, out vec3 particlePosition, out vec3 particleScale, out mat3 particleInvRotation)
+void fetchParticlePSR(in int splatIndex, out float3 particlePosition, out float3 particleScale, out float3x3 particleInvRotation)
 {
   particlePosition = fetchCenter(splatIndex);
   particleScale    = exp(fetchScale(splatIndex));
-  const vec4 wxyzQuat  = normalize(fetchRotation(splatIndex));
+  const float4 wxyzQuat  = normalize(fetchRotation(splatIndex));
   // vec4toQuat converts to scalar (w) last internal
   // transpose the pure rotation matrix to get its inverse
   particleInvRotation = quatToMat3Transpose(vec4toQuat(wxyzQuat));
 }
 
-void particleCannonicalRay(in vec3  rayOrigin,
-                           in vec3  rayDirection,
-                           in vec3  particlePosition,
-                           in vec3  particleScale,
-                           in mat3  particleInvRotation,
-                           out vec3 particleRayOrigin,
-                           out vec3 particleRayDirection)
+void particleCannonicalRay(in float3  rayOrigin,
+                           in float3  rayDirection,
+                           in float3  particlePosition,
+                           in float3  particleScale,
+                           in float3x3  particleInvRotation,
+                           out float3 particleRayOrigin,
+                           out float3 particleRayDirection)
 {
-  const vec3 giscl  = vec3(1.0f) / particleScale;
-  const vec3 gposc  = (rayOrigin - particlePosition);
-  const vec3 gposcr = particleInvRotation * gposc;
+  const float3 giscl  = float3(1.0f) / particleScale;
+  const float3 gposc  = (rayOrigin - particlePosition);
+  // Row-major: vector * matrix
+  const float3 gposcr = mul(gposc, particleInvRotation);
   particleRayOrigin = giscl * gposcr;
 
-  const vec3 rayDirR   = particleInvRotation * rayDirection;
-  const vec3 grdu      = giscl * rayDirR;
+  // Row-major: vector * matrix
+  const float3 rayDirR   = mul(rayDirection, particleInvRotation);
+  const float3 grdu      = giscl * rayDirR;
   particleRayDirection = normalize(grdu);
 }
 
-float particleRayMinSquaredDistance(in vec3 particleRayOrigin, in vec3 particleRayDirection)
+float particleRayMinSquaredDistance(in float3 particleRayOrigin, in float3 particleRayDirection)
 {
-  const vec3 gcrod = cross(particleRayDirection, particleRayOrigin);
+  const float3 gcrod = cross(particleRayDirection, particleRayOrigin);
   return dot(gcrod, gcrod);
 }
 
-float particleRayMaxKernelResponse(in vec3 particleRayOrigin, in vec3 particleRayDirection, in int32_t particleKernelDegree)
+float particleRayMaxKernelResponse(in float3 particleRayOrigin, in float3 particleRayDirection, in int32_t particleKernelDegree)
 {
   const float grayDist = particleRayMinSquaredDistance(particleRayOrigin, particleRayDirection);
 
@@ -116,33 +108,33 @@ float particleRayMaxKernelResponse(in vec3 particleRayOrigin, in vec3 particleRa
 }
 
 // distance to the gaussian center projection on the ray
-float particleRayDistance(in vec3 particleRayOrigin, in vec3 particleRayDirection, in vec3 particleScale)
+float particleRayDistance(in float3 particleRayOrigin, in float3 particleRayDirection, in float3 particleScale)
 {
-  const vec3 grds = particleScale * particleRayDirection * dot(particleRayDirection, particleRayOrigin * vec3(-1.0));
+  const float3 grds = particleScale * particleRayDirection * dot(particleRayDirection, particleRayOrigin * float3(-1.0));
   return sqrt(dot(grds, grds));
 }
 
 // Version with that fetches color used by 3DGRT
 bool particleProcessHit(in FrameInfo frameInfo,
-                        in vec3      modelRayOrigin,
-                        in vec3      modelRayDirection,
+                        in float3      modelRayOrigin,
+                        in float3      modelRayDirection,
                         in int       splatId,
-                        inout dvec3  transmittance,
-                        inout vec3   radiance)
+                        inout double3  transmittance,
+                        inout float3   radiance)
 {
   //
-  vec3 particlePosition;
-  vec3 particleScale;
-  mat3 particleInvRotation;
+  float3 particlePosition;
+  float3 particleScale;
+  float3x3 particleInvRotation;
 
   fetchParticlePSR(splatId, particlePosition, particleScale, particleInvRotation);
 
-  vec3 particleRayOrigin;
-  vec3 particleRayDirection;
+  float3 particleRayOrigin;
+  float3 particleRayDirection;
   particleCannonicalRay(modelRayOrigin, modelRayDirection, particlePosition, particleScale, particleInvRotation,
                         particleRayOrigin, particleRayDirection);
 
-  const vec4  color           = fetchColor(splatId);
+  const float4  color           = fetchColor(splatId);
   const float particleDensity = color.w;
 
   const double  minParticleAlpha         = 1.0f / 255.0f;
@@ -152,7 +144,7 @@ bool particleProcessHit(in FrameInfo frameInfo,
   const float maxResponse = particleRayMaxKernelResponse(particleRayOrigin, particleRayDirection, particleKernelDegree);
   float       alpha       = min(frameInfo.alphaClamp, maxResponse * particleDensity);
 
-  const bool acceptHit = (particleDensity > frameInfo.alphaCullThreshold) && (alpha > minParticleAlpha)
+  const bool acceptHit = (particleDensity > frameInfo.alphaCullThreshold) && (double(alpha) > minParticleAlpha)
                          && (maxResponse > minParticleKernelDensity);
   if(acceptHit)
   {
@@ -160,16 +152,16 @@ bool particleProcessHit(in FrameInfo frameInfo,
     alpha = 1.0;
 #endif
     // fetch radiance from SH coefs > degree 0
-    const vec3 vectorToParticleCenter = normalize(particlePosition - modelRayOrigin);
+    const float3 vectorToParticleCenter = normalize(particlePosition - modelRayOrigin);
 #if SHOW_SH_ONLY == 1
-    const vec3 grad = vec3(0.5) + fetchViewDependentRadiance(splatId, vectorToParticleCenter);
+    const float3 grad = float3(0.5) + fetchViewDependentRadiance(splatId, vectorToParticleCenter);
 #else
-    const vec3 grad = color.xyz + fetchViewDependentRadiance(splatId, vectorToParticleCenter);
+    const float3 grad = color.xyz + fetchViewDependentRadiance(splatId, vectorToParticleCenter);
 #endif
 
-    const vec3 weight = vec3(alpha * transmittance);
+    const float3 weight = float3(alpha * float3(transmittance));
     radiance += grad * weight;
-    transmittance *= (1.0 - alpha);
+    transmittance *= (1.0 - double(alpha));
   }
 
   return acceptHit;
@@ -177,20 +169,20 @@ bool particleProcessHit(in FrameInfo frameInfo,
 
 // Version with pre fetched particle PSR and color. Used by 3DGUT.
 bool particleProcessHitGut(in FrameInfo frameInfo,
-                           in vec3      modelRayOrigin,
-                           in vec3      modelRayDirection,
+                           in float3      modelRayOrigin,
+                           in float3      modelRayDirection,
                            in int       splatId,
-                           in vec4      splatColor,
-                           in vec3      particlePosition,
-                           in vec3      particleScale,
+                           in float4      splatColor,
+                           in float3      particlePosition,
+                           in float3      particleScale,
                            in quat      particleRotation,  // normalized quaternion
                            out float    opacity)
 {
   // attention, here the particleRotation is already a quaternion expressed with scalar last 
-  const mat3 particleInvRotation = quatToMat3Transpose(particleRotation);
+  const float3x3 particleInvRotation = quatToMat3Transpose(particleRotation);
 
-  vec3 particleRayOrigin;
-  vec3 particleRayDirection;
+  float3 particleRayOrigin;
+  float3 particleRayDirection;
   particleCannonicalRay(modelRayOrigin, modelRayDirection, particlePosition, particleScale, particleInvRotation,
                         particleRayOrigin, particleRayDirection);
 
@@ -202,7 +194,7 @@ bool particleProcessHitGut(in FrameInfo frameInfo,
   const float maxResponse = particleRayMaxKernelResponse(particleRayOrigin, particleRayDirection, particleKernelDegree);
   const float alpha       = min(frameInfo.alphaClamp, maxResponse * particleDensity);
 
-  const bool acceptHit = (particleDensity > frameInfo.alphaCullThreshold) && (alpha > minParticleAlpha)
+  const bool acceptHit = (particleDensity > frameInfo.alphaCullThreshold) && ((double)alpha > minParticleAlpha)
                          && (maxResponse > minParticleKernelDensity);
   if(acceptHit)
   {

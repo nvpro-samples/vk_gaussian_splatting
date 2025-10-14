@@ -17,50 +17,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 450
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_EXT_scalar_block_layout : enable
-#extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-
 #include "shaderio.h"
 
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
+// clang-format off
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
+
+struct VertexInput
 {
-  FrameInfo frameInfo;
+  [[vk::location(0)]] float3 position : POSITION;
+  [[vk::location(1)]] float3 normal : NORMAL;
+  //[[vk::location(2)]] float3 color : COLOR;
+  //[[vk::location(3)]] float2 texCoord : TEXCOORD0;
 };
 
-layout(push_constant) uniform _PushConstantRaster
+struct VertexOutput
 {
-  PushConstant pcRaster;
+  [[vk::location(1)]] float3 worldPos : TEXCOORD1;
+  [[vk::location(2)]] float3 worldNrm : TEXCOORD2;
+  [[vk::location(3)]] float3 viewDir : TEXCOORD3;
+  //[[vk::location(4)]] float2 texCoord : TEXCOORD4;
+  float4 position : SV_Position;
 };
+// clang-format on
 
-layout(location = 0) in vec3 i_position;
-layout(location = 1) in vec3 i_normal;
-//layout(location = 2) in vec3 i_color;
-//layout(location = 3) in vec2 i_texCoord;
-
-
-layout(location = 1) out vec3 o_worldPos;
-layout(location = 2) out vec3 o_worldNrm;
-layout(location = 3) out vec3 o_viewDir;
-//layout(location = 4) out vec2 o_texCoord;
-
-out gl_PerVertex
+[shader("vertex")]
+VertexOutput main(VertexInput input)
 {
-  vec4 gl_Position;
-};
+  VertexOutput output;
 
+  float3 origin = mul(float4(0, 0, 0, 1), frameInfo.viewInverse).xyz;
 
-void main()
-{
-  vec3 origin = vec3(frameInfo.viewInverse * vec4(0, 0, 0, 1));
+  output.worldPos = mul(float4(input.position, 1.0), pcRaster.modelMatrix).xyz;
+  output.viewDir  = output.worldPos - origin;
+  // output.texCoord = input.texCoord;
+  output.worldNrm = normalize(mul(input.normal, float3x3(transpose(pcRaster.modelMatrixInverse))));
 
-  o_worldPos = vec3(pcRaster.modelMatrix * vec4(i_position, 1.0));
-  o_viewDir  = vec3(o_worldPos - origin);
-  // o_texCoord = i_texCoord;
-  o_worldNrm = normalize(i_normal * transpose(mat3(pcRaster.modelMatrixInverse)));
+  output.position = mul(mul(float4(output.worldPos, 1.0), frameInfo.viewMatrix), frameInfo.projectionMatrix);
 
-  gl_Position = frameInfo.projectionMatrix * frameInfo.viewMatrix * vec4(o_worldPos, 1.0);
+  return output;
 }

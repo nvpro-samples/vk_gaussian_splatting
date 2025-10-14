@@ -17,76 +17,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 450
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_scalar_block_layout : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_buffer_reference2 : require
-
 #include "shaderio.h"
-#include "wavefront.glsl"
-
-layout(push_constant) uniform _PushConstantRaster
-{
-  PushConstant pcRaster;
-};
+#include "wavefront.h.slang"
 
 // clang-format off
-// Incoming 
-layout(location = 1) in vec3 i_worldPos;
-layout(location = 2) in vec3 i_worldNrm;
-layout(location = 3) in vec3 i_viewDir;
-// Outgoing
-layout(location = 0) out vec4 o_color;
+[[vk::push_constant]]                        ConstantBuffer<PushConstant>  pcRaster;
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]   ConstantBuffer<FrameInfo>     frameInfo;
+[[vk::binding(BINDING_MESH_DESCRIPTORS, 0)]] StructuredBuffer<ObjDesc>     objDesc;
+[[vk::binding(BINDING_LIGHT_SET, 0)]]        StructuredBuffer<LightSource> lights;
 
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
+struct FragmentInput
 {
-  FrameInfo frameInfo;
+  [[vk::location(1)]] float3 worldPos : TEXCOORD1;
+  [[vk::location(2)]] float3 worldNrm : TEXCOORD2;
+  [[vk::location(3)]] float3 viewDir : TEXCOORD3;
+  // This was missing in GLSL version (there was a bug), added to get the source triangle ID.
+  uint primitiveID : SV_PrimitiveID; 
 };
 
-layout(set = 0, binding = BINDING_MESH_DESCRIPTORS, scalar) buffer ObjDesc_
+struct FragmentOutput
 {
-  ObjDesc i[];
-}
-objDesc;
-
-layout(set = 0, binding = BINDING_LIGHT_SET, scalar) buffer LightSet_
-{
-  LightSource l[4];
-}
-lights;
-
-layout(buffer_reference, scalar) buffer Materials  // Materials
-{
-  ObjMaterial m[];
-};
-
-layout(buffer_reference, scalar) buffer MaterialIndices  // Material indices per face
-{
-  uint i[];
+  [[vk::location(0)]] float4 color : SV_Target0;
 };
 // clang-format on
 
-void main()
+[shader("fragment")]
+FragmentOutput main(FragmentInput input)
 {
+  FragmentOutput output;
 
 #if HYBRID_ENABLED
-  o_color = vec4(0.0, 0.0, 0.0, 0.0);
+  output.color = float4(0.0, 0.0, 0.0, 0.0);
 #else
 
-  ObjDesc         objResource = objDesc.i[pcRaster.objIndex];
-  Materials       materials   = Materials(objResource.materialAddress);
-  MaterialIndices matIndices  = MaterialIndices(objResource.materialIndexAddress);
-  ObjMaterial     material    = materials.m[matIndices.i[pcRaster.objIndex]];
+  ObjDesc objResource = objDesc[pcRaster.objIndex];
+  // In GLSL version materialIndexAddress was erroneously dereferenced using pcRaster.objIndex. Now corrected using input.primitiveID.
+  ObjMaterial material = objResource.materialAddress[objResource.materialIndexAddress[input.primitiveID]];
 
-  vec3 color = vec3(0.0);
+  float3 color = float3(0.0);
 
-  wavefrontComputeShadingDirectOnly(lights.l, frameInfo.lightCount, i_worldPos, i_worldNrm, material, i_viewDir, color);
+  wavefrontComputeShadingDirectOnly(lights, frameInfo.lightCount, input.worldPos, input.worldNrm, material, input.viewDir, color);
 
-  o_color = vec4(color, 1);
+  output.color = float4(color, 1);
 
 #endif
+
+  return output;
 }

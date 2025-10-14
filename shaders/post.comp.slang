@@ -17,35 +17,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-
-#extension GL_GOOGLE_include_directive : enable
 #include "shaderio.h"
 
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
+// clang-format off
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]  ConstantBuffer<FrameInfo> frameInfo;
+[[vk::binding(POST_BINDING_MAIN_IMAGE, 0)]] RWTexture2D<float4>       mainColorImage;
+[[vk::binding(POST_BINDING_AUX1_IMAGE, 0)]] RWTexture2D<float4>       aux1ColorImage;
+// clang-format on
+
+[numthreads(32, 32, 1)]
+[shader("compute")]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-  FrameInfo frameInfo;
-};
+  const int2 pixel = int2(dispatchThreadID.xy);
 
-layout(set = 0, binding = POST_BINDING_MAIN_IMAGE, rgba8) uniform image2D mainColorImage;
-layout(set = 0, binding = POST_BINDING_AUX1_IMAGE, rgba8) uniform image2D aux1ColorImage;
-
-layout(local_size_x = 32) in;
-layout(local_size_Y = 32) in;
-
-void main()
-{
-  const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-
-  if(pixel.x >= int(frameInfo.viewport.x) || pixel.y >= int(frameInfo.viewport.y) )
+  if(pixel.x >= int(frameInfo.viewport.x) || pixel.y >= int(frameInfo.viewport.y))
     return;
 
   // Do accumulation over time
-  const float a          = 1.0F / float(frameInfo.frameSampleId + 1);
-  const vec4  mainColor = imageLoad(mainColorImage, pixel);
-  const vec4  aux1Color = imageLoad(aux1ColorImage, pixel);
-  vec4        finalColor = mix(mainColor, aux1Color, a);
+  const float  a          = 1.0F / float(frameInfo.frameSampleId + 1);
+  const float4 mainColor  = mainColorImage[pixel];
+  const float4 aux1Color  = aux1ColorImage[pixel];
+  float4       finalColor = lerp(mainColor, aux1Color, a);
 
-  imageStore(mainColorImage, pixel, vec4(finalColor.rgb, 1.0));
+  mainColorImage[pixel] = float4(finalColor.rgb, 1.0);
 }

@@ -22,6 +22,7 @@ This sample implements several **rendering pipelines** based on **rasterization*
 
 ## News
 
+- [2025/10] 🔥Migration from GLSL to SLANG.
 - [2025/09] 🔥Added Unscented Transform (3DGUT) and hybrid rendering (3DGUT/3DGRT) pipelines, with support for fisheye and depth of field.
 - [2025/09] Added import of .spz file format from [nianticlabs](https://github.com/nianticlabs/spz).
 - [2025/08] Added depth of field to raytracing (3DGRT) pipeline.

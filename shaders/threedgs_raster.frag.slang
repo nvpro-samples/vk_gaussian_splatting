@@ -45,45 +45,116 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 * SOFTWARE.
 */
-#version 450
 
-#extension GL_EXT_mesh_shader : require
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_fragment_shader_barycentric : require
-
-#include "wireframe.glsl"
+#include "wireframe.h.slang"
 #include "shaderio.h"
 
-precision highp float;
+// clang-format off
 
-layout(location = 0) perprimitiveEXT in flat vec4 inSplatCol;
-#if !USE_BARYCENTRIC
-layout(location = 1) in vec2 inFragPos;
-#endif
-
-layout(location = 0) out vec4 outColor;
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
+// Per-vertex input (from vertex shader)
+struct VertexInput
 {
-  FrameInfo frameInfo;
+  [[vk::location(0)]] float4 inSplatCol : COLOR0;
+#if !USE_BARYCENTRIC
+  [[vk::location(1)]] float2 inFragPos : TEXCOORD0;
+#endif
 };
 
-void main()
+// Per-primitive input (from mesh shader)
+struct MeshPrimitiveInput
 {
+  [[vk::location(0)]] float4 inSplatCol : COLOR0;
+};
+
+// Per-vertex input (from mesh shader)
+struct MeshVertexInput
+{
+#if !USE_BARYCENTRIC
+  [[vk::location(1)]] float2 inFragPos : TEXCOORD0;
+#endif
+};
+
+// Fragment output
+struct FragmentOutput
+{
+  [[vk::location(0)]] float4 outColor : SV_Target0;
+};
+
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+
+// clang-format on
+
+///////////////
+// main fragment function when using Vertex shader pipeline
+
+[shader("fragment")]
+FragmentOutput main(VertexInput vert
+#if USE_BARYCENTRIC || WIREFRAME
+                    ,
+                    float3 baryCoord: SV_Barycentrics
+#endif
+)
+{
+#if USE_BARYCENTRIC
+  const float2 inFragPos = float(0.0);  // placeholder
+#else
+  const float2 inFragPos = vert.inFragPos;
+#endif
+
+#if !USE_BARYCENTRIC && !WIREFRAME
+  const float3 baryCoord = float3(0.0);  // placeholder
+#endif
+
+  return processFragment(inFragPos, vert.inSplatCol, baryCoord);
+}
+
+///////////////
+// main fragment function when using Mesh shader pipeline
+
+[shader("fragment")]
+FragmentOutput main_mesh(MeshVertexInput                    vert,
+                         nointerpolation MeshPrimitiveInput prim
+#if USE_BARYCENTRIC || WIREFRAME
+                         ,
+                         float3 baryCoord: SV_Barycentrics
+#endif
+)
+{
+#if USE_BARYCENTRIC
+  const float2 inFragPos = float(0.0);  // placeholder
+#else
+  const float2 inFragPos = vert.inFragPos;
+#endif
+
+#if !USE_BARYCENTRIC && !WIREFRAME
+  const float3 baryCoord = float3(0.0);  // placeholder
+#endif
+
+  return processFragment(inFragPos, prim.inSplatCol, baryCoord);
+}
+
+///////////////
+// common processing function (the hart of the shader)
+// #if USE_BARYCENTRIC : inFragPos is a placeholder (not used)
+// #if !USE_BARYCENTRIC && !WIREFRAME : baryCoord is a placeholder (not used)
+FragmentOutput processFragment(float2 inFragPos, float4 inSplatCol, float3 baryCoord)
+{
+  FragmentOutput output;
 
 #if WIREFRAME
-  if(processWireframe(wireframeDefaultSettings(), gl_BaryCoordEXT) > 0.0)
+  if(processWireframe(wireframeDefaultSettings(), baryCoord) > 0.0)
   {
-    outColor = vec4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
-    return;
+    output.outColor = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
+    return output;
   }
 #endif
 
 #if USE_BARYCENTRIC
   // Use barycentric extension to find the position of the fragment
   const float sqrt8 = sqrt(8.0);
-  vec2 inFragPos = (gl_BaryCoordEXT.x * vec2(-1, -1) + gl_BaryCoordEXT.y * vec2(1, 1) + gl_BaryCoordEXT.z * vec2(-1, 1)) * sqrt8;
+  const float2 inFragPos = (baryCoord.x * float2(-1, -1) + baryCoord.y * float2(1, 1) + baryCoord.z * float2(-1, 1)) * sqrt8;
+#else
+  const float2 inFragPos = inFragPos;
 #endif
 
   // Compute the positional squared distance from the center of the splat to the current fragment.
@@ -104,5 +175,7 @@ void main()
   const float opacity = exp(-0.5 * A) * inSplatCol.a;
 #endif
 
-  outColor = vec4(inSplatCol.rgb, opacity);
+  output.outColor = float4(inSplatCol.rgb, opacity);
+
+  return output;
 }

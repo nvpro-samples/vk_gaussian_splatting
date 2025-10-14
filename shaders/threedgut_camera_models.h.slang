@@ -17,8 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _GUT_CAMERA_MODELS_H_
 #define _GUT_CAMERA_MODELS_H_
 
@@ -26,21 +24,21 @@
 
 struct OpenCVPinholeProjectionParameters
 {
-  vec2  nearFar;
-  vec2  principalPoint;
-  vec2  focalLength;
+  float2  nearFar;
+  float2  principalPoint;
+  float2  focalLength;
   float radialCoeffs[6];
-  vec2  tangentialCoeffs;
-  vec4  thinPrismCoeffs;
+  float2  tangentialCoeffs;
+  float4  thinPrismCoeffs;
 };
 
 struct OpenCVFisheyeProjectionParameters
 {
-  vec2  principalPoint;
-  vec2  focalLength;
+  float2  principalPoint;
+  float2  focalLength;
   float radialCoeffs[4];
   float maxAngle;
-  vec2  nominalResolution;
+  float2  nominalResolution;
 };
 
 struct CameraModelParameters
@@ -52,20 +50,20 @@ struct CameraModelParameters
 };
 
 // Enum values for ShutterType
-const int RollingTopToBottomShutter = 0;
-const int RollingLeftToRightShutter = 1;
-const int RollingBottomToTopShutter = 2;
-const int RollingRightToLeftShutter = 3;
-const int GlobalShutter             = 4;
+static const int RollingTopToBottomShutter = 0;
+static const int RollingLeftToRightShutter = 1;
+static const int RollingBottomToTopShutter = 2;
+static const int RollingRightToLeftShutter = 3;
+static const int GlobalShutter             = 4;
 
 // Enum values for ModelType
-const int OpenCVPinholeModel = 0;
-const int OpenCVFisheyeModel = 1;
-const int EmptyModel         = 2;
-const int Unsupported        = 3;
+static const int OpenCVPinholeModel = 0;
+static const int OpenCVFisheyeModel = 1;
+static const int EmptyModel         = 2;
+static const int Unsupported        = 3;
 
 
-CameraModelParameters initPerfectPinholeCamera(vec2 nearFar, vec2 viewport, vec2 focalLength)
+CameraModelParameters initPerfectPinholeCamera(float2 nearFar, float2 viewport, float2 focalLength)
 {
   CameraModelParameters cameraModel;
   cameraModel.shutterType                       = GlobalShutter;
@@ -73,8 +71,8 @@ CameraModelParameters initPerfectPinholeCamera(vec2 nearFar, vec2 viewport, vec2
   cameraModel.ocvPinholeParams.nearFar          = nearFar;
   cameraModel.ocvPinholeParams.principalPoint   = viewport / 2.0;  // center of viewport
   cameraModel.ocvPinholeParams.focalLength      = focalLength;
-  cameraModel.ocvPinholeParams.tangentialCoeffs = vec2(0, 0);
-  cameraModel.ocvPinholeParams.thinPrismCoeffs  = vec4(0, 0, 0, 0);
+  cameraModel.ocvPinholeParams.tangentialCoeffs = float2(0, 0);
+  cameraModel.ocvPinholeParams.thinPrismCoeffs  = float4(0, 0, 0, 0);
   cameraModel.ocvPinholeParams.radialCoeffs[0]  = 0;
   cameraModel.ocvPinholeParams.radialCoeffs[1]  = 0;
   cameraModel.ocvPinholeParams.radialCoeffs[2]  = 0;
@@ -102,16 +100,16 @@ float computeMaxDistanceToBorder(float imageSizeComponent, float principalPointC
 }
 
 // Compute the maximum radius from the principal point to the image boundaries.
-float computeMaxRadius(vec2 imageSize, vec2 principalPoint)
+float computeMaxRadius(float2 imageSize, float2 principalPoint)
 {
 
-  vec2 maxDiag = vec2(computeMaxDistanceToBorder(imageSize.x, principalPoint.x),
+  float2 maxDiag = float2(computeMaxDistanceToBorder(imageSize.x, principalPoint.x),
                       computeMaxDistanceToBorder(imageSize.y, principalPoint.y));
   return length(maxDiag);
 }
 
 // Estimate max angle for fisheye
-float computeMaxAngle(vec2 resolution, vec2 principalPoint, vec2 focalLength)
+float computeMaxAngle(float2 resolution, float2 principalPoint, float2 focalLength)
 {
   float maxRadiusPixels = computeMaxRadius(resolution, principalPoint);
   float fovAngleX       = 2.0 * maxRadiusPixels / focalLength.x;
@@ -120,9 +118,9 @@ float computeMaxAngle(vec2 resolution, vec2 principalPoint, vec2 focalLength)
   return maxAngle;
 }
 
-CameraModelParameters initPerfectFisheyeCamera(vec2 viewport, vec2 focalLength)
+CameraModelParameters initPerfectFisheyeCamera(float2 viewport, float2 focalLength)
 {
-  const vec2 principalPoint = viewport / 2.0;  // center of viewport
+  const float2 principalPoint = viewport / 2.0;  // center of viewport
 
   CameraModelParameters cameraModel;
   cameraModel.shutterType                        = GlobalShutter;

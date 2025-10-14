@@ -119,8 +119,7 @@ struct RtxParameters
   int   kernelDegree           = KERNEL_DEGREE_QUADRATIC;
   float kernelMinResponse      = 0.0113f;  // constant value from Paper
   bool  kernelAdaptiveClamping = true;
-  int   payloadArraySize       = 18;     // best default value set by experimentation on ADA6000
-  bool  usePayloadBuffer       = false;  // Experimental, change the value here for testing, no UI
+  int   payloadArraySize       = 18;  // best default value set by experimentation on ADA6000
 };
 
 // Parameters that control Raytracing (RTX)

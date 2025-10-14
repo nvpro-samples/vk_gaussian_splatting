@@ -17,8 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _GUT_DEFINITIONS_H_
 #define _GUT_DEFINITIONS_H_
 

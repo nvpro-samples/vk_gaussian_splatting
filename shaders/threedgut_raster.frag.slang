@@ -17,71 +17,68 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 450
-
-#extension GL_EXT_mesh_shader : require
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_fragment_shader_barycentric : require
-
-#include "nvshaders/slang_types.h"
 #include "nvshaders/random.h.slang"
 
 #include "shaderio.h"
-#include "wireframe.glsl"
-#include "cameras.glsl"
+#include "wireframe.h.slang"
+#include "cameras.h.slang"
 
-#include "threedgrt.glsl"
+#include "threedgrt.h.slang"
 
-precision highp float;
+// clang-format off
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 
-layout(location = 0) perprimitiveEXT in flat uint inSplatId;
-layout(location = 1) perprimitiveEXT in flat vec4 inSplatCol;
-layout(location = 2) perprimitiveEXT in flat vec3 inSplatPosition;
-layout(location = 3) perprimitiveEXT in flat vec3 inSplatScale;
-layout(location = 4) perprimitiveEXT in flat vec4 inSplatRotation;  // a quaternion
-
-layout(location = 0) out vec4 outColor;
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
+struct FragmentInput
 {
-  FrameInfo frameInfo;
+  [[vk::location(0)]] nointerpolation uint splatId : SPLATID;
+  [[vk::location(1)]] nointerpolation float4 splatCol : COLOR0;
+  [[vk::location(2)]] nointerpolation float3 splatPosition : POSITION0;
+  [[vk::location(3)]] nointerpolation float3 splatScale : SCALE0;
+  [[vk::location(4)]] nointerpolation float4 splatRotation : ROTATION0;  // a quaternion
+  float4 position : SV_Position;
+#if WIREFRAME
+  float3 barycentrics : SV_Barycentrics;
+#endif
 };
 
-layout(push_constant) uniform _PushConstantRaster
+struct FragmentOutput
 {
-  PushConstant pcRaster;
+  [[vk::location(0)]] float4 color : SV_Target0;
 };
+// clang-format on
 
-void main()
+[shader("fragment")]
+FragmentOutput main(FragmentInput input)
 {
+  FragmentOutput output;
 
 #if WIREFRAME
-  if(processWireframe(wireframeDefaultSettings(), gl_BaryCoordEXT) > 0.0)
+  if(processWireframe(wireframeDefaultSettings(), input.barycentrics) > 0.0)
   {
-    outColor = vec4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
-    return;
+    output.color = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
+    return output;
   }
 #endif
 
   // use this to visualize full splat rectangular extent.
-#if false
+#if 0
   {
-    vec4 color = inSplatCol;
-    outColor   = vec4(color.rgb, 1.0);
-    return;
+    float4 color = input.splatCol;
+    output.color = float4(color.rgb, 1.0);
+    return output;
   }
 #endif
 
   // prepare a ray the evaluation of the particle response
-  vec3 rayOrigin;
-  vec3 rayDirection;
+  float3 rayOrigin;
+  float3 rayDirection;
 
   // generate the ray for this pixel
 #if CAMERA_TYPE == CAMERA_PINHOLE
-  generatePinholeRay(gl_FragCoord.xy, frameInfo.viewport, frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
+  generatePinholeRay(input.position.xy, frameInfo.viewport, frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
 #else
-  if(!generateFisheyeRay(gl_FragCoord.xy, frameInfo.viewport, frameInfo.fovRad, vec2(0.0), frameInfo.viewInverse,
+  if(!generateFisheyeRay(input.position.xy, frameInfo.viewport, frameInfo.fovRad, float2(0.0), frameInfo.viewInverse,
                          rayOrigin, rayDirection))
   {
     discard;
@@ -91,23 +88,25 @@ void main()
   // add Depth-of-Field perturbation to the ray
 #if RTX_DOF_ENABLED
   // Initialize the random number
-  uint seed = xxhash32(uvec3(gl_FragCoord.xy, frameInfo.frameSampleId));
+  uint seed = xxhash32(uint3(int(input.position.x), int(input.position.y), frameInfo.frameSampleId));
 
   depthOfField(seed, frameInfo.focusDist, frameInfo.aperture, frameInfo.viewInverse, rayOrigin, rayDirection);
 #endif
 
   // The two following transformations are to compute processHit with transformed splat set model
-  const vec3 splatSetModelRayOrigin = vec3(pcRaster.modelMatrixInverse * vec4(rayOrigin, 1.0));
+  const float3 splatSetModelRayOrigin = mul(float4(rayOrigin, 1.0), pcRaster.modelMatrixInverse).xyz;
   // Since the ray direction should not be affected by translation,
   // uses the inverse of the rotation-scale part of the model matrix.
-  const vec3 splatSetModelRayDirection = normalize(mat3(pcRaster.modelMatrixRotScaleInverse) * rayDirection);
+  const float3 splatSetModelRayDirection = normalize(mul(rayDirection, float3x3(pcRaster.modelMatrixRotScaleInverse)));
 
   float opacity;
-  bool acceptedHit = particleProcessHitGut(frameInfo, splatSetModelRayOrigin, splatSetModelRayDirection, int(inSplatId),
-                                           inSplatCol, inSplatPosition, inSplatScale, inSplatRotation, opacity);
+  bool acceptedHit = particleProcessHitGut(frameInfo, splatSetModelRayOrigin, splatSetModelRayDirection, int(input.splatId),
+                                           input.splatCol, input.splatPosition, input.splatScale, input.splatRotation, opacity);
 
   if(!acceptedHit)
     discard;
 
-  outColor = vec4(inSplatCol.rgb, opacity);
+  output.color = float4(input.splatCol.rgb, opacity);
+  
+  return output;
 }

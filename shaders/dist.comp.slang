@@ -17,63 +17,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-
-#extension GL_EXT_control_flow_attributes : enable
-#extension GL_EXT_control_flow_attributes2 : enable
-#extension GL_GOOGLE_include_directive : enable
 #include "shaderio.h"
-#include "threedgut_camera_models.glsl"
-#include "threedgut_camera_projections.glsl"
-#include "threedgs_particles_storage.glsl"
+#include "threedgs_particles_storage.h.slang"
+#include "threedgut_camera_models.h.slang"
+#include "threedgut_camera_projections.h.slang"
 
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform FrameInfo_
-{
-  FrameInfo frameInfo;
-};
-
-layout(push_constant) uniform _PushConstantRaster
-{
-  PushConstant pcRaster;
-};
-
-layout(local_size_x = DISTANCE_COMPUTE_WORKGROUP_SIZE) in;
-
-layout(set = 0, binding = BINDING_DISTANCES_BUFFER, scalar) writeonly buffer _distances
-{
-  uint32_t distances[];
-};
-layout(set = 0, binding = BINDING_INDICES_BUFFER, scalar) writeonly buffer _indices
-{
-  uint32_t indices[];
-};
-layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) writeonly buffer _indirect
-{
-  IndirectParams indirect;
-};
+// clang-format off
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]   ConstantBuffer<FrameInfo>    frameInfo;
+[[vk::push_constant]]                        ConstantBuffer<PushConstant> pcRaster;
+[[vk::binding(BINDING_DISTANCES_BUFFER, 0)]] RWStructuredBuffer<uint32_t> distances;
+[[vk::binding(BINDING_INDICES_BUFFER, 0)]]   RWStructuredBuffer<uint32_t> indices;
+[[vk::binding(BINDING_INDIRECT_BUFFER, 0)]]  RWStructuredBuffer<IndirectParams> indirectBuffer;
+// clang-format on
 
 // encodes an fp32 into a uint32 that can be ordered
 uint encodeMinMaxFp32(float val)
 {
-  uint bits = floatBitsToUint(val);
+  uint bits = asuint(val);
   bits ^= (int(bits) >> 31) | 0x80000000u;
   return bits;
 }
 
-void main()
+[numthreads(DISTANCE_COMPUTE_WORKGROUP_SIZE, 1, 1)]
+[shader("compute")]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-  const uint id = gl_GlobalInvocationID.x;
+  const uint id = dispatchThreadID.x;
   // each workgroup (but the last one if splat count is not a multiple)
   // processes DISTANCE_COMPUTE_WORKGROUP_SIZE points
   if(id >= frameInfo.splatCount)
     return;
 
-  vec4 splatPos = vec4(fetchCenter(id), 1.0);
+  float4 splatPos = float4(fetchCenter(id), 1.0);
 
-  vec4 viewPos      = frameInfo.viewMatrix * pcRaster.modelMatrix * splatPos;
+  // Row-major: multiply in reverse order (vector * matrix * matrix)
+  float4 viewPos      = mul(mul(splatPos, pcRaster.modelMatrix), frameInfo.viewMatrix);
   // TODO: projection matrix is not correct with fisheye, this is a coarse aprox to compute depth
-  vec4 ndcPos       = frameInfo.projectionMatrix * viewPos;
+  float4 ndcPos       = mul(viewPos, frameInfo.projectionMatrix);
   ndcPos            = ndcPos / ndcPos.w;
   const float depth = ndcPos.z;
 
@@ -94,9 +74,9 @@ void main()
   CameraModelParameters sensorModel = initPerfectFisheyeCamera(frameInfo.viewport, frameInfo.focal);
 
   // Fisheye projection to perform culling
-  vec2 projected;
+  float2 projected;
   bool isValid = projectPointFisheye(sensorModel.ocvFisheyeParams, frameInfo.viewport,
-                                     vec3(1.0, 1.0, -1.0) * viewPos.xyz, GUT_IN_IMAGE_MARGIN_FACTOR, projected);
+                                     float3(1.0, 1.0, -1.0) * viewPos.xyz, GUT_IN_IMAGE_MARGIN_FACTOR, projected);
 
   if(!isValid)
     return;
@@ -107,7 +87,9 @@ void main()
 #endif
 
   // increments the visible splat counter in the indirect buffer
-  const uint instance_index = atomicAdd(indirect.instanceCount, 1);
+  uint original;
+  InterlockedAdd(indirectBuffer[0].instanceCount, 1, original);
+  const uint instance_index = original;
   // stores the distance
   distances[instance_index] = encodeMinMaxFp32(-depth);
   // stores the base index
@@ -115,6 +97,6 @@ void main()
   // set the workgroup count for the mesh shading pipeline
   if(instance_index % RASTER_MESH_WORKGROUP_SIZE == 0)
   {
-    atomicAdd(indirect.groupCountX, 1);
+    InterlockedAdd(indirectBuffer[0].groupCountX, 1);
   }
 }

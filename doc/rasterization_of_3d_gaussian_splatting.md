@@ -109,7 +109,7 @@ To ensure that the indirect parameters are fully available for the next stages, 
 
 ### Distances computation and culling
 
-When GPU-based sorting is enabled, the compute shader responsible for distance computation and culling (see [dist.comp.glsl](../shaders/dist.comp.glsl)) is executed first. This shader stage processes the splat positions buffer or texture as input and writes to three write-only data buffers:
+When GPU-based sorting is enabled, the compute shader responsible for distance computation and culling (see [dist.comp.slang](../shaders/dist.comp.slang)) is executed first. This shader stage processes the splat positions buffer or texture as input and writes to three write-only data buffers:
 * Distances Buffer – Stores unsigned integer-encoded distances from the center of projection.
 * Indices Buffer – Stores indices referencing sorted splats.
 * Indirect Parameters Buffer – Used for issuing indirect draw calls.
@@ -190,7 +190,7 @@ The `WORK_GROUP_SIZE` value will be discussed in the **Mesh Shader** section.
 
 ### Vertex Shader  
 
-The vertex shader is implemented in [threedgs_raster.vert.glsl](../shaders/threedgs_raster.vert.glsl). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). Some mathematical formulations and comments have been directly retained from this source.
+The vertex shader is implemented in [threedgs_raster.vert.slang](../shaders/threedgs_raster.vert.slang). The code has been adapted to **Vulkan** from the **WebGL-based** implementation by [mkkellogg/GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D). Some mathematical formulations and comments have been directly retained from this source.
 
 The vertex shader operates on each of the **four vertices** of each quad. Since the input quad has **normalized 2D positions** in the range **[-1,1]**, the shader does not need to distinguish between individual vertices. Instead, the transformation—derived from the **splat position** and **covariance matrix**—determines the final scale and placement of the splat.  
 
@@ -216,7 +216,7 @@ The **same color and opacity** (computed from **Spherical Harmonics (SH) coeffic
 
 ### Fragment Shader  
 
-The fragment shader is implemented in [**threedgs_raster.frag.glsl**](../shaders/threedgs_raster.frag.glsl).  
+The fragment shader is implemented in [**threedgs_raster.frag.slang**](../shaders/threedgs_raster.frag.slang).  
 
 It is designed to be extremely **lightweight**, as most computations are already handled in the **vertex shader**. Since **Gaussian Splatting** is inherently **fragment-intensive**, minimizing the workload in this stage is crucial for performance.  
 
@@ -228,7 +228,7 @@ The fragment shader operates as follows:
 
 ### Mesh shader
 
-The mesh shader is implemented in [**threedgs_raster.mesh.glsl**](../shaders/threedgs_raster.mesh.glsl). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.
+The mesh shader is implemented in [**threedgs_raster.mesh.slang**](../shaders/threedgs_raster.mesh.slang). Compared to the vertex shader approach, most processing (culling, color computation, projection) is performed per splat rather than per vertex, significantly improving efficiency. The key aspects of the mesh shader are outlined below.
 
 #### Shader Setup
 

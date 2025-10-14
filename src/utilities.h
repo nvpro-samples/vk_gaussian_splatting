@@ -31,6 +31,17 @@
 #include <nvvk/debug_util.hpp>
 #include <nvvk/default_structs.hpp>
 
+// Macro to check if a Vulkan handle is not null, perform a destruction operation, and reset the handle to null
+#define TEST_DESTROY_AND_RESET(handle, destroyFunc)                                                                    \
+  do                                                                                                                   \
+  {                                                                                                                    \
+    if((handle) != VK_NULL_HANDLE)                                                                                     \
+    {                                                                                                                  \
+      destroyFunc;                                                                                                     \
+      (handle) = VK_NULL_HANDLE;                                                                                       \
+    }                                                                                                                  \
+  } while(0)
+
 // Example using the parallel loop macro
 // constexpr uint32_t N = 100;
 // START_PAR_LOOP( N, i)

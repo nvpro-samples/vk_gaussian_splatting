@@ -20,13 +20,11 @@
 #ifndef _COLOR_
 #define _COLOR_
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
-vec3 hsbToRgb(vec3 hsbColor)
+float3 hsbToRgb(float3 hsbColor)
 {
-  vec3 rgb = clamp(abs(mod((hsbColor.x * 6.0) + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  float3 rgb = clamp(abs(fmod((hsbColor.x * 6.0) + float3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
   rgb      = (rgb * rgb * (3.0 - (2.0 * rgb)));
-  return (hsbColor.z * mix(vec3(1.0), rgb, hsbColor.y));
+  return (hsbColor.z * lerp(float3(1.0), rgb, hsbColor.y));
 }
 
 #endif

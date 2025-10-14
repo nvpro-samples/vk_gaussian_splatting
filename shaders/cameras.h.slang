@@ -17,8 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _CAMERAS_
 #define _CAMERAS_
 
@@ -26,30 +24,36 @@
 #include "nvshaders/random.h.slang"
 #include "nvshaders/constants.h.slang"
 
-void generatePinholeRay(in vec2 pixel, in vec2 resolution, in mat4 viewInverse, in mat4 projInverse, out vec3 rayOrigin, out vec3 rayDirection)
+void generatePinholeRay(in float2 pixel, in float2 resolution, in float4x4 viewInverse, in float4x4 projInverse, out float3 rayOrigin, out float3 rayDirection)
 {
   // Computes the ray for this fragment (pinhole)
-  const vec2 pixelCenter = pixel + vec2(0.5);
-  const vec2 inUV        = pixelCenter / resolution;
-  vec2       d           = inUV * 2.0 - 1.0;
+  const float2 pixelCenter = pixel + float2(0.5);
+  const float2 inUV        = pixelCenter / resolution;
+  float2       d           = inUV * 2.0 - 1.0;
 
-  rayOrigin = (viewInverse * vec4(0, 0, 0, 1)).xyz;
+  rayOrigin = mul(float4(0, 0, 0, 1), viewInverse).xyz;
 
-  vec4 target  = projInverse * vec4(d.x, d.y, 1, 1);
-  rayDirection = normalize(viewInverse * vec4(target.xyz, 0)).xyz;
+  float4 target = mul(float4(d.x, d.y, 1, 1), projInverse);
+  rayDirection  = normalize(mul(float4(target.xyz, 0), viewInverse)).xyz;
 }
 
 // return false if pixel is out of fov
-bool generateFisheyeRay(in vec2 pixel, in vec2 resolution, in float fov, in vec2 principalPoint, in mat4 viewInverse, out vec3 rayOrigin, out vec3 rayDirection)
+bool generateFisheyeRay(in float2   pixel,
+                        in float2   resolution,
+                        in float    fov,
+                        in float2   principalPoint,
+                        in float4x4 viewInverse,
+                        out float3  rayOrigin,
+                        out float3  rayDirection)
 {
   // Account for principal point (offsets from the center)
   pixel.x -= principalPoint.x;
   pixel.y += principalPoint.y;
 
   // pixel values are now in normalized device coordinates [-1.0,1.0]
-  const vec2  ndc = (pixel / (resolution - 1.0)) * 2.0 - vec2(1.0);
-  const float u   = ndc.x;
-  const float v   = ndc.y;
+  const float2 ndc = (pixel / (resolution - 1.0)) * 2.0 - float2(1.0);
+  const float  u   = ndc.x;
+  const float  v   = ndc.y;
 
   const float r        = sqrt(u * u + v * v);
   const bool  outOfFov = r > 1.0;
@@ -61,37 +65,37 @@ bool generateFisheyeRay(in vec2 pixel, in vec2 resolution, in float fov, in vec2
   phi                 = v < 0.0 ? -phi : phi;
   const float theta   = r * fov * 0.5;
 
-  const vec3 direction = vec3(cos(phi) * sin(theta), -sin(phi) * sin(theta), -cos(theta));
+  const float3 direction = float3(cos(phi) * sin(theta), -sin(phi) * sin(theta), -cos(theta));
 
   // Transform ray direction from camera space to world space
-  rayDirection = normalize(viewInverse * vec4(direction, 0)).xyz;
+  rayDirection = normalize(mul(float4(direction, 0), viewInverse)).xyz;
   // Generate ray origin in world coordinates
-  rayOrigin = (viewInverse * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  rayOrigin = mul(float4(0.0, 0.0, 0.0, 1.0), viewInverse).xyz;
 
   return !outOfFov;
 }
 
 // Applies thin-lens depth-of-field perturbation to the ray origin and direction
-void depthOfField(inout uint seed, in float focusDist, in float aperture, in mat4 viewInverse, inout vec3 rayOrigin, inout vec3 rayDirection)
+void depthOfField(inout uint seed, in float focusDist, in float aperture, in float4x4 viewInverse, inout float3 rayOrigin, inout float3 rayDirection)
 {
   // This correctly finds where the original ray would hit the focal plane.
-  const vec3 focalPoint = rayDirection * focusDist;
+  const float3 focalPoint = rayDirection * focusDist;
 
   // Random Sampling on Lens
   const float r1 = rand(seed) * M_TWO_PI;
   const float r2 = rand(seed) * aperture;
 
   // Aperture Position
-  const vec4 camRight          = viewInverse * vec4(1, 0, 0, 0);
-  const vec4 camUp             = viewInverse * vec4(0, 1, 0, 0);
-  const vec3 randomAperturePos = (cos(r1) * camRight.xyz + sin(r1) * camUp.xyz) * sqrt(r2);
+  const float4 camRight          = mul(float4(1, 0, 0, 0), viewInverse);
+  const float4 camUp             = mul(float4(0, 1, 0, 0), viewInverse);
+  const float3 randomAperturePos = (cos(r1) * camRight.xyz + sin(r1) * camUp.xyz) * sqrt(r2);
 
   // New Ray Direction
-  const vec3 finalRayDir = normalize(focalPoint - randomAperturePos);
+  const float3 finalRayDir = normalize(focalPoint - randomAperturePos);
 
   // Set the new ray origin and direction with depth-of-field perturbation
   rayOrigin += randomAperturePos;  // Random point on lens
   rayDirection = finalRayDir;      // Still goes through focal point
 }
 
-#endif
+#endif 

@@ -17,77 +17,80 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 450
-
-#extension GL_EXT_mesh_shader : require
-#extension GL_EXT_control_flow_attributes : require
-#extension GL_GOOGLE_include_directive : require
-
 #include "shaderio.h"
-#include "threedgs.glsl"
-#include "threedgs_particles_storage.glsl"
-#include "threedgut.glsl"
+#include "threedgs.h.slang"
+#include "threedgs_particles_storage.h.slang"
+#include "threedgut.h.slang"
 
 // Parallel Processing : Each global invocation (thread) processes one splat.
 // Batch Processing : The workgroup can process up to RASTER_MESH_WORKGROUP_SIZE splats(outputQuadCount)
 
-layout(local_size_x = RASTER_MESH_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 4 * RASTER_MESH_WORKGROUP_SIZE, max_primitives = 2 * RASTER_MESH_WORKGROUP_SIZE) out;
+static const int MAX_VERTICES   = 4 * RASTER_MESH_WORKGROUP_SIZE;
+static const int MAX_PRIMITIVES = 2 * RASTER_MESH_WORKGROUP_SIZE;
+
+// clang-format off
 
 // Per primitive output
-layout(location = 0) perprimitiveEXT out uint outSplatId[];
-layout(location = 1) perprimitiveEXT out vec4 outSplatCol[];
-layout(location = 2) perprimitiveEXT out vec3 outSplatPosition[];
-layout(location = 3) perprimitiveEXT out vec3 outSplatScale[];
-layout(location = 4) perprimitiveEXT out vec4 outSplatRotation[];  // a quaternion
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
+struct PrimitiveOutput
 {
-  FrameInfo frameInfo;
+  [[vk::location(0)]] nointerpolation uint splatId : SPLATID;
+  [[vk::location(1)]] nointerpolation float4 splatCol : COLOR0;
+  [[vk::location(2)]] nointerpolation float3 splatPosition : POSITION0;
+  [[vk::location(3)]] nointerpolation float3 splatScale : SCALE0;
+  [[vk::location(4)]] nointerpolation float4 splatRotation : ROTATION0;  // a quaternion
 };
 
-layout(push_constant) uniform _PushConstantRaster
+// Per vertex output
+struct VertexOutput
 {
-  PushConstant pcRaster;
+  float4 position : SV_Position;
 };
 
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 // sorted indices
-layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
-{
-  uint32_t indices[];
-};
+[[vk::binding(BINDING_INDICES_BUFFER, 0)]] RWStructuredBuffer<uint32_t> indices;
 // to get the actual number of splats (after culling if any)
-layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) buffer _indirect
-{
-  IndirectParams indirect;
-};
+[[vk::binding(BINDING_INDIRECT_BUFFER, 0)]] RWStructuredBuffer<IndirectParams> indirectBuffer;
+
+// clang-format on
 
 // used when quad need to be discard
-void emitDegeneratedQuad(void)
+void emitDegeneratedQuad(uint localIndex, out OutputVertices<VertexOutput, MAX_VERTICES> verts)
 {
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+  [unroll]
+  for(uint i = 0; i < 4; ++i)
+  {
+    verts[localIndex * 4 + i].position = float4(0.0, 0.0, 2.0, 1.0);
+  }
 }
 
-void main()
+[numthreads(RASTER_MESH_WORKGROUP_SIZE, 1, 1)]
+[outputtopology("triangle")]
+[shader("mesh")]
+void main(
+  uint3 groupThreadID : SV_GroupThreadID,
+  uint3 groupID : SV_GroupID,
+  uint3 dispatchThreadID : SV_DispatchThreadID,
+  out OutputVertices<VertexOutput, MAX_VERTICES> verts,
+  out OutputPrimitives<PrimitiveOutput, MAX_PRIMITIVES> prims,
+  out OutputIndices<uint3, MAX_PRIMITIVES> triangles)
 {
-  const uint32_t baseIndex = gl_GlobalInvocationID.x;
+  const uint localIndex = groupThreadID.x;
+  const uint32_t baseIndex = dispatchThreadID.x;
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
   // if culling is already performed we use the subset of splats
-  const uint splatCount = indirect.instanceCount;
+  const uint splatCount = indirectBuffer[0].instanceCount;
 #else
   // otherwise we use all the splats
   const uint splatCount = frameInfo.splatCount;
 #endif
-  const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - gl_WorkGroupID.x * RASTER_MESH_WORKGROUP_SIZE);
+  const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - groupID.x * RASTER_MESH_WORKGROUP_SIZE);
 
-  if(gl_LocalInvocationIndex == 0)
+  if(localIndex == 0)
   {
     // set the number of vertices and primitives to put out just once for the complete workgroup
-    SetMeshOutputsEXT(outputQuadCount * 4, outputQuadCount * 2);
+    SetMeshOutputCounts(outputQuadCount * 4, outputQuadCount * 2);
   }
 
   if(baseIndex < splatCount)
@@ -95,49 +98,50 @@ void main()
     const uint splatIndex = indices[baseIndex];
 
     // emit primitives (triangles) as soon as possible
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
-    // provides the splatIndex to the fragment shader
-    outSplatId[gl_LocalInvocationIndex * 2 + 0] = splatIndex;
-    outSplatId[gl_LocalInvocationIndex * 2 + 1] = splatIndex;
-
+    triangles[localIndex * 2 + 0] = uint3(0, 2, 1) + localIndex * 4;
+    triangles[localIndex * 2 + 1] = uint3(2, 0, 3) + localIndex * 4;
+    
     // Fetch particle minimal data
     // Fetches are done as early as possible.
     // Moving those after culling statments will reduce the performance
-    vec4       splatColor  = fetchColor(splatIndex);  // contains opacity as .a
-    const vec3 splatCenter = fetchCenter(splatIndex);
-    const vec3 splatScale  = exp(fetchScale(splatIndex));
+    float4       splatColor  = fetchColor(splatIndex);  // contains opacity as .a
+    const float3 splatCenter = fetchCenter(splatIndex);
+    const float3 splatScale  = exp(fetchScale(splatIndex));
     // INRIA quaternions are scalar first: w in splatRotation.x and xyz in splatRotation.yzw)
     // our internal representation (hence splatRotation), uses xyz, w. vec4ToQuat does convertion
-    const vec4 splatRotation = normalize(vec4toQuat(fetchRotation(splatIndex)));
+    const float4 splatRotation = normalize(vec4toQuat(fetchRotation(splatIndex)));
 
+    // provides the splatIndex to the fragment shader
+    prims[localIndex * 2 + 0].splatId = splatIndex;
+    prims[localIndex * 2 + 1].splatId = splatIndex;
+    
     // emit per primitive data ASAP
-    outSplatPosition[gl_LocalInvocationIndex * 2 + 0] = splatCenter;
-    outSplatPosition[gl_LocalInvocationIndex * 2 + 1] = splatCenter;
-    outSplatScale[gl_LocalInvocationIndex * 2 + 0]    = splatScale;
-    outSplatScale[gl_LocalInvocationIndex * 2 + 1]    = splatScale;
-    outSplatRotation[gl_LocalInvocationIndex * 2 + 0] = splatRotation;
-    outSplatRotation[gl_LocalInvocationIndex * 2 + 1] = splatRotation;
+    prims[localIndex * 2 + 0].splatPosition = splatCenter;
+    prims[localIndex * 2 + 1].splatPosition = splatCenter;
+    prims[localIndex * 2 + 0].splatScale    = splatScale;
+    prims[localIndex * 2 + 1].splatScale    = splatScale;
+    prims[localIndex * 2 + 0].splatRotation = splatRotation;
+    prims[localIndex * 2 + 1].splatRotation = splatRotation;
 
     // fetch radiance from SH coefs > degree 0, we work in model coordinates
-    const vec3 worldViewDir = normalize(splatCenter - vec3(pcRaster.modelMatrixInverse * vec4(frameInfo.cameraPosition, 1.0)));
+    const float3 worldViewDir = normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
 
 #if SHOW_SH_ONLY == 1
-    splatColor.rgb = vec3(0.5);
+    splatColor.rgb = float3(0.5);
 #endif
     splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
 
     // alpha based culling
     if(splatColor.a < frameInfo.alphaCullThreshold)
     {
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 
 #if MS_ANTIALIASING == 0
     // emit per primitive color as early as possible for performance reasons
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+    prims[localIndex * 2 + 0].splatCol = splatColor;
+    prims[localIndex * 2 + 1].splatCol = splatColor;
 #endif
 
 #if CAMERA_TYPE == CAMERA_PINHOLE
@@ -149,28 +153,28 @@ void main()
     // camera pose in world space, used by projector to compute the ray.
     SensorState sensorState = initGlobalShutterSensorState(frameInfo.viewTrans, frameInfo.viewQuat);
 
-    ivec2 resolution = ivec2(frameInfo.viewport.x, frameInfo.viewport.y);
+    int2 resolution = int2(int(frameInfo.viewport.x), int(frameInfo.viewport.y));
 
-    vec3 particleSensorRay;
-    vec2 particleProjCenter;
-    vec3 particleProjCovariance;
+    float3 particleSensorRay;
+    float2 particleProjCenter;
+    float3 particleProjCovariance;
 
     if(!threedgutParticleProjection(resolution, sensorModel, pcRaster.modelMatrix, sensorState, splatCenter, splatScale,
                                     quatToMat3(splatRotation), particleProjCenter, particleProjCovariance))
     {
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 
 // Method from paper used for cuda raster
 #if EXTENT_METHOD == EXTENT_CONIC
-    vec2  extent;
-    vec4  conicOpacity;
+    float2  extent;
+    float4  conicOpacity;
     float maxConicOpacityPower;
 
     if(!threedgutProjectedExtentConicOpacity(particleProjCovariance, splatColor.a, extent, conicOpacity, maxConicOpacityPower))
     {
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 
@@ -181,57 +185,58 @@ void main()
 // Method optimized for rasterisation pipelines
 #elif EXTENT_METHOD == EXTENT_EIGEN
 
-    vec2 basisVector1, basisVector2;
+    float2 basisVector1, basisVector2;
 
     if(!threedgsProjectedExtentBasis(particleProjCovariance, 3.33, frameInfo.splatScale, splatColor.a, basisVector1, basisVector2))
     {
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 #endif
 
 #if MS_ANTIALIASING == 1
     // emit the fragment color with compensation
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+    prims[localIndex * 2 + 0].splatCol = splatColor;
+    prims[localIndex * 2 + 1].splatCol = splatColor;
 #endif
 
     // Convert projected particle center from pixel coordinates to NDC [-1, 1]
     // particleProjCenter is in pixel coordinates, need to convert to NDC
-    const vec2 ndcXY = (particleProjCenter / frameInfo.viewport) * 2.0 - 1.0;
+    const float2 ndcXY = (particleProjCenter / frameInfo.viewport) * 2.0 - 1.0;
 
-    const vec4 worldSplatCenter = pcRaster.modelMatrix * vec4(splatCenter, 1.0);
-    const vec4 viewSplatCenter  = frameInfo.viewMatrix * worldSplatCenter;
+    const float4 worldSplatCenter = mul(float4(splatCenter, 1.0), pcRaster.modelMatrix);
+    const float4 viewSplatCenter  = mul(worldSplatCenter, frameInfo.viewMatrix);
     // TODO: projection matrix is not correct with fisheye, this is a coarse aprox to compute depth
-    const vec4 clipSplatCenter = frameInfo.projectionMatrix * viewSplatCenter;
+    const float4 clipSplatCenter = mul(viewSplatCenter, frameInfo.projectionMatrix);
 
-    const vec3 ndcCenter = vec3(ndcXY, clipSplatCenter.z / clipSplatCenter.w);
+    const float3 ndcCenter = float3(ndcXY, clipSplatCenter.z / clipSplatCenter.w);
 #if EXTENT_METHOD == EXTENT_CONIC
-    const vec2 ndcExtent = extent * frameInfo.basisViewport * 2.0;
+    const float2 ndcExtent = extent * frameInfo.basisViewport * 2.0;
 #endif
 
     /////////////////////////////
     // emiting quad vertices
 
-    const vec2 vertexPositions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
+    const float2 vertexPositions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
 
-    [[unroll]] for(uint i = 0; i < 4; ++i)
+    [unroll]
+    for(uint i = 0; i < 4; ++i)
     {
-      const vec2 vertPos = vertexPositions[i].xy;
+      const float2 vertPos = vertexPositions[i].xy;
 
 #if EXTENT_METHOD == EXTENT_CONIC
 
-      const vec2 ndcOffset = vertPos * ndcExtent;
+      const float2 ndcOffset = vertPos * ndcExtent;
 
 #elif EXTENT_METHOD == EXTENT_EIGEN
 
-      const vec2 ndcOffset = vec2(vertPos.x * basisVector1 + vertPos.y * basisVector2) * frameInfo.basisViewport * 2.0
+      const float2 ndcOffset = float2(vertPos.x * basisVector1 + vertPos.y * basisVector2) * frameInfo.basisViewport * 2.0
                              * frameInfo.inverseFocalAdjustment;
 
 #endif
-      const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
+      const float4 quadPos = float4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + i].gl_Position = quadPos;
+      verts[localIndex * 4 + i].position = quadPos;
     }
   }
 }

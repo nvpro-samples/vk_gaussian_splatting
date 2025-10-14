@@ -17,16 +17,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 // File translated from github-grut\threedgut_tracer\include\3dgut\sensors\sensors.h
 
-#include "quaternions.glsl"
-#include "threedgut_camera_models.glsl"
+#include "quaternions.h.slang"
+#include "threedgut_camera_models.h.slang"
 
 struct SensorPose
 {
-  vec3 translation;
+  float3 translation;
   quat quaternion;  // (xyz, w), scalar last
 };
 
@@ -38,7 +36,7 @@ struct SensorState
   SensorPose endPose;
 };
 
-SensorState initGlobalShutterSensorState(vec3 translation, quat quaternion)
+SensorState initGlobalShutterSensorState(float3 translation, quat quaternion)
 {
   // camera pose in world space, used by projector to compute the ray.
   SensorState sensorState;

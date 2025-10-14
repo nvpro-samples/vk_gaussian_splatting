@@ -45,76 +45,80 @@
 * SOFTWARE.
 */
 
-#version 450
-
-#extension GL_EXT_mesh_shader : require
-#extension GL_EXT_control_flow_attributes : require
-#extension GL_GOOGLE_include_directive : require
-
 #include "shaderio.h"
-#include "threedgs.glsl"
-#include "threedgs_particles_storage.glsl"
+#include "threedgs.h.slang"
+#include "threedgs_particles_storage.h.slang"
 
 // Parallel Processing : Each global invocation (thread) processes one splat.
 // Batch Processing : The workgroup can process up to RASTER_MESH_WORKGROUP_SIZE splats(outputQuadCount)
 
-layout(local_size_x = RASTER_MESH_WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 4 * RASTER_MESH_WORKGROUP_SIZE, max_primitives = 2 * RASTER_MESH_WORKGROUP_SIZE) out;
+static const int MAX_VERTICES   = 4 * RASTER_MESH_WORKGROUP_SIZE;
+static const int MAX_PRIMITIVES = 2 * RASTER_MESH_WORKGROUP_SIZE;
+
+// clang-format off
 
 // Per primitive output
-layout(location = 0) perprimitiveEXT out vec4 outSplatCol[];
+struct PrimitiveOutput
+{
+  [[vk::location(0)]] nointerpolation float4 outSplatCol : COLOR0;
+};
+
 // Per vertex output
+struct VertexOutput
+{
 #if !USE_BARYCENTRIC
-layout(location = 1) out vec2 outFragPos[];
+  [[vk::location(1)]] float2 outFragPos : TEXCOORD0;
 #endif
-
-// scalar prevents alignment issues
-layout(set = 0, binding = BINDING_FRAME_INFO_UBO, scalar) uniform _frameInfo
-{
-  FrameInfo frameInfo;
+  [[vk::location(2)]] float4 position : SV_Position;
 };
 
-layout(push_constant) uniform _PushConstantRaster
-{
-  PushConstant pcRaster;
-};
-
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]  ConstantBuffer<FrameInfo> frameInfo;
+[[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 // sorted indices
-layout(set = 0, binding = BINDING_INDICES_BUFFER) buffer _indices
-{
-  uint32_t indices[];
-};
+[[vk::binding(BINDING_INDICES_BUFFER, 0)]]  RWStructuredBuffer<uint32_t> indices;
 // to get the actual number of splats (after culling if any)
-layout(set = 0, binding = BINDING_INDIRECT_BUFFER, scalar) buffer _indirect
-{
-  IndirectParams indirect;
-};
+[[vk::binding(BINDING_INDIRECT_BUFFER, 0)]] RWStructuredBuffer<IndirectParams> indirectBuffer;
+
+// clang-format on
 
 // used when quad need to be discard
-void emitDegeneratedQuad(void)
+void emitDegeneratedQuad(uint localIndex, out OutputVertices<VertexOutput, MAX_VERTICES> verts)
 {
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 0].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 1].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 2].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + 3].gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+  [unroll]
+  for(uint i = 0; i < 4; ++i)
+  {
+    verts[localIndex * 4 + i].position = float4(0.0, 0.0, 2.0, 1.0);
+  }
 }
 
-void main()
+[numthreads(RASTER_MESH_WORKGROUP_SIZE, 1, 1)]
+[outputtopology("triangle")]
+[shader("mesh")]
+void main(
+  uint3 groupThreadID : SV_GroupThreadID,
+  uint3 groupID : SV_GroupID,
+  uint3 dispatchThreadID : SV_DispatchThreadID,
+  OutputIndices<uint3, MAX_PRIMITIVES> tris,
+  OutputVertices<VertexOutput, MAX_VERTICES> verts,
+  OutputPrimitives<PrimitiveOutput, MAX_PRIMITIVES> prims
+)
 {
-  const uint32_t baseIndex = gl_GlobalInvocationID.x;
+  const uint32_t baseIndex = dispatchThreadID.x;
+  const uint localIndex = groupThreadID.x;
+  
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
   // if culling is already performed we use the subset of splats
-  const uint splatCount = indirect.instanceCount;
+  const uint splatCount = indirectBuffer[0].instanceCount;
 #else
   // otherwise we use all the splats
   const uint splatCount = frameInfo.splatCount;
 #endif
-  const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - gl_WorkGroupID.x * RASTER_MESH_WORKGROUP_SIZE);
+  const uint outputQuadCount = min(RASTER_MESH_WORKGROUP_SIZE, splatCount - groupID.x * RASTER_MESH_WORKGROUP_SIZE);
 
-  if(gl_LocalInvocationIndex == 0)
+  if(localIndex == 0)
   {
     // set the number of vertices and primitives to put out just once for the complete workgroup
-    SetMeshOutputsEXT(outputQuadCount * 4, outputQuadCount * 2);
+    SetMeshOutputCounts(outputQuadCount * 4, outputQuadCount * 2);
   }
 
   if(baseIndex < splatCount)
@@ -122,26 +126,28 @@ void main()
     const uint splatIndex = indices[baseIndex];
 
     // emit primitives (triangles) as soon as possible
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 0] = uvec3(0, 2, 1) + gl_LocalInvocationIndex * 4;
-    gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex * 2 + 1] = uvec3(2, 0, 3) + gl_LocalInvocationIndex * 4;
+    tris[localIndex * 2 + 0] = uint3(0, 2, 1) + localIndex * 4;
+    tris[localIndex * 2 + 1] = uint3(2, 0, 3) + localIndex * 4;
 
-    const mat4 modelViewMatrix = frameInfo.viewMatrix * pcRaster.modelMatrix;
+    const float4x4 modelViewMatrix = mul(pcRaster.modelMatrix, frameInfo.viewMatrix);
 
     // Fetches are done as early as possible.
-    vec4       splatColor  = fetchColor(splatIndex);
-    const mat3 cov3Dm      = fetchCovariance(splatIndex);
-    const vec3 splatCenter = fetchCenter(splatIndex);
+    float4       splatColor  = fetchColor(splatIndex);
+    const float3x3 cov3Dm      = fetchCovariance(splatIndex);
+    const float3 splatCenter = fetchCenter(splatIndex);
 
-    const vec4 viewCenter = modelViewMatrix * vec4(splatCenter, 1.0);
-    const vec4 clipCenter  = frameInfo.projectionMatrix * viewCenter;
+    // Row-major: vector * matrix
+    const float4 viewCenter = mul(float4(splatCenter, 1.0), modelViewMatrix);
+    const float4 clipCenter  = mul(viewCenter, frameInfo.projectionMatrix);
 
 #if SHOW_SH_ONLY == 1
-    splatColor.rgb = vec3(0.5);
+    splatColor.rgb = float3(0.5, 0.5, 0.5);
 #endif
 
     // fetch radiance from SH coefs > degree 0
-    // const vec3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-    const vec3 worldViewDir = normalize(splatCenter - vec3(pcRaster.modelMatrixInverse * vec4(frameInfo.cameraPosition, 1.0)));
+    // const float3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+    // Row-major: vector * matrix (camera position transformed by inverse model matrix)
+    const float3 worldViewDir = normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
 
     splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
 
@@ -149,74 +155,76 @@ void main()
     if(splatColor.a < frameInfo.alphaCullThreshold)
     {
       // Early return to discard splat
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 
     // emit per primitive color as early as possible for perf reasons, 
     // only for original 3DGS, see later on for MipSplatting
 #if MS_ANTIALIASING == 0
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+    prims[localIndex * 2 + 0].outSplatCol = splatColor;
+    prims[localIndex * 2 + 1].outSplatCol = splatColor;
 #endif
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
     const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
     if(abs(clipCenter.x) > clip || abs(clipCenter.y) > clip
-       || clipCenter.z < (0.f - frameInfo.frustumDilation) * clipCenter.w || clipCenter.z > clipCenter.w)
+       || clipCenter.z < (0.0 - frameInfo.frustumDilation) * clipCenter.w || clipCenter.z > clipCenter.w)
     {
       // Early return to discard splat
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 #endif
 
     // the vertices of the quad
-    const vec2 positions[4] = {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
+    const float2 positions[4] = {float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0)};
 
 #if !USE_BARYCENTRIC
     // emit per vertex attributes as early as possible
-    [[unroll]] for(uint i = 0; i < 4; ++i)
+    [unroll]
+    for(uint i = 0; i < 4; ++i)
     {
       // Scale the fragment position data we send to the fragment shader
-      outFragPos[gl_LocalInvocationIndex * 4 + i] = positions[i].xy * sqrt8;
+      verts[localIndex * 4 + i].outFragPos = positions[i].xy * sqrt8;
     }
 #endif
 
     // Computes the projected covariance
-    const vec3 cov2Dv = threedgsCovarianceProjection(cov3Dm, viewCenter, frameInfo.focal, modelViewMatrix);
+    const float3 cov2Dv = threedgsCovarianceProjection(cov3Dm, viewCenter, frameInfo.focal, modelViewMatrix);
 
     // computes the basis vectors of the extent of the projected covariance
     // We use sqrt(8) standard deviations instead of 3 to eliminate more of the splat with a very low opacity.
-    vec2 basisVector1, basisVector2;
+    float2 basisVector1, basisVector2;
     if(!threedgsProjectedExtentBasis(cov2Dv, sqrt8, frameInfo.splatScale, splatColor.a, basisVector1, basisVector2))
     {
       // Early return to discard splat
-      emitDegeneratedQuad();
+      emitDegeneratedQuad(localIndex, verts);
       return;
     }
 
 #if MS_ANTIALIASING == 1
     // emit the color with alpha compensation
-    outSplatCol[gl_LocalInvocationIndex * 2 + 0] = splatColor;
-    outSplatCol[gl_LocalInvocationIndex * 2 + 1] = splatColor;
+    prims[localIndex * 2 + 0].outSplatCol = splatColor;
+    prims[localIndex * 2 + 1].outSplatCol = splatColor;
 #endif
 
     /////////////////////////////
     // emiting quad vertices
 
-    const vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
+    const float3 ndcCenter = clipCenter.xyz / clipCenter.w;
 
-    [[unroll]] for(uint i = 0; i < 4; ++i)
+    [unroll]
+    for(uint i = 0; i < 4; ++i)
     {
-      const vec2 fragPos = positions[i].xy;
+      const float2 fragPos = positions[i].xy;
 
-      const vec2 ndcOffset = vec2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
+      const float2 ndcOffset = float2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
                              * frameInfo.inverseFocalAdjustment;
 
-      const vec4 quadPos = vec4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
+      const float4 quadPos = float4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 
-      gl_MeshVerticesEXT[gl_LocalInvocationIndex * 4 + i].gl_Position = quadPos;
+      verts[localIndex * 4 + i].position = quadPos;
     }
   }
 }

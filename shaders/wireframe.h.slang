@@ -17,9 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
-#include "nvshaders/slang_types.h"
 #include "nvshaders/constants.h.slang"
 
 /* thickness;thicknessVar;smoothing;screenSpace;backFaceColor;enableDash;dashRepeats;dashLength;;
@@ -35,7 +32,7 @@
 struct WireframeSettings
 {
   float thickness;
-  vec2  thicknessVar;
+  float2  thicknessVar;
   float smoothing;
   bool  stipple;
   float stippleLength;
@@ -47,7 +44,7 @@ WireframeSettings wireframeDefaultSettings()
 {
   WireframeSettings settings;
   settings.thickness      = 1.0;
-  settings.thicknessVar   = vec2(1.0, 1.0);
+  settings.thicknessVar   = float2(1.0, 1.0);
   settings.smoothing      = 1.0;
   settings.stipple        = false;
   settings.stippleLength  = 0.5;
@@ -57,7 +54,7 @@ WireframeSettings wireframeDefaultSettings()
 }
 
 // Return the width [0..1] for which the line should be displayed or not
-float getLineWidth(in vec3 deltas, in float thickness, in float smoothing, in vec3 barys)
+float getLineWidth(in float3 deltas, in float thickness, in float smoothing, in float3 barys)
 {
   barys         = smoothstep(deltas * (thickness), deltas * (thickness + smoothing), barys);
   float minBary = min(barys.x, min(barys.y, barys.z));
@@ -65,7 +62,7 @@ float getLineWidth(in vec3 deltas, in float thickness, in float smoothing, in ve
 }
 
 // Position along the edge [0..1]
-float edgePosition(vec3 baryWeights)
+float edgePosition(float3 baryWeights)
 {
   return max(baryWeights.z, max(baryWeights.y, baryWeights.x));
 }
@@ -80,9 +77,9 @@ float stipple(in float stippleRepeats, in float stippleLength, in float edgePos)
 }
 
 // Vary the thickness along the edge
-float edgeThickness(in vec2 thicknessVar, in float edgePos)
+float edgeThickness(in float2 thicknessVar, in float edgePos)
 {
-  return mix(thicknessVar.x, thicknessVar.y, (1.0 - sin(edgePos * M_PI)));
+  return lerp(thicknessVar.x, thicknessVar.y, (1.0 - sin(edgePos * M_PI)));
 }
 
 // return a value in [0..1] that express the proportion of wireframe line contribution

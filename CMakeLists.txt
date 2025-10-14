@@ -66,7 +66,7 @@ set_property(TARGET spz PROPERTY FOLDER "ThirdParty")
 # Source files for this project
 #
 file(GLOB SOURCE_FILES src/*.*)
-file(GLOB SHADER_FILES shaders/*.glsl shaders/*.h)
+file(GLOB SHADER_FILES shaders/*.slang shaders/*.h)
 file(GLOB EXTERN_FILES 3rdparty/miniply/*.*)
 
 include_directories(
@@ -107,6 +107,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   nvpro2::nvapp
   nvpro2::nvgui
   nvpro2::nvvkglsl
+  nvpro2::nvslang
   nvpro2::nvshaders_host
   nvpro2::nvutils
   nvpro2::nvvk

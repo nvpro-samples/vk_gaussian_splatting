@@ -24,23 +24,23 @@ We implement VK3DGUT on the same infrastructure as the "Raster mesh shader 3DGS"
 
 ## Implementation Details
 
-We have added a new renderer pipeline named **"Raster mesh shader 3DGUT"** in the Renderer parameters. Although we did not create a vertex shader version, it would be straightforward to do so by starting from the VK3DGS version and making the necessary updates, similar to what we did for the mesh shader variant. The new pipeline is built using two new shader files: [threedgut_raster.mesh.glsl](../shaders/threedgut_raster.mesh.glsl) and [threedgut_raster.frag.glsl](../shaders/threedgut_raster.frag.glsl). The projections functions functions are found in [threedgut.glsl](../shaders/threedgut.glsl) and other glsl files prefixed by "threedgut".
+We have added a new renderer pipeline named **"Raster mesh shader 3DGUT"** in the Renderer parameters. Although we did not create a vertex shader version, it would be straightforward to do so by starting from the VK3DGS version and making the necessary updates, similar to what we did for the mesh shader variant. The new pipeline is built using two new shader files: [threedgut_raster.mesh.slang](../shaders/threedgut_raster.mesh.slang) and [threedgut_raster.frag.slang](../shaders/threedgut_raster.frag.slang). The projections functions functions are found in [threedgut.h.slang](../shaders/threedgut.h.slang) and other slang files prefixed by "threedgut".
 
 ### Mesh Shader
 
-The mesh shader [threedgut_raster.mesh.glsl](../shaders/threedgut_raster.mesh.glsl) is based on [threedgs_raster.mesh.glsl](../shaders/threedgs_raster.mesh.glsl). It replaces the EWA projection with the UT one. The projection is computed in two steps:
+The mesh shader [threedgut_raster.mesh.slang](../shaders/threedgut_raster.mesh.slang) is based on [threedgs_raster.mesh.slang](../shaders/threedgs_raster.mesh.slang). It replaces the EWA projection with the UT one. The projection is computed in two steps:
 
-1. We compute the covariance using the function `threedgutParticleProjection` (defined in the file [threedgut.glsl](../shaders/threedgut.glsl)).
+1. We compute the covariance using the function `threedgutParticleProjection` (defined in the file [threedgut.h.slang](../shaders/threedgut.h.slang)).
 
 2. We compute the rectangular 2D bounding box (the projection extent) to emit a screen-aligned quad with the proper extent:
 
-   a. If **"Projection Method > Conic"** is selected, use the function `threedgutProjectedExtentConicOpacity` (also defined in the file [threedgut.glsl](../shaders/threedgut.glsl)).
+   a. If **"Projection Method > Conic"** is selected, use the function `threedgutProjectedExtentConicOpacity` (also defined in the file [threedgut.h.slang](../shaders/threedgut.h.slang)).
 
-   b. If **"Projection Method > Eigen"** is selected, use the function `threedgsProjectedExtentBasis` (defined in the file [threedgs.glsl](../shaders/threedgs.glsl)).
+   b. If **"Projection Method > Eigen"** is selected, use the function `threedgsProjectedExtentBasis` (defined in the file [threedgs.h.slang](../shaders/threedgs.h.slang)).
 
 The **Conic** extent method is comparable to the approach used in the original 3DGS paper for finding the rectangular bounding box of the projection. This bounding box is then used in both 3DGS and 3DGUT to rasterize using CUDA. The version presented here is adapted from the CUDA code of 3DGUT.
 
-It differs from the **Eigen** approach also used in the VK3DGS implementation, where we use the eigenvalues and eigenvectors of the 2D covariance matrix to determine the 2D basis for the splat. This leads to non-axis-aligned rectangular 2D extents that, in some cases, better fit the particles and prevent rasterizing many fragments with negligible or zero contributions (see comments in [threedgs.glsl](../shaders/threedgs.glsl)). 
+It differs from the **Eigen** approach also used in the VK3DGS implementation, where we use the eigenvalues and eigenvectors of the 2D covariance matrix to determine the 2D basis for the splat. This leads to non-axis-aligned rectangular 2D extents that, in some cases, better fit the particles and prevent rasterizing many fragments with negligible or zero contributions (see comments in [threedgs.h.slang](../shaders/threedgs.h.slang)). 
 
 As can be seen in the [Performance Results](#performance-results) section, both approaches tend to be comparable in terms of performance. Although we did not conduct extensive tests, an image comparison of the Bicycle model's default view between **Conic** (considered the reference) and **Eigen** yields a PSNR of 52.83 dB, meaning that the Eigen approach is also highly accurate. The minor differences arise from slight threshold variations between the two implementations.
 
@@ -55,15 +55,15 @@ The opacity is then evaluated per fragment in the fragment shader using the prov
 
 ### Fragment Shader
 
-The fragment shader [threedgut_raster.frag.glsl](../shaders/threedgut_raster.frag.glsl) is quite different from the VK3DGS one (see [threedgs_raster.frag.glsl](../shaders/threedgs_raster.frag.glsl)), which only performs interpolations.
+The fragment shader [threedgut_raster.frag.slang](../shaders/threedgut_raster.frag.slang) is quite different from the VK3DGS one (see [threedgs_raster.frag.slang](../shaders/threedgs_raster.frag.slang)), which only performs interpolations.
 
 In this new fragment shader, we evaluate, for each fragment of each emitted particle screen quad, the intersection of the associated primary ray and the particle using the particle intersection from 3DGRT.
 
-We first compute the primary ray for the given fragment according to the camera model using `generatePinholeRay` or `generateFisheyeRay` (functions defined in [cameras.glsl](../shaders/cameras.glsl)).
+We first compute the primary ray for the given fragment according to the camera model using `generatePinholeRay` or `generateFisheyeRay` (functions defined in [cameras.h.slang](../shaders/cameras.h.slang)).
 
-We then apply ray perturbation if the **depth of field** effect is activated, using the `depthOfField` function (also defined in [cameras.glsl](../shaders/cameras.glsl)).
+We then apply ray perturbation if the **depth of field** effect is activated, using the `depthOfField` function (also defined in [cameras.h.slang](../shaders/cameras.h.slang)).
 
-We finally evaluate the ray/particle intersection using the function `particleProcessHitGut`, adapted from VK3DGRT (see [threedgrt.glsl](../shaders/threedgrt.glsl)). The core of this function is similar to the VK3DGRT version (see `particleProcessHit` in the same file). We perform two adaptations for VK3DGUT:
+We finally evaluate the ray/particle intersection using the function `particleProcessHitGut`, adapted from VK3DGRT (see [threedgrt.h.slang](../shaders/threedgrt.h.slang)). The core of this function is similar to the VK3DGRT version (see `particleProcessHit` in the same file). We perform two adaptations for VK3DGUT:
 
 * The new function only returns the evaluated opacity for the fragment instead of performing the blending with previous radiance values. The blending is handled by the alpha blending mechanism of the Vulkan rasterization pipeline (recall that splats are sorted back to front prior to rasterization).
 * Additionally, the VK3DGRT version of the function performs the particle data fetch, whereas in this new VK3DGUT version, we use the values provided by the mesh shader, passed as function parameters through triangle attributes. This approach ensures that fetches are done once per particle instead of once per fragment, which is critical for performance.
@@ -84,7 +84,7 @@ One primary ray is cast per pixel and per frame. Similar to the ray tracing appr
 
 In the VK3DGRT ray tracing pipeline, this temporal accumulation is directly performed in the ray generation shader, which reads the color of the pixel from the previous frame in the framebuffer and mixes this value with the current frame pixel color before writing it back to the color buffer.
 
-With rasterization, we cannot do this in the fragment shader since we already use alpha blending to blend the fragments of the current frame and we do not want to perform fetches from the framebuffer in the fragment shader for performance reasons. Therefore, we **use two color buffers**: one to render the current frame and one to store the accumulated frames, with the latter being displayed to the viewport. At each new frame with index > 0, the accumulation is performed in a simple new post-processing compute shader [post.comp.glsl](../shaders/post.comp.glsl) using the current frame index as for ray tracing. Frame numbering restarts on scene or camera changes and stops when the number of samples is reached (**"Temporal samples count"** in the **"Ray tracing and 3DGUT specifics"** tab of the renderer).
+With rasterization, we cannot do this in the fragment shader since we already use alpha blending to blend the fragments of the current frame and we do not want to perform fetches from the framebuffer in the fragment shader for performance reasons. Therefore, we **use two color buffers**: one to render the current frame and one to store the accumulated frames, with the latter being displayed to the viewport. At each new frame with index > 0, the accumulation is performed in a simple new post-processing compute shader [post.comp.slang](../shaders/post.comp.slang) using the current frame index as for ray tracing. Frame numbering restarts on scene or camera changes and stops when the number of samples is reached (**"Temporal samples count"** in the **"Ray tracing and 3DGUT specifics"** tab of the renderer).
 
 ### Current Limitations
 

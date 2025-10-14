@@ -102,10 +102,10 @@ bool MeshSetVk::loadModel(const std::filesystem::path& filename)
   // Creating information for device access
   shaderio::ObjDesc desc;
   //desc.txtOffset            = txtOffset;
-  desc.vertexAddress        = model.vertexBuffer.address;
-  desc.indexAddress         = model.indexBuffer.address;
-  desc.materialAddress      = model.materialsBuffer.address;
-  desc.materialIndexAddress = model.matIndexBuffer.address;
+  desc.vertexAddress        = (shaderio::ObjVertex*)model.vertexBuffer.address;
+  desc.indexAddress         = (uint32_t*)model.indexBuffer.address;
+  desc.materialAddress      = (shaderio::ObjMaterial*)model.materialsBuffer.address;
+  desc.materialIndexAddress = (uint32_t*)model.matIndexBuffer.address;
 
   // Keeping the obj host model and device description
   meshes.emplace_back(model);

@@ -17,39 +17,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-#extension GL_EXT_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_EXT_scalar_block_layout : enable
-#extension GL_GOOGLE_include_directive : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_buffer_reference2 : require
-
 #include "shaderio.h"
-#include "threedgs_particles_storage.glsl"
-#include "threedgrt.glsl"
+#include "threedgs_particles_storage.h.slang"
+#include "threedgrt.h.slang"
 
-layout(push_constant) uniform _PushConstantRay
-{
-  PushConstantRay pcRay;
-};
+// clang-format off
+[[vk::push_constant]] ConstantBuffer<PushConstantRay> pcRay;
+// clang-format on
 
-bool particleDensityHitCustom(in vec3   rayOrigin,
-                              in vec3   rayDirection,
+bool particleDensityHitCustom(in float3   rayOrigin,
+                              in float3   rayDirection,
                               in int    particleId,
                               in float  minHitDistance,
                               in float  maxHitDistance,
                               in float  maxParticleSquaredDistance,
                               out float hitDistance)
 {
-  vec3 particlePosition;
-  vec3 particleScale;
-  mat3 particleInvRotation;
+  float3 particlePosition;
+  float3 particleScale;
+  float3x3 particleInvRotation;
 
   fetchParticlePSR(particleId, particlePosition, particleScale, particleInvRotation);
 
-  vec3 canonicalRayOrigin;
-  vec3 canonicalRayDirection;
+  float3 canonicalRayOrigin;
+  float3 canonicalRayDirection;
   particleCannonicalRay(rayOrigin, rayDirection, particlePosition, particleScale, particleInvRotation,
                         canonicalRayOrigin, canonicalRayDirection);
 
@@ -59,8 +50,8 @@ bool particleDensityHitCustom(in vec3   rayOrigin,
          && (particleRayMinSquaredDistance(canonicalRayOrigin, canonicalRayDirection) < maxParticleSquaredDistance);
 }
 
-bool particleDensityHitInstance(in vec3   canonicalRayOrigin,
-                                in vec3   canonicalUnormalizedRayDirection,
+bool particleDensityHitInstance(in float3   canonicalRayOrigin,
+                                in float3   canonicalUnormalizedRayDirection,
                                 in float  minHitDistance,
                                 in float  maxHitDistance,
                                 in float  maxParticleSquaredDistance,
@@ -73,23 +64,32 @@ bool particleDensityHitInstance(in vec3   canonicalRayOrigin,
          && (particleRayMinSquaredDistance(canonicalRayOrigin, normalize(canonicalUnormalizedRayDirection)) < maxParticleSquaredDistance);
 }
 
+[shader("intersection")]
 void main()
 {
   float hitT;
 #if RTX_USE_INSTANCES
   // allways testing the same unit particle, no data fetch inside Hit test function
-  if(particleDensityHitInstance(gl_ObjectRayOriginEXT, gl_ObjectRayDirectionEXT, gl_RayTminEXT, gl_RayTmaxEXT, 9.0F, hitT))
-    reportIntersectionEXT(hitT, 0);
+  if (particleDensityHitInstance(ObjectRayOrigin(), ObjectRayDirection(), RayTMin(), RayTCurrent(), 9.0F, hitT)) {
+      BuiltInTriangleIntersectionAttributes attr;
+      attr.barycentrics = float2(0.0, 0.0); // TODO: providing barycentrics will help rendering wireframe
+      ReportHit(hitT, 0, attr);
+  }
 #else
-  const int particleId = gl_PrimitiveID;
+  const int particleId = PrimitiveIndex();
 
   // The two following transformations are to compute processHit with transformed splat set model
-  const vec3 modelRayOrigin = vec3(pcRay.modelMatrixInverse * vec4(gl_WorldRayOriginEXT, 1.0));
+  // Row-major: vector * matrix
+  const float3 modelRayOrigin = mul(float4(WorldRayOrigin(), 1.0), pcRay.modelMatrixInverse).xyz;
   // Since the ray direction should not be affected by translation,
   // uses the inverse of the rotation - scale part of the model matrix.
-  const vec3 modelRayDirection = normalize(mat3(pcRay.modelMatrixRotScaleInverse) * gl_WorldRayDirectionEXT);
+  // Row-major: vector * matrix (extract 3x3 and multiply)
+  const float3 modelRayDirection = normalize(mul(WorldRayDirection(), float3x3(pcRay.modelMatrixRotScaleInverse)));
 
-  if(particleDensityHitCustom(modelRayOrigin, modelRayDirection, particleId, gl_RayTminEXT, gl_RayTmaxEXT, 9.0F, hitT))
-    reportIntersectionEXT(hitT, 0);
+  if (particleDensityHitCustom(modelRayOrigin, modelRayDirection, particleId, RayTMin(), RayTCurrent(), 9.0F, hitT)) {
+      BuiltInTriangleIntersectionAttributes attr;
+      attr.barycentrics = float2(0.0, 0.0); // TODO: providing barycentrics will help rendering wireframe
+      ReportHit(hitT, 0, attr);
+  }
 #endif
 }

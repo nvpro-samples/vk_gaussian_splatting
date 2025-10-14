@@ -17,28 +17,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#extension GL_EXT_shader_explicit_arithmetic_types : require
-
 #ifndef _QUATERNIONS_H_
 #define _QUATERNIONS_H_
 
 // internal representation of the quaternion is xyz the vector and w the scalar
 // so default constructor quat() takes w as last parameter
-#define quat vec4
+#define quat float4
 
 // create a quaternion, w scalar is first parameter
 quat scalarsToQuat(float w, float x, float y, float z) {
-  return vec4(x, y, z, w);
+  return float4(x, y, z, w);
 }
 
-// convert a quaternion stored on a vec4 with scalar first storage (w on x)
-quat vec4toQuat(vec4 scalarFirst)
+// convert a quaternion stored on a float4 with scalar first storage (w on x)
+quat vec4toQuat(float4 scalarFirst)
 {
-  return vec4(scalarFirst.yzw, scalarFirst.x);
+  return float4(scalarFirst.yzw, scalarFirst.x);
 }
 
 // convert a rotation quaternion to a 3x3 rotation matrix
-mat3 quatToMat3(quat q)
+float3x3 quatToMat3(quat q)
 {
   const float x = q.x, y = q.y, z = q.z, w = q.w;
 
@@ -52,15 +50,15 @@ mat3 quatToMat3(quat q)
   const float wy = w * y;
   const float wz = w * z;
 
-  return mat3(1.0 - 2.0 * (yy + zz), 2.0 * (xy + wz), 2.0 * (xz - wy), 
-              2.0 * (xy - wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + wx), 
-              2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (xx + yy));
+  return float3x3(1.0 - 2.0 * (yy + zz), 2.0 * (xy + wz), 2.0 * (xz - wy), 
+                  2.0 * (xy - wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz + wx), 
+                  2.0 * (xz + wy), 2.0 * (yz - wx), 1.0 - 2.0 * (xx + yy));
 }
 
 // convert a rotation quaternion to a 3x3 rotation matrix and 
 // transpose the result which provides its inverse matrix (since we 
 // deal with pure rotation matrix)
-mat3 quatToMat3Transpose(quat q)
+float3x3 quatToMat3Transpose(quat q)
 {
   const float x = q.x, y = q.y, z = q.z, w = q.w;
 
@@ -74,13 +72,13 @@ mat3 quatToMat3Transpose(quat q)
   const float wy = w * y;
   const float wz = w * z;
 
-  return mat3(1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 
-    2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx), 
-    2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy));
+  return float3x3(1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 
+                  2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx), 
+                  2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy));
 }
 
 // converts a pure 3x3 rotation matrix into to a quaternion
-quat mat3toQuat(mat3 m)
+quat mat3toQuat(float3x3 m)
 {
   float trace = m[0][0] + m[1][1] + m[2][2];
   quat q;
@@ -126,11 +124,11 @@ quat mat3toQuat(mat3 m)
 }
 
 // rotates the position using the rotation quaternion q 
-vec3 rotateByQuaternion(vec3 position, vec4 q)
+float3 rotateByQuaternion(float3 position, float4 q)
 {
   // Apply rotation using the formula:
   // p' = p + 2 * q_w * (q_xyz x p) + 2 * q_xyz x (q_xyz x p)
-  vec3 t = 2.0 * cross(q.xyz, position);
+  float3 t = 2.0 * cross(q.xyz, position);
   return position + q.w * t + cross(q.xyz, t);
 }
 

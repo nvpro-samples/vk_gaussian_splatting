@@ -17,21 +17,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#version 460
-#extension GL_EXT_ray_tracing : require
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-
 #include "shaderio.h"
-#include "threedgrt_payload.glsl"
+#include "threedgrt_payload.h.slang"
 
-// layout(location = 0) rayPayloadInEXT hitPayload prd;
+// clang-format off
+[[vk::push_constant]] ConstantBuffer<PushConstantRay> pcRay;
+// clang-format on
 
-layout(push_constant) uniform _PushConstantRay
-{
-  PushConstantRay pcRay;
-};
-
+[shader("miss")]
 void main()
 {
   //prd.hitStatus = 0;

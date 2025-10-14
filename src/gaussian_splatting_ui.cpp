@@ -2181,7 +2181,6 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
       LOAD1(prmRtx.kernelDegree, item, "kernelDegree");
       LOAD1(prmRtx.kernelMinResponse, item, "kernelMinResponse");
       LOAD1(prmRtx.payloadArraySize, item, "payloadArraySize");
-      LOAD1(prmRtx.usePayloadBuffer, item, "usePayloadBuffer");
     }
     // Splat global options
     if(data.contains("splatsGlobals"))
@@ -2368,7 +2367,6 @@ bool GaussianSplattingUI::saveProject(std::string path)
       item["kernelDegree"]           = prmRtx.kernelDegree;
       item["kernelMinResponse"]      = prmRtx.kernelMinResponse;
       item["payloadArraySize"]       = prmRtx.payloadArraySize;
-      item["usePayloadBuffer"]       = prmRtx.usePayloadBuffer;
 
       data["renderer"] = item;
     }
