@@ -5,12 +5,26 @@ Vulkan implementation of radix sort.
 Reduce-then-scan GPU radix sort algorithm is implemented (Onesweep is abandoned.)
 
 
+## Recent Changes
+- `v0.1.0`
+  - Use `VK_KHR_push_descriptor` instead of `VK_KHR_buffer_device_address`
+    - Not to use vulkan-specific language in shader codes.
+    - Buffers no longer need to have `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT` when created.
+    - Buffers offsets must be multiple of `minStorageBufferOffsetAlignment` (`16` in most cases).
+    - Users of previous version need to update codes for device creation accordingly.
+  - Migrate from `GLSL` to `Slang` shader language
+    - For extensibility to other graphics APIs.
+- `v0.0.0`
+  - First publish.
+
+
 ## Requirements
-- `VulkanSDK>=1.2`
+- `VulkanSDK>=1.3.296.0`
   - Download from https://vulkan.lunarg.com/ and follow install instruction.
-  - Requires several features available in `1.2`.
-  - Must support `VK_KHR_buffer_device_address`:
-    - Run `vulkaninfo` and check if `VK_KHR_buffer_device_address` device extension is available.
+  - `slangc` executable is included in `VulkanSDK>=1.3.296.0`.
+  - Requires several features available in `1.1`.
+  - Must support `VK_KHR_push_descriptor`:
+    - Run `vulkaninfo` and check if `VK_KHR_push_descriptor` device extension is available.
 - `cmake>=3.15`
 
 
@@ -35,10 +49,11 @@ $ ./build/bench 10000000 vulkan
 
 
 ### Benchmark Result
-- Not precisely benchmarked, but the speed is competitive compare to CUB radix sort.
+- Not precisely benchmarked, but the speed is competitive compared to CUB **Reduce-then-Scan** radix sort.
+  - I could infer CUB runs from `DeviceRadixSortUpsweepKernel`, `RadixSortScanBinsKernel`, `DeviceRadixSortDownsweepKernel`
+  - There seems a way to enable CUB `Onesweep` in the [CUB benchmark code](https://github.com/NVIDIA/cccl/blob/main/cub/benchmarks/bench/radix_sort/keys.cu), I will study it some time!
 - 32-bit key-only: my implementation is 10% slower when sorting 33M (2^25) elements.
 - 32-bit Key-value: my implementation is 15-25% faster when sorting 33M (2^25) key-value pairs.
-- Note that CUB radix sort is not in-place operation. It may require an additional copy operation, or double storage.
 - vulkan
   ```bash
   > .\build\Release\bench.exe 33554432 vulkan
@@ -60,7 +75,7 @@ $ ./build/bench 10000000 vulkan
   [9] total time: 3.41606ms (9.82254 GItems/s)
   ...
   ```
-- CUDA Version 12.6 CUB
+- CUDA Version 12.6 CUB Reduce-then-Scan
   ```bash
   > .\build\Release\bench.exe 33554432 cuda
   vk_radix_sort benchmark
@@ -94,11 +109,9 @@ $ ./build/bench 10000000 vulkan
     ```
 
 ## Usage
-1. When creating `VkDevice`, enable `VkPhysicalDeviceBufferAddressFeatures`.
+1. When creating `VkDevice`, add `VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME` (=`"VK_KHR_push_descriptor"`).
 
-1. When creating `VmaAllocator`, enable `VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT` flag.
-
-1. Create `VkBuffer` for keys and values, with `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` and `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT`.
+1. Create `VkBuffer` for keys and values, with `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT`.
 
 1. Create `VrdxSorter`
 
@@ -132,6 +145,8 @@ $ ./build/bench 10000000 vulkan
 
 1. Record sort commands.
 
+    **Requirements**: buffer offsets must be multiple of `minStorageBufferOffsetAlignment` (usually `16`.)
+
     This command binds pipeline, pipeline layout, and push constants internally.
 
     So, users must not expect previously bound targets retain after the sort command.
@@ -149,7 +164,7 @@ $ ./build/bench 10000000 vulkan
     The first synchronization scope **after** sort command must include `COMPUTE_SHADER` stage and `SHADER_WRITE` access.
 
     ```c++
-    VkQueryPool queryPool;  // VK_NULL_HANDLE, or a valid timestamp query pool with size at least 8.
+    VkQueryPool queryPool;  // VK_NULL_HANDLE, or a valid timestamp query pool with size at least 15.
 
     // sort keys
     vrdxCmdSort(commandBuffer, sorter, elementCount,
@@ -179,7 +194,8 @@ $ ./build/bench 10000000 vulkan
 ## TODO
 - [x] Use `VkPhysicalDeviceLimits` to get compute shader-related limits, such as `maxComputeWorkGroupSize` or `maxComputeSharedMemorySize`.
 - [x] Increase allowed `maxElementCount` by allocating buffers properly.
-- [x] Compare with CUB radix sort
+- [x] Compare with CUB Reduce-then-Scan radix sort
+- [ ] Compare with CUB Onesweep radix sort
 - [ ] Compare with VkRadixSort
 - [ ] Compare with Fuchsia radix sort
 - [ ] Find best `WORKGROUP_SIZE` and `PARTITION_DIVISION` for different devices.

@@ -1,3 +1,3 @@
-vrdx     3faac413f643ca799f42950af6f7fb9c12913003 - modified CMakeLists.txt
+vrdx     c4ce1c3688bad92d23c15afd729842054af19ad0 - modified CMakeLists.txt
 miniply  1a235c70390fadf789695c9ccbf285ae712416b3
 spz      8767f22a39c32f8190b2e0f9ba256516c74e7b73 - modified CMakeLists.txt

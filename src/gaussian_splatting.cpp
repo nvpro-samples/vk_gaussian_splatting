@@ -1360,8 +1360,8 @@ void GaussianSplatting::initRendererBuffers()
     vrdxCreateSorter(&gpuSorterInfo, &m_gpuSorter);
 
     {  // Create some buffer for GPU and/or CPU sorting
-
-      const VkDeviceSize bufferSize = splatCount * sizeof(uint32_t);
+      // shall use minStorageBufferOffsetAlignment 
+      const VkDeviceSize bufferSize = ((splatCount * sizeof(uint32_t) + 15) / 16) * 16;
 
       m_alloc.createBuffer(m_splatIndicesHost, bufferSize, VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
                            VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);

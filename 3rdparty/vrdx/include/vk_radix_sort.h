@@ -1,7 +1,8 @@
 #ifndef VK_RADIX_SORT_H
 #define VK_RADIX_SORT_H
 
-#include <volk.h>
+
+#include "volk.h"
 #include <vulkan/vulkan.h>
 
 struct VrdxSorter_T;
@@ -17,8 +18,7 @@ struct VrdxSorterCreateInfo {
   VkPipelineCache pipelineCache;
 };
 
-void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
-                      VrdxSorter* pSorter);
+void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo, VrdxSorter* pSorter);
 
 void vrdxDestroySorter(VrdxSorter sorter);
 
@@ -27,13 +27,11 @@ struct VrdxSorterStorageRequirements {
   VkBufferUsageFlags usage;
 };
 
-void vrdxGetSorterStorageRequirements(
-    VrdxSorter sorter, uint32_t maxElementCount,
-    VrdxSorterStorageRequirements* requirements);
+void vrdxGetSorterStorageRequirements(VrdxSorter sorter, uint32_t maxElementCount,
+                                      VrdxSorterStorageRequirements* requirements);
 
-void vrdxGetSorterKeyValueStorageRequirements(
-    VrdxSorter sorter, uint32_t maxElementCount,
-    VrdxSorterStorageRequirements* requirements);
+void vrdxGetSorterKeyValueStorageRequirements(VrdxSorter sorter, uint32_t maxElementCount,
+                                              VrdxSorterStorageRequirements* requirements);
 
 /**
  * if queryPool is not VK_NULL_HANDLE, it writes timestamps to N entries
@@ -47,25 +45,19 @@ void vrdxGetSorterKeyValueStorageRequirements(
  * query + 2 + (3 * i) + 2: downsweep (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
  * query + 14: sort end timestamp (VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
  */
-void vrdxCmdSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                 uint32_t elementCount, VkBuffer keysBuffer,
-                 VkDeviceSize keysOffset, VkBuffer storageBuffer,
-                 VkDeviceSize storageOffset, VkQueryPool queryPool,
-                 uint32_t query);
+void vrdxCmdSort(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+                 VkBuffer keysBuffer, VkDeviceSize keysOffset, VkBuffer storageBuffer,
+                 VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query);
 
-void vrdxCmdSortIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                         uint32_t maxElementCount, VkBuffer indirectBuffer,
-                         VkDeviceSize indirectOffset, VkBuffer keysBuffer,
+void vrdxCmdSortIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t maxElementCount,
+                         VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer keysBuffer,
                          VkDeviceSize keysOffset, VkBuffer storageBuffer,
-                         VkDeviceSize storageOffset, VkQueryPool queryPool,
-                         uint32_t query);
+                         VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query);
 
-void vrdxCmdSortKeyValue(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                         uint32_t elementCount, VkBuffer keysBuffer,
-                         VkDeviceSize keysOffset, VkBuffer valuesBuffer,
+void vrdxCmdSortKeyValue(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+                         VkBuffer keysBuffer, VkDeviceSize keysOffset, VkBuffer valuesBuffer,
                          VkDeviceSize valuesOffset, VkBuffer storageBuffer,
-                         VkDeviceSize storageOffset, VkQueryPool queryPool,
-                         uint32_t query);
+                         VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query);
 
 /**
  * indirectBuffer contains elementCount.
@@ -78,11 +70,11 @@ void vrdxCmdSortKeyValue(VkCommandBuffer commandBuffer, VrdxSorter sorter,
  *
  * indirectBuffer requires TRANSFER_SRC buffer usage flag.
  */
-void vrdxCmdSortKeyValueIndirect(
-    VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t maxElementCount,
-    VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer keysBuffer,
-    VkDeviceSize keysOffset, VkBuffer valuesBuffer, VkDeviceSize valuesOffset,
-    VkBuffer storageBuffer, VkDeviceSize storageOffset, VkQueryPool queryPool,
-    uint32_t query);
+void vrdxCmdSortKeyValueIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter,
+                                 uint32_t maxElementCount, VkBuffer indirectBuffer,
+                                 VkDeviceSize indirectOffset, VkBuffer keysBuffer,
+                                 VkDeviceSize keysOffset, VkBuffer valuesBuffer,
+                                 VkDeviceSize valuesOffset, VkBuffer storageBuffer,
+                                 VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query);
 
 #endif  // VK_RADIX_SORT_H

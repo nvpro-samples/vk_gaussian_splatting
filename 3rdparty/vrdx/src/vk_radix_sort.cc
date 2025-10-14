@@ -2,10 +2,10 @@
 
 #include <utility>
 
-#include "generated/upsweep_comp.h"
-#include "generated/spine_comp.h"
-#include "generated/downsweep_comp.h"
-#include "generated/downsweep_key_value_comp.h"
+#include "generated/upsweep_slang.h"
+#include "generated/spine_slang.h"
+#include "generated/downsweep_slang.h"
+#include "generated/downsweep_key_value_slang.h"
 
 namespace {
 
@@ -15,68 +15,65 @@ constexpr int PARTITION_DIVISION = 8;
 constexpr int PARTITION_SIZE = PARTITION_DIVISION * WORKGROUP_SIZE;
 
 uint32_t RoundUp(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+uint32_t Align(uint32_t a, uint32_t b) { return (a + b - 1) / b * b; }
 
 VkDeviceSize HistogramSize(uint32_t elementCount) {
-  return (1 + 4 * RADIX + RoundUp(elementCount, PARTITION_SIZE) * RADIX) *
-         sizeof(uint32_t);
+  return Align((4 + 4 * RADIX + RoundUp(elementCount, PARTITION_SIZE) * RADIX) * sizeof(uint32_t),
+               16);
 }
 
-VkDeviceSize InoutSize(uint32_t elementCount) {
-  return elementCount * sizeof(uint32_t);
-}
+VkDeviceSize InoutSize(uint32_t elementCount) { return Align(elementCount * sizeof(uint32_t), 16); }
 
-void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-             uint32_t elementCount, VkBuffer indirectBuffer,
-             VkDeviceSize indirectOffset, VkBuffer buffer, VkDeviceSize offset,
-             VkBuffer valueBuffer, VkDeviceSize valueOffset,
-             VkBuffer storageBuffer, VkDeviceSize storageOffset,
-             VkQueryPool queryPool, uint32_t query);
+void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+             VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer buffer,
+             VkDeviceSize offset, VkBuffer valueBuffer, VkDeviceSize valueOffset,
+             VkBuffer storageBuffer, VkDeviceSize storageOffset, VkQueryPool queryPool,
+             uint32_t query);
 
 }  // namespace
 
 struct VrdxSorter_T {
   VkDevice device = VK_NULL_HANDLE;
+  PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 
+  VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
   VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
   VkPipeline upsweepPipeline = VK_NULL_HANDLE;
   VkPipeline spinePipeline = VK_NULL_HANDLE;
   VkPipeline downsweepPipeline = VK_NULL_HANDLE;
   VkPipeline downsweepKeyValuePipeline = VK_NULL_HANDLE;
-
-  uint32_t maxWorkgroupSize = 0;
 };
 
 struct PushConstants {
   uint32_t pass;
-  VkDeviceAddress elementCountReference;
-  VkDeviceAddress globalHistogramReference;
-  VkDeviceAddress partitionHistogramReference;
-  VkDeviceAddress keysInReference;
-  VkDeviceAddress keysOutReference;
-  VkDeviceAddress valuesInReference;
-  VkDeviceAddress valuesOutReference;
 };
 
-void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
-                      VrdxSorter* pSorter) {
+void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo, VrdxSorter* pSorter) {
   VkDevice device = pCreateInfo->device;
   VkPipelineCache pipelineCache = pCreateInfo->pipelineCache;
 
-  // shader specialization constants and defaults
-  VkPhysicalDeviceVulkan11Properties physicalDeviceVulkan11Properties = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
-  VkPhysicalDeviceProperties2 physicalDeviceProperties = {
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-  physicalDeviceProperties.pNext = &physicalDeviceVulkan11Properties;
+  // device extensions
+  PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR =
+      (PFN_vkCmdPushDescriptorSetKHR)vkGetDeviceProcAddr(device, "vkCmdPushDescriptorSetKHR");
 
-  vkGetPhysicalDeviceProperties2(pCreateInfo->physicalDevice,
-                                 &physicalDeviceProperties);
+  // descriptor layout
+  constexpr int bindingCount = 7;
+  VkDescriptorSetLayoutBinding bindings[bindingCount];
+  for (int i = 0; i < bindingCount; ++i) {
+    bindings[i].binding = i;
+    bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[i].descriptorCount = 1;
+    bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+  }
 
-  // TODO: max workgroup size
-  uint32_t maxWorkgroupSize =
-      physicalDeviceProperties.properties.limits.maxComputeWorkGroupSize[0];
-  uint32_t subgroupSize = physicalDeviceVulkan11Properties.subgroupSize;
+  VkDescriptorSetLayout descriptorSetLayout;
+  VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+  descriptorSetLayoutInfo.bindingCount = bindingCount;
+  descriptorSetLayoutInfo.pBindings = bindings;
+  vkCreateDescriptorSetLayout(device, &descriptorSetLayoutInfo, NULL, &descriptorSetLayout);
 
   // pipeline layout
   VkPushConstantRange pushConstants = {};
@@ -85,8 +82,9 @@ void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
   pushConstants.size = sizeof(PushConstants);
 
   VkPipelineLayout pipelineLayout;
-  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
-      VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
   pipelineLayoutInfo.pushConstantRangeCount = 1;
   pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
   vkCreatePipelineLayout(device, &pipelineLayoutInfo, NULL, &pipelineLayout);
@@ -95,23 +93,19 @@ void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
   VkPipeline upsweepPipeline;
   {
     VkShaderModule shaderModule;
-    VkShaderModuleCreateInfo shaderModuleInfo = {
-        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shaderModuleInfo.codeSize = sizeof(upsweep_comp);
-    shaderModuleInfo.pCode = upsweep_comp;
+    VkShaderModuleCreateInfo shaderModuleInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shaderModuleInfo.codeSize = sizeof(upsweep_slang);
+    shaderModuleInfo.pCode = upsweep_slang;
     vkCreateShaderModule(device, &shaderModuleInfo, NULL, &shaderModule);
 
-    VkComputePipelineCreateInfo pipelineInfo = {
-        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    pipelineInfo.stage.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    VkComputePipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     pipelineInfo.stage.module = shaderModule;
     pipelineInfo.stage.pName = "main";
     pipelineInfo.layout = pipelineLayout;
 
-    vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, NULL,
-                             &upsweepPipeline);
+    vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, NULL, &upsweepPipeline);
 
     vkDestroyShaderModule(device, shaderModule, NULL);
   }
@@ -119,23 +113,19 @@ void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
   VkPipeline spinePipeline;
   {
     VkShaderModule shaderModule;
-    VkShaderModuleCreateInfo shaderModuleInfo = {
-        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shaderModuleInfo.codeSize = sizeof(spine_comp);
-    shaderModuleInfo.pCode = spine_comp;
+    VkShaderModuleCreateInfo shaderModuleInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shaderModuleInfo.codeSize = sizeof(spine_slang);
+    shaderModuleInfo.pCode = spine_slang;
     vkCreateShaderModule(device, &shaderModuleInfo, NULL, &shaderModule);
 
-    VkComputePipelineCreateInfo pipelineInfo = {
-        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    pipelineInfo.stage.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    VkComputePipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     pipelineInfo.stage.module = shaderModule;
     pipelineInfo.stage.pName = "main";
     pipelineInfo.layout = pipelineLayout;
 
-    vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, NULL,
-                             &spinePipeline);
+    vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, NULL, &spinePipeline);
 
     vkDestroyShaderModule(device, shaderModule, NULL);
   }
@@ -144,53 +134,49 @@ void vrdxCreateSorter(const VrdxSorterCreateInfo* pCreateInfo,
   VkPipeline downsweepKeyValuePipeline;
   {
     VkShaderModule shaderModules[2];
-    VkShaderModuleCreateInfo shaderModuleInfo = {
-        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shaderModuleInfo.codeSize = sizeof(downsweep_comp);
-    shaderModuleInfo.pCode = downsweep_comp;
+    VkShaderModuleCreateInfo shaderModuleInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shaderModuleInfo.codeSize = sizeof(downsweep_slang);
+    shaderModuleInfo.pCode = downsweep_slang;
     vkCreateShaderModule(device, &shaderModuleInfo, NULL, &shaderModules[0]);
 
-    shaderModuleInfo.codeSize = sizeof(downsweep_key_value_comp);
-    shaderModuleInfo.pCode = downsweep_key_value_comp;
+    shaderModuleInfo.codeSize = sizeof(downsweep_key_value_slang);
+    shaderModuleInfo.pCode = downsweep_key_value_slang;
     vkCreateShaderModule(device, &shaderModuleInfo, NULL, &shaderModules[1]);
 
     VkComputePipelineCreateInfo pipelineInfos[2];
     pipelineInfos[0] = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    pipelineInfos[0].stage.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfos[0].stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipelineInfos[0].stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     pipelineInfos[0].stage.module = shaderModules[0];
     pipelineInfos[0].stage.pName = "main";
     pipelineInfos[0].layout = pipelineLayout;
 
     pipelineInfos[1] = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    pipelineInfos[1].stage.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfos[1].stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipelineInfos[1].stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     pipelineInfos[1].stage.module = shaderModules[1];
     pipelineInfos[1].stage.pName = "main";
     pipelineInfos[1].layout = pipelineLayout;
 
     VkPipeline pipelines[2];
-    vkCreateComputePipelines(device, pipelineCache, 2, pipelineInfos, NULL,
-                             pipelines);
+    vkCreateComputePipelines(device, pipelineCache, 2, pipelineInfos, NULL, pipelines);
     downsweepPipeline = pipelines[0];
     downsweepKeyValuePipeline = pipelines[1];
 
-    for (auto shaderModule : shaderModules)
-      vkDestroyShaderModule(device, shaderModule, NULL);
+    for (auto shaderModule : shaderModules) vkDestroyShaderModule(device, shaderModule, NULL);
   }
 
   *pSorter = new VrdxSorter_T();
   (*pSorter)->device = device;
+  (*pSorter)->vkCmdPushDescriptorSetKHR = vkCmdPushDescriptorSetKHR;
+
+  (*pSorter)->descriptorSetLayout = descriptorSetLayout;
   (*pSorter)->pipelineLayout = pipelineLayout;
 
   (*pSorter)->upsweepPipeline = upsweepPipeline;
   (*pSorter)->spinePipeline = spinePipeline;
   (*pSorter)->downsweepPipeline = downsweepPipeline;
   (*pSorter)->downsweepKeyValuePipeline = downsweepKeyValuePipeline;
-
-  (*pSorter)->maxWorkgroupSize = maxWorkgroupSize;
 }
 
 void vrdxDestroySorter(VrdxSorter sorter) {
@@ -200,15 +186,15 @@ void vrdxDestroySorter(VrdxSorter sorter) {
   vkDestroyPipeline(sorter->device, sorter->downsweepKeyValuePipeline, NULL);
 
   vkDestroyPipelineLayout(sorter->device, sorter->pipelineLayout, NULL);
+  vkDestroyDescriptorSetLayout(sorter->device, sorter->descriptorSetLayout, NULL);
   delete sorter;
 }
 
-void vrdxGetSorterStorageRequirements(
-    VrdxSorter sorter, uint32_t maxElementCount,
-    VrdxSorterStorageRequirements* requirements) {
+void vrdxGetSorterStorageRequirements(VrdxSorter sorter, uint32_t maxElementCount,
+                                      VrdxSorterStorageRequirements* requirements) {
   VkDevice device = sorter->device;
 
-  VkDeviceSize elementCountSize = sizeof(uint32_t);
+  VkDeviceSize elementCountSize = Align(sizeof(uint32_t), 16);
   VkDeviceSize histogramSize = HistogramSize(maxElementCount);
   VkDeviceSize inoutSize = InoutSize(maxElementCount);
 
@@ -217,17 +203,14 @@ void vrdxGetSorterStorageRequirements(
   VkDeviceSize storageSize = inoutOffset + inoutSize;
 
   requirements->size = storageSize;
-  requirements->usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  requirements->usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 }
 
-void vrdxGetSorterKeyValueStorageRequirements(
-    VrdxSorter sorter, uint32_t maxElementCount,
-    VrdxSorterStorageRequirements* requirements) {
+void vrdxGetSorterKeyValueStorageRequirements(VrdxSorter sorter, uint32_t maxElementCount,
+                                              VrdxSorterStorageRequirements* requirements) {
   VkDevice device = sorter->device;
 
-  VkDeviceSize elementCountSize = sizeof(uint32_t);
+  VkDeviceSize elementCountSize = Align(sizeof(uint32_t), 16);
   VkDeviceSize histogramSize = HistogramSize(maxElementCount);
   VkDeviceSize inoutSize = InoutSize(maxElementCount);
 
@@ -237,67 +220,57 @@ void vrdxGetSorterKeyValueStorageRequirements(
   VkDeviceSize storageSize = inoutOffset + 2 * inoutSize;
 
   requirements->size = storageSize;
-  requirements->usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  requirements->usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 }
 
-void vrdxCmdSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                 uint32_t elementCount, VkBuffer keysBuffer,
-                 VkDeviceSize keysOffset, VkBuffer storageBuffer,
-                 VkDeviceSize storageOffset, VkQueryPool queryPool,
-                 uint32_t query) {
-  gpuSort(commandBuffer, sorter, elementCount, NULL, 0, keysBuffer, keysOffset,
-          NULL, 0, storageBuffer, storageOffset, queryPool, query);
-}
-
-void vrdxCmdSortIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                         uint32_t maxElementCount, VkBuffer indirectBuffer,
-                         VkDeviceSize indirectOffset, VkBuffer keysBuffer,
-                         VkDeviceSize keysOffset, VkBuffer storageBuffer,
-                         VkDeviceSize storageOffset, VkQueryPool queryPool,
-                         uint32_t query) {
-  gpuSort(commandBuffer, sorter, maxElementCount, indirectBuffer,
-          indirectOffset, keysBuffer, keysOffset, NULL, 0, storageBuffer,
-          storageOffset, queryPool, query);
-}
-
-void vrdxCmdSortKeyValue(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-                         uint32_t elementCount, VkBuffer keysBuffer,
-                         VkDeviceSize keysOffset, VkBuffer valuesBuffer,
-                         VkDeviceSize valuesOffset, VkBuffer storageBuffer,
-                         VkDeviceSize storageOffset, VkQueryPool queryPool,
-                         uint32_t query) {
-  gpuSort(commandBuffer, sorter, elementCount, NULL, 0, keysBuffer, keysOffset,
-          valuesBuffer, valuesOffset, storageBuffer, storageOffset, queryPool,
-          query);
-}
-
-void vrdxCmdSortKeyValueIndirect(
-    VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t maxElementCount,
-    VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer keysBuffer,
-    VkDeviceSize keysOffset, VkBuffer valuesBuffer, VkDeviceSize valuesOffset,
-    VkBuffer storageBuffer, VkDeviceSize storageOffset, VkQueryPool queryPool,
-    uint32_t query) {
-  gpuSort(commandBuffer, sorter, maxElementCount, indirectBuffer,
-          indirectOffset, keysBuffer, keysOffset, valuesBuffer, valuesOffset,
+void vrdxCmdSort(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+                 VkBuffer keysBuffer, VkDeviceSize keysOffset, VkBuffer storageBuffer,
+                 VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query) {
+  gpuSort(commandBuffer, sorter, elementCount, NULL, 0, keysBuffer, keysOffset, NULL, 0,
           storageBuffer, storageOffset, queryPool, query);
+}
+
+void vrdxCmdSortIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t maxElementCount,
+                         VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer keysBuffer,
+                         VkDeviceSize keysOffset, VkBuffer storageBuffer,
+                         VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query) {
+  gpuSort(commandBuffer, sorter, maxElementCount, indirectBuffer, indirectOffset, keysBuffer,
+          keysOffset, NULL, 0, storageBuffer, storageOffset, queryPool, query);
+}
+
+void vrdxCmdSortKeyValue(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+                         VkBuffer keysBuffer, VkDeviceSize keysOffset, VkBuffer valuesBuffer,
+                         VkDeviceSize valuesOffset, VkBuffer storageBuffer,
+                         VkDeviceSize storageOffset, VkQueryPool queryPool, uint32_t query) {
+  gpuSort(commandBuffer, sorter, elementCount, NULL, 0, keysBuffer, keysOffset, valuesBuffer,
+          valuesOffset, storageBuffer, storageOffset, queryPool, query);
+}
+
+void vrdxCmdSortKeyValueIndirect(VkCommandBuffer commandBuffer, VrdxSorter sorter,
+                                 uint32_t maxElementCount, VkBuffer indirectBuffer,
+                                 VkDeviceSize indirectOffset, VkBuffer keysBuffer,
+                                 VkDeviceSize keysOffset, VkBuffer valuesBuffer,
+                                 VkDeviceSize valuesOffset, VkBuffer storageBuffer,
+                                 VkDeviceSize storageOffset, VkQueryPool queryPool,
+                                 uint32_t query) {
+  gpuSort(commandBuffer, sorter, maxElementCount, indirectBuffer, indirectOffset, keysBuffer,
+          keysOffset, valuesBuffer, valuesOffset, storageBuffer, storageOffset, queryPool, query);
 }
 
 namespace {
 
-void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
-             uint32_t elementCount, VkBuffer indirectBuffer,
-             VkDeviceSize indirectOffset, VkBuffer keysBuffer,
-             VkDeviceSize keysOffset, VkBuffer valuesBuffer,
-             VkDeviceSize valuesOffset, VkBuffer storageBuffer,
-             VkDeviceSize storageOffset, VkQueryPool queryPool,
+void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter, uint32_t elementCount,
+             VkBuffer indirectBuffer, VkDeviceSize indirectOffset, VkBuffer keysBuffer,
+             VkDeviceSize keysOffset, VkBuffer valuesBuffer, VkDeviceSize valuesOffset,
+             VkBuffer storageBuffer, VkDeviceSize storageOffset, VkQueryPool queryPool,
              uint32_t query) {
   VkDevice device = sorter->device;
-  uint32_t partitionCount =
-      RoundUp(indirectBuffer ? elementCount : elementCount, PARTITION_SIZE);
+  PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = sorter->vkCmdPushDescriptorSetKHR;
+  VkPipelineLayout pipelineLayout = sorter->pipelineLayout;
 
-  VkDeviceSize elementCountSize = sizeof(uint32_t);
+  uint32_t partitionCount = RoundUp(elementCount, PARTITION_SIZE);
+
+  VkDeviceSize elementCountSize = Align(sizeof(uint32_t), 16);
   VkDeviceSize histogramSize = HistogramSize(elementCount);
   VkDeviceSize inoutSize = InoutSize(elementCount);
 
@@ -306,8 +279,7 @@ void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
   VkDeviceSize inoutOffset = histogramOffset + histogramSize;
 
   if (queryPool) {
-    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                        queryPool, query + 0);
+    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queryPool, query + 0);
   }
 
   if (indirectBuffer) {
@@ -319,74 +291,74 @@ void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
     vkCmdCopyBuffer(commandBuffer, indirectBuffer, storageBuffer, 1, &region);
   } else {
     // set element count
-    vkCmdUpdateBuffer(commandBuffer, storageBuffer, elementCountOffset,
-                      sizeof(elementCount), &elementCount);
+    vkCmdUpdateBuffer(commandBuffer, storageBuffer, elementCountOffset, sizeof(elementCount),
+                      &elementCount);
   }
 
   // reset global histogram. partition histogram is set by shader.
-  vkCmdFillBuffer(commandBuffer, storageBuffer, histogramOffset,
-                  4 * RADIX * sizeof(uint32_t), 0);
+  vkCmdFillBuffer(commandBuffer, storageBuffer, histogramOffset, 4 * RADIX * sizeof(uint32_t), 0);
 
   VkMemoryBarrier memoryBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
   memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
   vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                       &memoryBarrier, 0, NULL, 0, NULL);
+                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, NULL, 0,
+                       NULL);
 
   if (queryPool) {
-    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        queryPool, query + 1);
-  }
-
-  VkBufferDeviceAddressInfo deviceAddressInfo = {
-      VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
-  deviceAddressInfo.buffer = storageBuffer;
-  VkDeviceAddress storageAddress =
-      vkGetBufferDeviceAddress(device, &deviceAddressInfo);
-
-  deviceAddressInfo.buffer = keysBuffer;
-  VkDeviceAddress keysAddress =
-      vkGetBufferDeviceAddress(device, &deviceAddressInfo);
-
-  VkDeviceAddress valuesAddress = 0;
-  if (valuesBuffer) {
-    deviceAddressInfo.buffer = valuesBuffer;
-    valuesAddress = vkGetBufferDeviceAddress(device, &deviceAddressInfo);
+    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, queryPool, query + 1);
   }
 
   PushConstants pushConstants;
-  pushConstants.elementCountReference = storageAddress + elementCountOffset;
-  pushConstants.globalHistogramReference = storageAddress + histogramOffset;
-  pushConstants.partitionHistogramReference =
-      storageAddress + histogramOffset + sizeof(uint32_t) * 4 * RADIX;
-
   for (int i = 0; i < 4; ++i) {
     pushConstants.pass = i;
-    pushConstants.keysInReference = keysAddress + keysOffset;
-    pushConstants.keysOutReference = storageAddress + inoutOffset;
-    pushConstants.valuesInReference = valuesAddress + valuesOffset;
-    pushConstants.valuesOutReference = storageAddress + inoutOffset + inoutSize;
 
-    if (i % 2 == 1) {
-      std::swap(pushConstants.keysInReference, pushConstants.keysOutReference);
-      std::swap(pushConstants.valuesInReference,
-                pushConstants.valuesOutReference);
+    int writeCount = 5;
+    VkDescriptorBufferInfo buffers[7];
+    buffers[0] = {storageBuffer, elementCountOffset, sizeof(elementCount)};
+    buffers[1] = {storageBuffer, histogramOffset, sizeof(uint32_t) * 4 * RADIX};
+    buffers[2] = {storageBuffer, histogramOffset + sizeof(uint32_t) * 4 * RADIX,
+                  VK_WHOLE_SIZE};  // TODO: get exact buffer size
+    buffers[3] = {keysBuffer, keysOffset, inoutSize};
+    buffers[4] = {storageBuffer, inoutOffset, inoutSize};
+    if (valuesBuffer) {
+      writeCount = 7;
+      buffers[5] = {valuesBuffer, valuesOffset, inoutSize};
+      buffers[6] = {storageBuffer, inoutOffset + inoutSize, inoutSize};
     }
 
-    vkCmdPushConstants(commandBuffer, sorter->pipelineLayout,
-                       VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants),
-                       &pushConstants);
+    // switch in->out to out->in for pass 1, pass 3
+    if (i % 2 == 1) {
+      std::swap(buffers[3], buffers[4]);
+      if (valuesBuffer) {
+        std::swap(buffers[5], buffers[6]);
+      }
+    }
+
+    VkWriteDescriptorSet writes[7];
+    for (int i = 0; i < writeCount; ++i) {
+      writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      writes[i].dstSet = 0;
+      writes[i].dstBinding = i;
+      writes[i].descriptorCount = 1;
+      writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      writes[i].pBufferInfo = &buffers[i];
+    }
+
+    vkCmdPushDescriptorSetKHR(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0,
+                              writeCount, writes);
+
+    vkCmdPushConstants(commandBuffer, sorter->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                       sizeof(pushConstants), &pushConstants);
 
     // upsweep
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                      sorter->upsweepPipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, sorter->upsweepPipeline);
 
     vkCmdDispatch(commandBuffer, partitionCount, 1, 1);
 
     if (queryPool) {
-      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                          queryPool, query + 2 + 3 * i + 0);
+      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool,
+                          query + 2 + 3 * i + 0);
     }
 
     // spine
@@ -394,17 +366,16 @@ void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
     memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                         &memoryBarrier, 0, NULL, 0, NULL);
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, NULL, 0,
+                         NULL);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                      sorter->spinePipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, sorter->spinePipeline);
 
     vkCmdDispatch(commandBuffer, RADIX, 1, 1);
 
     if (queryPool) {
-      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                          queryPool, query + 2 + 3 * i + 1);
+      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool,
+                          query + 2 + 3 * i + 1);
     }
 
     // downsweep
@@ -412,22 +383,21 @@ void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
     memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                         &memoryBarrier, 0, NULL, 0, NULL);
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, NULL, 0,
+                         NULL);
 
     if (valuesBuffer) {
       vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                         sorter->downsweepKeyValuePipeline);
     } else {
-      vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                        sorter->downsweepPipeline);
+      vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, sorter->downsweepPipeline);
     }
 
     vkCmdDispatch(commandBuffer, partitionCount, 1, 1);
 
     if (queryPool) {
-      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                          queryPool, query + 2 + 3 * i + 2);
+      vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool,
+                          query + 2 + 3 * i + 2);
     }
 
     if (i < 3) {
@@ -435,14 +405,13 @@ void gpuSort(VkCommandBuffer commandBuffer, VrdxSorter sorter,
       memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
       memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
       vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                           &memoryBarrier, 0, NULL, 0, NULL);
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, NULL, 0,
+                           NULL);
     }
   }
 
   if (queryPool) {
-    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                        queryPool, query + 14);
+    vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queryPool, query + 14);
   }
 }
 

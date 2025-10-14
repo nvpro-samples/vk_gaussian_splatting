@@ -52,10 +52,10 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vrdx)
 
 set_property(TARGET vk_radix_sort PROPERTY FOLDER "ThirdParty/vrdx")
-set_property(TARGET spine_comp PROPERTY FOLDER "ThirdParty/vrdx")
-set_property(TARGET downsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
-set_property(TARGET downsweep_key_value_comp PROPERTY FOLDER "ThirdParty/vrdx")
-set_property(TARGET upsweep_comp PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET spine_slang PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET downsweep_slang PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET downsweep_key_value_slang PROPERTY FOLDER "ThirdParty/vrdx")
+set_property(TARGET upsweep_slang PROPERTY FOLDER "ThirdParty/vrdx")
 
 #####
 # Include spz (uses zlib from nvpro_core2)
