@@ -131,7 +131,12 @@ bool SplatSorterAsync::innerSort()
   auto compare = [&](size_t i, size_t j) { return distances[i] > distances[j]; };
 
   // Sorting the array with respect to distance keys
+#if defined(__APPLE__)
+  // Apple clang doesn't support std::execution::par_unseq
+  std::sort(m_indices.begin(), m_indices.end(), compare);
+#else
   std::sort(std::execution::par_unseq, m_indices.begin(), m_indices.end(), compare);
+#endif
 
   m_profiler->asyncEndSection(timer);
 

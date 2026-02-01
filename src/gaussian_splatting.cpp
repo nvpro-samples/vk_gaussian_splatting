@@ -67,12 +67,17 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
   m_cpuSorter.initialize(m_profilerTimeline);
 
   // Memory allocator
+#ifdef __APPLE__
+  constexpr uint32_t vulkanApiVersion = VK_API_VERSION_1_2;  // MoltenVK compatibility
+#else
+  constexpr uint32_t vulkanApiVersion = VK_API_VERSION_1_4;
+#endif
   m_alloc.init(VmaAllocatorCreateInfo{
       .flags            = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
       .physicalDevice   = app->getPhysicalDevice(),
       .device           = app->getDevice(),
       .instance         = app->getInstance(),
-      .vulkanApiVersion = VK_API_VERSION_1_4,
+      .vulkanApiVersion = vulkanApiVersion,
   });
 
   // DEBUG: uncomment and set id to find object leak
@@ -113,7 +118,7 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
   }
 
   // Get device information
-  m_physicalDeviceInfo.init(m_app->getPhysicalDevice(), VK_API_VERSION_1_4);
+  m_physicalDeviceInfo.init(m_app->getPhysicalDevice(), vulkanApiVersion);
 
   // Get ray tracing properties
   m_rtProperties.pNext = &m_accelStructProps;
@@ -184,7 +189,8 @@ void GaussianSplatting::onRender(VkCommandBuffer cmd)
     if(!m_splatSetVk.rtxValid)
     {
       // let's switch back to raster, RTX is KO
-      prmSelectedPipeline = PIPELINE_MESH;
+      // Use vertex shader if mesh shaders not available (e.g., MoltenVK on macOS)
+      prmSelectedPipeline = (vkCmdDrawMeshTasksEXT != nullptr) ? PIPELINE_MESH : PIPELINE_VERT;
       return;
     }
 
@@ -387,12 +393,14 @@ void GaussianSplatting::processUpdateRequests(void)
     }
     if(m_requestUpdateSplatData || m_requestUpdateSplatAs)
     {
+#ifndef __APPLE__
       // RTX specific
       m_splatSetVk.rtxDeinitAccelerationStructures();
       m_splatSetVk.rtxDeinitSplatModel();
       m_splatSetVk.rtxInitSplatModel(m_splatSet, prmRtxData.useTlasInstances, prmRtxData.useAABBs, prmRtxData.compressBlas,
                                      prmRtx.kernelDegree, prmRtx.kernelMinResponse, prmRtx.kernelAdaptiveClamping);
       m_splatSetVk.rtxInitAccelerationStructures(m_splatSet);
+#endif
     }
 
     if(m_requestUpdateMeshData || m_requestDeleteSelectedMesh)
@@ -403,16 +411,20 @@ void GaussianSplatting::processUpdateRequests(void)
         m_selectedItemIndex = -1;
       }
 
+#ifndef __APPLE__
       m_meshSetVk.rtxDeinitAccelerationStructures();
       m_meshSetVk.updateObjDescriptionBuffer();
       m_meshSetVk.rtxInitAccelerationStructures();
+#endif
     }
 
     if(initShaders())
     {
       initPipelines();
+#ifndef __APPLE__
       initRtDescriptorSet();
       initRtPipeline();
+#endif
       initDescriptorSetPostProcessing();
       initPipelinePostProcessing();
     }
@@ -501,10 +513,12 @@ void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const u
   barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
   barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT;
 
-  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                       VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
-                           | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                       0, 1, &barrier, 0, NULL, 0, NULL);
+  VkPipelineStageFlags dstStages = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+                                   | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+#ifndef __APPLE__
+  dstStages |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStages, 0, 1, &barrier, 0, NULL, 0, NULL);
 }
 
 void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd, const uint32_t splatCount)
@@ -569,9 +583,11 @@ void GaussianSplatting::tryConsumeAndUploadCpuSortingResult(VkCommandBuffer cmd,
       barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
       barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
 
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                           VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                           0, 1, &barrier, 0, NULL, 0, NULL);
+      VkPipelineStageFlags dstStages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+#ifndef __APPLE__
+      dstStages |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStages, 0, 1, &barrier, 0, NULL, 0, NULL);
     }
   }
 }
@@ -591,9 +607,11 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
     barrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
 
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
-                         0, 1, &barrier, 0, NULL, 0, NULL);
+    VkPipelineStageFlags dstStages1 = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+#ifndef __APPLE__
+    dstStages1 |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStages1, 0, 1, &barrier, 0, NULL, 0, NULL);
   }
 
   VkMemoryBarrier barrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
@@ -611,15 +629,19 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
     m_pcRaster.modelMatrix        = m_splatSetVk.transform;
     m_pcRaster.modelMatrixInverse = m_splatSetVk.transformInverse;
 
-    vkCmdPushConstants(cmd, m_pipelineLayout,
-                       VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(shaderio::PushConstant), &m_pcRaster);
+    VkShaderStageFlags pushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+#ifndef __APPLE__
+    pushConstantStages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+#endif
+    vkCmdPushConstants(cmd, m_pipelineLayout, pushConstantStages, 0, sizeof(shaderio::PushConstant), &m_pcRaster);
 
     vkCmdDispatch(cmd, (splatCount + prmRaster.distShaderWorkgroupSize - 1) / prmRaster.distShaderWorkgroupSize, 1, 1);
 
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
-                         0, 1, &barrier, 0, NULL, 0, NULL);
+    VkPipelineStageFlags dstStages2 = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+#ifndef __APPLE__
+    dstStages2 |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, dstStages2, 0, 1, &barrier, 0, NULL, 0, NULL);
   }
 
   // 3. invoke the radix sort from vrdx lib
@@ -630,8 +652,11 @@ void GaussianSplatting::processSortingOnGPU(VkCommandBuffer cmd, const uint32_t 
                                 offsetof(shaderio::IndirectParams, instanceCount), m_splatDistancesDevice.buffer, 0,
                                 m_splatIndicesDevice.buffer, 0, m_vrdxStorageDevice.buffer, 0, 0, 0);
 
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+    VkPipelineStageFlags dstStages3 = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+#ifndef __APPLE__
+    dstStages3 |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStages3,
                          0, 1, &barrier, 0, NULL, 0, NULL);
   }
 }
@@ -651,11 +676,16 @@ void GaussianSplatting::drawSplatPrimitives(VkCommandBuffer cmd, const uint32_t 
   glm::mat3 rotScale                    = glm::mat3(m_splatSetVk.transform);
   m_pcRaster.modelMatrixRotScaleInverse = glm::inverse(rotScale);
 
-  vkCmdPushConstants(cmd, m_pipelineLayout,
-                     VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                     0, sizeof(shaderio::PushConstant), &m_pcRaster);
+  VkShaderStageFlags pushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+#ifndef __APPLE__
+  pushConstantStages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+#endif
+  vkCmdPushConstants(cmd, m_pipelineLayout, pushConstantStages, 0, sizeof(shaderio::PushConstant), &m_pcRaster);
 
-  if(prmSelectedPipeline == PIPELINE_VERT)
+  // Force vertex shader fallback if mesh shaders are not available (e.g., MoltenVK on macOS)
+  bool useMeshShaders = (prmSelectedPipeline != PIPELINE_VERT) && (vkCmdDrawMeshTasksEXT != nullptr);
+
+  if(!useMeshShaders)
   {  // Pipeline using vertex shader
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipelineGsVert);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
@@ -730,9 +760,11 @@ void GaussianSplatting::drawMeshPrimitives(VkCommandBuffer cmd)
     m_pcRaster.modelMatrix        = inst.transform;
     m_pcRaster.modelMatrixInverse = inst.transformInverse;
 
-    vkCmdPushConstants(cmd, m_pipelineLayout,
-                       VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(shaderio::PushConstant), &m_pcRaster);
+    VkShaderStageFlags pushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+#ifndef __APPLE__
+    pushConstantStages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+#endif
+    vkCmdPushConstants(cmd, m_pipelineLayout, pushConstantStages, 0, sizeof(shaderio::PushConstant), &m_pcRaster);
     vkCmdBindVertexBuffers(cmd, 0, 1, &model.vertexBuffer.buffer, &offset);
     vkCmdBindIndexBuffer(cmd, model.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, model.nbIndices, 1, 0, 0, 0);
@@ -836,10 +868,14 @@ void GaussianSplatting::deinitAll()
   deinitScene();
   m_splatSetVk.resetTransform();
   m_splatSetVk.deinitDataStorage();
+#ifndef __APPLE__
   m_splatSetVk.rtxDeinitSplatModel();
   m_splatSetVk.rtxDeinitAccelerationStructures();
+#endif
   m_meshSetVk.deinitDataStorage();
+#ifndef __APPLE__
   m_meshSetVk.rtxDeinitAccelerationStructures();
+#endif
   m_lightSet.deinit();
   m_cameraSet.deinit();
   deinitShaders();
@@ -875,7 +911,8 @@ bool GaussianSplatting::initAll()
   m_splatSetVk.initDataStorage(m_splatSet, prmData.dataStorage, prmData.shFormat);
   initPipelines();
 
-  // RTX specifics
+  // RTX specifics - Skip on macOS where ray tracing extensions are unavailable
+#ifndef __APPLE__
   m_splatSetVk.rtxInitSplatModel(m_splatSet, prmRtxData.useTlasInstances, prmRtxData.useAABBs, prmRtxData.compressBlas,
                                  prmRtx.kernelDegree, prmRtx.kernelMinResponse, prmRtx.kernelAdaptiveClamping);
 
@@ -883,6 +920,7 @@ bool GaussianSplatting::initAll()
 
   initRtDescriptorSet();
   initRtPipeline();
+#endif
 
   // Post processing
   initDescriptorSetPostProcessing();
@@ -1057,9 +1095,11 @@ void GaussianSplatting::initPipelines()
   bindings.addBinding(BINDING_LIGHT_SET, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL);
 
   //
-  const VkPushConstantRange pcRanges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                            | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT,
-                                        0, sizeof(shaderio::PushConstant)};
+  VkShaderStageFlags pcStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+#ifndef __APPLE__
+  pcStages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+#endif
+  const VkPushConstantRange pcRanges = {pcStages, 0, sizeof(shaderio::PushConstant)};
 
   NVVK_CHECK(bindings.createDescriptorSetLayout(m_device, 0, &m_descriptorSetLayout));
   NVVK_DBG_NAME(m_descriptorSetLayout);
@@ -1182,6 +1222,7 @@ void GaussianSplatting::initPipelines()
     pipelineState.depthStencilState.depthWriteEnable = VK_FALSE;
     pipelineState.depthStencilState.depthTestEnable  = VK_FALSE;
 
+#ifndef __APPLE__
     // create the pipeline that uses mesh shaders for 3DGS
     {
       nvvk::GraphicsPipelineCreator creator;
@@ -1215,6 +1256,7 @@ void GaussianSplatting::initPipelines()
       creator.createGraphicsPipeline(m_device, nullptr, pipelineState, &m_graphicsPipeline3dgutMesh);
       NVVK_DBG_NAME(m_graphicsPipeline3dgutMesh);
     }
+#endif
 
     // create the pipeline that uses vertex shaders for 3DGS
     {
@@ -1828,9 +1870,11 @@ void GaussianSplatting::initDescriptorSetPostProcessing()
   NVVK_DBG_NAME(m_descriptorSetPostProcess);
 
   // Pipelne layout
-  const VkPushConstantRange pcRanges = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                            | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_COMPUTE_BIT,
-                                        0, sizeof(shaderio::PushConstant)};
+  VkShaderStageFlags pcStagesPost = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+#ifndef __APPLE__
+  pcStagesPost |= VK_SHADER_STAGE_MESH_BIT_EXT;
+#endif
+  const VkPushConstantRange pcRanges = {pcStagesPost, 0, sizeof(shaderio::PushConstant)};
 
   VkPipelineLayoutCreateInfo plCreateInfo{
       .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
