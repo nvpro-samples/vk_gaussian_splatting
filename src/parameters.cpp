@@ -28,7 +28,12 @@ VramDataParameters    prmData{};
 RtxVramDataParameters prmRtxData{};
 
 // no reset function on purpose
+// On macOS with MoltenVK, mesh shaders are not supported, so default to vertex shader pipeline
+#ifdef __APPLE__
+uint32_t            prmSelectedPipeline = PIPELINE_VERT;
+#else
 uint32_t            prmSelectedPipeline = PIPELINE_MESH;
+#endif
 shaderio::FrameInfo prmFrame{};
 RenderParameters    prmRender{};
 RasterParameters    prmRaster{};

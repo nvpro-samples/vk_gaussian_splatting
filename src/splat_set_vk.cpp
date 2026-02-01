@@ -425,9 +425,11 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
   VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
   barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                       VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-                       0, 1, &barrier, 0, NULL, 0, NULL);
+  VkPipelineStageFlags dstStages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+#ifndef __APPLE__
+  dstStages |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+#endif
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStages, 0, 1, &barrier, 0, NULL, 0, NULL);
 
   m_app->submitAndWaitTempCmdBuffer(cmd);
 
