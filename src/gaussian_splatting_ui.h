@@ -148,6 +148,8 @@ private:
 
   void guiDrawMemoryStatisticsWindow(void);
 
+  void guiDrawDebugWindow(void);
+
   void guiDrawFooterBar(void);
 
   bool guiGetTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& translation, glm::mat4& transform, glm::mat4& transformInv, bool disabled /*=false*/);
@@ -161,7 +163,10 @@ private:
 
 private:
   // hide/show ui elements
-  bool                                                  m_showUI = true;
+  bool m_showRendererStatistics = true;
+  bool m_showMemoryStatistics   = true;
+  bool m_showShaderDebugging    = false;
+
   std::shared_ptr<nvapp::ElementProfiler::ViewSettings> m_profilerViewSettings;
 
   // benchmark mode (enabled by command line), loadings will be synchronous and vsync off

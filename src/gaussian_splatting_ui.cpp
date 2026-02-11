@@ -60,15 +60,12 @@ GaussianSplattingUI::GaussianSplattingUI(nvutils::ProfilerManager*   profilerMan
                          {".png"}, &m_screenshotFilename);
 };
 
-GaussianSplattingUI::~GaussianSplattingUI(){
-    // Nothing to do here
+GaussianSplattingUI::~GaussianSplattingUI() {
+  // Nothing to do here
 };
 
 void GaussianSplattingUI::onAttach(nvapp::Application* app)
 {
-  // we hide the UI dy default in benchmark mode
-  m_showUI = !(*m_pBenchmarkEnabled);
-
   // Initializes the core
 
   GaussianSplatting::onAttach(app);
@@ -222,7 +219,10 @@ void GaussianSplattingUI::onUIMenu()
       auto path = nvgui::windowSaveFileDialog(m_app->getWindowHandle(), "Save project file", "VKGS Files|*.vkgs");
       if(!path.empty())
       {
-        saveProject(path.string());
+        if(saveProject(path.string()))
+        {
+          guiAddToRecentProjects(path);
+        }
       }
     }
     ImGui::Separator();
@@ -240,7 +240,11 @@ void GaussianSplattingUI::onUIMenu()
   if(ImGui::BeginMenu("View"))
   {
     ImGui::MenuItem(ICON_MS_BOTTOM_PANEL_OPEN " V-Sync", "Ctrl+Shift+V", &v_sync);
-    ImGui::MenuItem(ICON_MS_SPACE_DASHBOARD " ShowUI", "", &m_showUI);
+    ImGui::MenuItem(ICON_MS_DATA_TABLE " Renderer Statistics", nullptr, &m_showRendererStatistics);
+    ImGui::MenuItem(ICON_MS_DATA_TABLE " Memory Statistics", nullptr, &m_showMemoryStatistics);
+#ifndef NDEBUG
+    ImGui::MenuItem(ICON_MS_DATA_TABLE " Shader Debugging", nullptr, &m_showShaderDebugging);
+#endif
     ImGui::EndMenu();
   }
 #ifndef NDEBUG
@@ -532,7 +536,8 @@ void GaussianSplattingUI::onUIRender()
     ImGui::EndPopup();
   }
 
-  if(!m_showUI)
+  // we never show the UI elements in benchmark mode
+  if(*m_pBenchmarkEnabled)
     return;
 
   /////////////////
@@ -545,6 +550,8 @@ void GaussianSplattingUI::onUIRender()
   guiDrawRendererStatisticsWindow();
 
   guiDrawMemoryStatisticsWindow();
+
+  guiDrawDebugWindow();
 
   guiDrawFooterBar();
 }
@@ -984,14 +991,12 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   if(PE::Checkbox("V-Sync", &vsync))
     m_app->setVsync(vsync);
 
-  if(PE::entry(
-         "Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
+  if(PE::entry("Pipeline", [&]() { return m_ui.enumCombobox(GUI_PIPELINE, "##ID", &prmSelectedPipeline); }, "Selects the rendering method"))
   {
     m_requestUpdateShaders = true;
   }
 
-  if(PE::entry(
-         "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+  if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
   {
     resetRenderSettings();
     m_requestUpdateShaders   = true;
@@ -999,8 +1004,7 @@ void GaussianSplattingUI::guiDrawRendererProperties()
   }
 
   ImGui::BeginDisabled(prmSelectedPipeline != PIPELINE_RTX);
-  if(PE::entry(
-         "Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
+  if(PE::entry("Visualize", [&]() { return m_ui.enumCombobox(GUI_VISUALIZE, "##ID", &prmRender.visualize); }, "Selects the visualization mode"))
   {
     m_requestUpdateShaders = true;
   }
@@ -1281,8 +1285,7 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format"))
     {
-      if(PE::entry(
-             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetDataParameters();
         m_requestUpdateSplatData = true;
@@ -1310,8 +1313,7 @@ void GaussianSplattingUI::guiDrawSplatSetProperties()
   {
     if(PE::begin("##VRAM format RTX"))
     {
-      if(PE::entry(
-             "Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
+      if(PE::entry("Default settings", [&] { return ImGui::Button("Reset"); }, "resets to default settings"))
       {
         resetRtxDataParameters();
         m_requestUpdateSplatAs = true;
@@ -1376,8 +1378,8 @@ void GaussianSplattingUI::guiDrawMeshMaterialProperties()
     auto& material = materials[i];
     ImGui::PushID(i);
     PE::Text("Name", m_meshSetVk.meshes[objIndex].matNames[i]);
-    needMaterialUpdate |= PE::entry(
-        "Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
+    needMaterialUpdate |=
+        PE::entry("Model", [&]() { return m_ui.enumCombobox(GUI_ILLUM_MODEL, "##ID", &material.illum); }, "TODO");
     needMaterialUpdate |= PE::ColorEdit3("ambient", glm::value_ptr(material.ambient));
     needMaterialUpdate |= PE::ColorEdit3("diffuse", glm::value_ptr(material.diffuse));
     needMaterialUpdate |= PE::ColorEdit3("specular", glm::value_ptr(material.specular));
@@ -1463,8 +1465,10 @@ void GaussianSplattingUI::guiDrawCameraProperties()
       ImGui::EndDisabled();  // DoF
 
       ImGui::EndDisabled();  // Modifiable
+
+      PE::end();
     }
-    PE::end();
+
     ImGui::EndDisabled();
   }
   if(ImGui::CollapsingHeader("Camera Extrinsics", ImGuiTreeNodeFlags_DefaultOpen))
@@ -1581,7 +1585,10 @@ bool GaussianSplattingUI::guiGetTransform(glm::vec3& scale,
 
 void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
 {
-  if(ImGui::Begin("Rendering Statistics"))
+  if(!m_showRendererStatistics)
+    return;
+
+  if(ImGui::Begin("Rendering Statistics", &m_showRendererStatistics))
   {
     const int32_t totalSplatCount = (uint32_t)m_splatSet.size();
     const int32_t rasterSplatCount =
@@ -1593,7 +1600,7 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
                  (prmFrame.splatCount + prmRaster.meshShaderWorkgroupSize - 1) / prmRaster.meshShaderWorkgroupSize) :
             0;
 
-    if(ImGui::BeginTable("Stats", 3, ImGuiTableFlags_BordersOuter))
+    if(ImGui::BeginTable("Stats", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable))
     {
       ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 230.0f);
       ImGui::TableSetupColumn("Size short", ImGuiTableColumnFlags_WidthStretch);
@@ -1629,16 +1636,20 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
   ImGui::End();
 }
 
-
 void GaussianSplattingUI::guiDrawMemoryStatisticsWindow()
 {
-  ImGuiTableFlags commonFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_SpanAllColumns;
-  ImGuiTableFlags itemFlags   = commonFlags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-  ImGuiTableFlags totalFlags  = commonFlags | ImGuiTreeNodeFlags_DefaultOpen;
+  if(!m_showMemoryStatistics)
+    return;
 
-  if(ImGui::Begin("Memory Statistics"))
+  if(ImGui::Begin("Memory Statistics", &m_showMemoryStatistics))
   {
-    if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_RowBg))
+    //const ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
+
+    ImGuiTableFlags commonFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_SpanAllColumns;
+    ImGuiTableFlags itemFlags   = commonFlags | ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    ImGuiTableFlags totalFlags  = commonFlags | ImGuiTreeNodeFlags_DefaultOpen;
+
+    if(ImGui::BeginTable("Scene stats", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
     {
       // to draw horizontal line for specific rows.
       ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -1826,6 +1837,31 @@ void GaussianSplattingUI::guiDrawMemoryStatisticsWindow()
   ImGui::End();
 }
 
+void GaussianSplattingUI::guiDrawDebugWindow()
+{
+  if(!m_showShaderDebugging)
+    return;
+
+  if(ImGui::Begin("Shader debugging", &m_showShaderDebugging))
+  {
+    namespace PE = nvgui::PropertyEditor;
+
+    if(PE::begin())
+    {
+      PE::Text("val1", std::to_string(m_indirectReadback.val1));
+      PE::Text("val2", std::to_string(m_indirectReadback.val2));
+      PE::Text("val3", std::to_string(m_indirectReadback.val3));
+      PE::Text("val4", std::to_string(m_indirectReadback.val4));
+      PE::Text("val5", std::to_string(m_indirectReadback.val5));
+      PE::Text("val6", std::to_string(m_indirectReadback.val6));
+      PE::Text("val7", std::to_string(m_indirectReadback.val7));
+
+      PE::end();
+    }
+  }
+  ImGui::End();
+}
+
 void GaussianSplattingUI::guiDrawFooterBar()
 {
   //
@@ -1843,18 +1879,6 @@ void GaussianSplattingUI::guiDrawFooterBar()
       ImGui::Text("%s", std::to_string(m_indirectReadback.particleID).c_str());
       ImGui::Text(" | Splat Dist ");
       ImGui::Text("%s", std::to_string(m_indirectReadback.particleDist).c_str());
-
-      // DEBUG Feedback
-      /*
-      ImGui::Text(" %s", "debug: ");
-      ImGui::Text(" %s", std::to_string(m_indirectReadback.val1).c_str());
-      ImGui::Text(" %s", std::to_string(m_indirectReadback.val2).c_str());
-      ImGui::Text(" %s  ", std::to_string(m_indirectReadback.val3).c_str());
-      ImGui::Text(" %s", std::to_string(m_indirectReadback.val4).c_str());
-      ImGui::Text(" %s", std::to_string(m_indirectReadback.val5).c_str());
-      ImGui::Text(" %s  ", std::to_string(m_indirectReadback.val6).c_str());
-      ImGui::Text(" %s", std::to_string(m_indirectReadback.val7).c_str());
-      */
 
       // temporal sampling progress bar
       {
@@ -2000,6 +2024,64 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
     iniHandler.ReadOpenFn = readOpen;
     iniHandler.WriteAllFn = saveRecentProjectsToIni;
     iniHandler.ReadLineFn = loadRecentProjectsFromIni;
+    iniHandler.UserData   = this;  // Pass the current instance to the handler
+    ImGui::GetCurrentContext()->SettingsHandlers.push_back(iniHandler);
+  }
+  {
+    // Save window visibility settings handler
+    auto saveWindowStatesToIni = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf) {
+      auto* self = static_cast<GaussianSplattingUI*>(handler->UserData);
+      buf->appendf("[%s][Data]\n", handler->TypeName);
+      buf->appendf("ShaderDebugging=%d\n", self->m_showShaderDebugging ? 1 : 0);
+      buf->appendf("MemoryStatistics=%d\n", self->m_showMemoryStatistics ? 1 : 0);
+      buf->appendf("RendererStatistics=%d\n", self->m_showRendererStatistics ? 1 : 0);
+      buf->append("\n");
+    };
+
+    // Load window visibility settings handler
+    auto loadWindowStatesFromIni = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line) {
+      auto* self = static_cast<GaussianSplattingUI*>(handler->UserData);
+      int   value;
+#ifdef _MSC_VER
+      if(sscanf_s(line, "ShaderDebugging=%d", &value) == 1)
+#else
+      if(sscanf(line, "ShaderDebugging=%d", &value) == 1)
+#endif
+      {
+        self->m_showShaderDebugging = (value == 1);
+      }
+#ifdef _MSC_VER
+      else if(sscanf_s(line, "MemoryStatistics=%d", &value) == 1)
+#else
+      else if(sscanf(line, "MemoryStatistics=%d", &value) == 1)
+#endif
+      {
+        self->m_showMemoryStatistics = (value == 1);
+      }
+#ifdef _MSC_VER
+      else if(sscanf_s(line, "RendererStatistics=%d", &value) == 1)
+#else
+      else if(sscanf(line, "RendererStatistics=%d", &value) == 1)
+#endif
+      {
+        self->m_showRendererStatistics = (value == 1);
+      }
+    };
+
+    // Custom readOpen for WindowStates that checks for "Data" section
+    auto readOpenWindowStates = [](ImGuiContext*, ImGuiSettingsHandler* handler, const char* name) -> void* {
+      if(strcmp(name, "Data") != 0)
+        return NULL;
+      return (void*)1;
+    };
+
+    //
+    ImGuiSettingsHandler iniHandler;
+    iniHandler.TypeName   = "WindowStates";
+    iniHandler.TypeHash   = ImHashStr(iniHandler.TypeName);
+    iniHandler.ReadOpenFn = readOpenWindowStates;
+    iniHandler.WriteAllFn = saveWindowStatesToIni;
+    iniHandler.ReadLineFn = loadWindowStatesFromIni;
     iniHandler.UserData   = this;  // Pass the current instance to the handler
     ImGui::GetCurrentContext()->SettingsHandlers.push_back(iniHandler);
   }
