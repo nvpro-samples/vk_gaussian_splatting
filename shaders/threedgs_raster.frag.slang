@@ -46,7 +46,9 @@
 * SOFTWARE.
 */
 
-#include "wireframe.h.slang"
+#include "nvshaders/fwidth.h.slang"
+#include "nvshaders/wireframe.h.slang"
+
 #include "shaderio.h"
 
 // clang-format off
@@ -142,7 +144,7 @@ FragmentOutput processFragment(float2 inFragPos, float4 inSplatCol, float3 baryC
   FragmentOutput output;
 
 #if WIREFRAME
-  if(processWireframe(wireframeDefaultSettings(), baryCoord) > 0.0)
+  if (processWireframe(wireframeDefaultSettings(), baryCoord, fwidth(baryCoord)) > 0.0)
   {
     output.outColor = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
     return output;

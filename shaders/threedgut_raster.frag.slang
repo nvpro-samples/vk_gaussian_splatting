@@ -18,11 +18,11 @@
  */
 
 #include "nvshaders/random.h.slang"
+#include "nvshaders/fwidth.h.slang"
+#include "nvshaders/wireframe.h.slang"
 
 #include "shaderio.h"
-#include "wireframe.h.slang"
 #include "cameras.h.slang"
-
 #include "threedgrt.h.slang"
 
 // clang-format off
@@ -54,7 +54,7 @@ FragmentOutput main(FragmentInput input)
   FragmentOutput output;
 
 #if WIREFRAME
-  if(processWireframe(wireframeDefaultSettings(), input.barycentrics) > 0.0)
+  if (processWireframe(wireframeDefaultSettings(), input.barycentrics, fwidth(input.barycentrics)) > 0.0)
   {
     output.color = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
     return output;

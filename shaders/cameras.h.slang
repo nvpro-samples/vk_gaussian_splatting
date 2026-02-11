@@ -29,7 +29,7 @@ void generatePinholeRay(in float2 pixel, in float2 resolution, in float4x4 viewI
   // Computes the ray for this fragment (pinhole)
   const float2 pixelCenter = pixel + float2(0.5);
   const float2 inUV        = pixelCenter / resolution;
-  float2       d           = inUV * 2.0 - 1.0;
+  const float2 d           = inUV * 2.0 - 1.0;
 
   rayOrigin = mul(float4(0, 0, 0, 1), viewInverse).xyz;
 

@@ -21,3 +21,16 @@
 
 static const int PAYLOAD_INVALID_ID   = -1;
 static const float PAYLOAD_INF_DISTANCE = asfloat(0x7F7FFFFF);
+
+// the payload structure used for both Particle and Mesh tracing
+
+struct HitPayload
+{
+    int id[PAYLOAD_ARRAY_SIZE];
+    float dist[PAYLOAD_ARRAY_SIZE];
+#if WIREFRAME
+    float3 differentialX;
+    float3 differentialY;
+    float wireframeDist;
+#endif
+};

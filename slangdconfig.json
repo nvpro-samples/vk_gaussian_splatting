@@ -1,4 +1,7 @@
 {
+    "slang.predefinedMacros": [
+        "PAYLOAD_ARRAY_SIZE=18"
+    ],
     "slang.additionalSearchPaths": [
         "./nvpro_core2"
     ]

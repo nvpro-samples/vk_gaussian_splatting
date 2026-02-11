@@ -18,6 +18,7 @@
  */
 
 #include "nvshaders/random.h.slang"
+#include "nvshaders/wireframe.h.slang"
 
 #include "shaderio.h"
 #include "cameras.h.slang"
@@ -57,14 +58,16 @@ void main()
   float3 rayOrigin;
   float3 rayDirection;
 
-  uint2 launchID   = DispatchRaysIndex().xy;
-  uint2 launchSize = DispatchRaysDimensions().xy;
+  const uint2  launchID        = DispatchRaysIndex().xy;
+  const uint2  launchSize      = DispatchRaysDimensions().xy;
+  const float2 launchIdFloat   = float2(launchID.x, launchID.y);      // notation required to prevent warning
+  const float2 launchSizeFloat = float2(launchSize.x, launchSize.y);  // notation required to prevent warning
 
   // generate the ray for this pixel
 #if CAMERA_TYPE == CAMERA_PINHOLE
-  generatePinholeRay(launchID, float2(launchSize), frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
+  generatePinholeRay(launchIdFloat, launchSizeFloat, frameInfo.viewInverse, frameInfo.projInverse, rayOrigin, rayDirection);
 #else
-  if(!generateFisheyeRay(launchID, float2(launchSize), frameInfo.fovRad, float2(0.0), frameInfo.viewInverse, rayOrigin, rayDirection))
+  if(!generateFisheyeRay(launchIdFloat, launchSizeFloat, frameInfo.fovRad, float2(0.0), frameInfo.viewInverse, rayOrigin, rayDirection))
   {
     image[launchID] = float4(0.0, 0.0, 0.0, 1.0);
     return;
@@ -115,6 +118,11 @@ void main()
 
   // Create the payload
   HitPayload payload = {};
+
+#if WIREFRAME
+  computeDifferentials(launchIdFloat, launchSizeFloat, frameInfo.viewInverse, frameInfo.projInverse,
+                       payload.differentialX, payload.differentialY);
+#endif
 
   // bounce loop
   while(true)
@@ -238,6 +246,10 @@ void main()
           payload.id[i]   = PAYLOAD_INVALID_ID;
           payload.dist[i] = PAYLOAD_INF_DISTANCE;
         }
+#if WIREFRAME
+        // Infinite means no wireframe hit by the ray
+        payload.wireframeDist = PAYLOAD_INF_DISTANCE;
+#endif
 
         // trace the PAYLOAD_ARRAY_SIZE any hits
         RayDesc raySplat;
@@ -273,22 +285,6 @@ void main()
 
           if((splatId != PAYLOAD_INVALID_ID) && (maxComponent(transmittance) > double(frameInfo.minTransmittance)))
           {
-#if WIREFRAME
-            // we render wireframe only for primary rays.
-            if(bounce == 0)
-            {
-              const float2 uv        = payload.bary[i];
-              const float3 bary      = float3(1.0 - uv.x - uv.y, uv.x, uv.y);
-              const float  threshold = 0.02;
-              if(bary.x < threshold || bary.y < threshold || bary.z < threshold)
-              {
-                radiance      = float3(1.0, 0.0, 0.0);  // wireframe color
-                transmittance = float3(0.0);            // opaque
-                break;
-              }
-            }
-#endif  // end of display wireframe
-
             bool acceptedHit = particleProcessHit(frameInfo, splatSetModelRayOrigin, splatSetModelRayDirection, splatId,
                                                   transmittance, radiance);
             rayHitsCount += int(acceptedHit);
@@ -300,7 +296,13 @@ void main()
               closestParticleDist  = dist;
               closestParticleFound = true;
             }
-
+#if WIREFRAME
+            if(dist == payload.wireframeDist)
+            {
+              radiance      = float3(1.0, 0.0, 0.0);  // wireframe color
+              transmittance = float3(0.0);            // opaque
+            }
+#endif
             // we move on in any case
             rayLastHitDistance = max(rayLastHitDistance, dist);
           }

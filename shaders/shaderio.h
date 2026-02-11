@@ -243,16 +243,5 @@ struct PushConstantRay
 }  // namespace shaderio
 #endif
 
-#ifndef __cplusplus
-struct HitPayload
-{
-  int   id[PAYLOAD_ARRAY_SIZE];
-  float dist[PAYLOAD_ARRAY_SIZE];
-#if WIREFRAME
-  float2 bary[PAYLOAD_ARRAY_SIZE];  // hit barycentrics
-#endif
-};
-#endif
-
 #undef DEFAULT
 #endif

@@ -17,13 +17,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "nvshaders/wireframe.h.slang"
+
 #include "shaderio.h"
 #include "threedgrt_payload.h.slang"
 
 [shader("anyhit")]
 void main(inout HitPayload payload
 #if WIREFRAME
-          , in BuiltInTriangleIntersectionAttributes attribs
+          ,
+          in BuiltInTriangleIntersectionAttributes attribs
 #endif
 )
 {
@@ -38,13 +41,28 @@ void main(inout HitPayload payload
 #endif
 
   float splatDist = RayTCurrent();
-#if WIREFRAME
-  float2 splatBary = attribs.barycentrics;
-#endif
-  //prd.hitCount += 1;
 
-  if (splatDist < payload.dist[PAYLOAD_ARRAY_SIZE - 1])
+  // is hit closer than last hit of the array ?
+  if(splatDist < payload.dist[PAYLOAD_ARRAY_SIZE - 1])
   {
+#if WIREFRAME
+    if(splatDist < payload.wireframeDist)
+    {
+      const float2 splatBary = attribs.barycentrics;
+      const float3 bary      = float3(1.f - splatBary.x - splatBary.y, splatBary.x, splatBary.y);
+
+      const float3 triangleVertexPositions[3] = { HitTriangleVertexPosition(0), HitTriangleVertexPosition(1), HitTriangleVertexPosition(2) };
+
+      const float3 derivative = computeDerivativeHighp(WorldToObject4x3(), WorldRayOrigin(), ObjectRayOrigin(),
+                                                triangleVertexPositions, payload.differentialX, payload.differentialY, bary);
+
+      if(processWireframe(wireframeDefaultSettings(), bary, derivative) > 0.0)
+      {
+        payload.wireframeDist = splatDist;
+      }
+    }
+#endif
+
     // insert/sorted from min dist to max dist
     [unroll]
     for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
@@ -53,17 +71,11 @@ void main(inout HitPayload payload
       if(splatDist < distance)
       {
         payload.dist[i] = splatDist;
-        splatDist = distance;
+        splatDist       = distance;
 
-        const int id = payload.id[i];
+        const int id  = payload.id[i];
         payload.id[i] = splatId;
-        splatId = id;
-
-#if WIREFRAME
-        const float2 bary = payload.bary[i];
-        payload.bary[i] = splatBary;
-        splatBary = bary;
-#endif
+        splatId       = id;
       }
     }
 
