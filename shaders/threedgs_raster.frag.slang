@@ -143,14 +143,6 @@ FragmentOutput processFragment(float2 inFragPos, float4 inSplatCol, float3 baryC
 {
   FragmentOutput output;
 
-#if WIREFRAME
-  if (processWireframe(wireframeDefaultSettings(), baryCoord, fwidth(baryCoord)) > 0.0)
-  {
-    output.outColor = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
-    return output;
-  }
-#endif
-
 #if USE_BARYCENTRIC
   // Use barycentric extension to find the position of the fragment
   const float sqrt8 = sqrt(8.0);
@@ -165,8 +157,10 @@ FragmentOutput processFragment(float2 inFragPos, float4 inSplatCol, float3 baryC
   // scaled by a factor of 8. If the squared result is larger than 8, it means it is outside the ellipse
   // defined by the rectangle formed by inFragPos. It also means it's farther
   // away than sqrt(8) standard deviations from the mean.
+#if !WIREFRAME
   if(A > 8.0)
     discard;
+#endif
 
 #if DISABLE_OPACITY_GAUSSIAN
   const float opacity = 1.0;
@@ -177,7 +171,17 @@ FragmentOutput processFragment(float2 inFragPos, float4 inSplatCol, float3 baryC
   const float opacity = exp(-0.5 * A) * inSplatCol.a;
 #endif
 
-  output.outColor = float4(inSplatCol.rgb, opacity);
+#if WIREFRAME
+  if(A > 8.0)
+    output.outColor = float4(0.0, 0.0, 0.0, 0.0);
+  else
+#endif
+    output.outColor = float4(inSplatCol.rgb, opacity);
+
+#if WIREFRAME
+  const float wireframeAlpha = processWireframe(wireframeDefaultSettings(), baryCoord, fwidth(baryCoord));
+  output.outColor            = lerp(output.outColor, float4(1.0, 0.0, 0.0, 1.0), wireframeAlpha);
+#endif
 
   return output;
 }

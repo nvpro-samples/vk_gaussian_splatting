@@ -20,24 +20,24 @@
 #include "nvshaders/wireframe.h.slang"
 
 #include "shaderio.h"
+#include "threedgrt_custom_attributes.h.slang"
 #include "threedgrt_payload.h.slang"
+#include "wireframe_extended.h.slang"
 
 [shader("anyhit")]
 void main(inout HitPayload payload
 #if WIREFRAME
           ,
-          in BuiltInTriangleIntersectionAttributes attribs
+          in CustomIntersectionAttributes attribs
 #endif
 )
 {
 #if RTX_USE_INSTANCES
   int splatId = InstanceIndex();
-#else
-#if RTX_USE_AABBS
+#elif RTX_USE_AABBS
   int splatId = PrimitiveIndex();  // aabbox per splat
 #else
   int splatId = PrimitiveIndex() / 20;  // 20 triangles per icosahedron
-#endif
 #endif
 
   float splatDist = RayTCurrent();
@@ -45,44 +45,89 @@ void main(inout HitPayload payload
   // is hit closer than last hit of the array ?
   if(splatDist < payload.dist[PAYLOAD_ARRAY_SIZE - 1])
   {
+
 #if WIREFRAME
-    if(splatDist < payload.wireframeDist)
-    {
-      const float2 splatBary = attribs.barycentrics;
-      const float3 bary      = float3(1.f - splatBary.x - splatBary.y, splatBary.x, splatBary.y);
-
-      const float3 triangleVertexPositions[3] = { HitTriangleVertexPosition(0), HitTriangleVertexPosition(1), HitTriangleVertexPosition(2) };
-
-      const float3 derivative = computeDerivativeHighp(WorldToObject4x3(), WorldRayOrigin(), ObjectRayOrigin(),
-                                                triangleVertexPositions, payload.differentialX, payload.differentialY, bary);
-
-      if(processWireframe(wireframeDefaultSettings(), bary, derivative) > 0.0)
-      {
-        payload.wireframeDist = splatDist;
-      }
-    }
+#if !RTX_USE_AABBS
+    processTriangleWireframe(splatDist, attribs.barycentrics, payload);
+#else
+    const uint kind        = HitKind();
+    const bool particleHit = (kind & (1 << 4)) != 0;  // Bit 4: particleHit flag
+    processAABBWireframe(attribs.aabbHitT, attribs.barycentrics, payload, kind);
+#endif
 #endif
 
-    // insert/sorted from min dist to max dist
-    [unroll]
-    for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
+#if WIREFRAME && RTX_USE_AABBS
+    // With AABB mode we may have a box hit but no particle hit
+    if(particleHit)
+#endif
     {
-      const float distance = payload.dist[i];
-      if(splatDist < distance)
+      // insert/sorted from min dist to max dist
+      [unroll]
+      for(int i = 0; i < PAYLOAD_ARRAY_SIZE; ++i)
       {
-        payload.dist[i] = splatDist;
-        splatDist       = distance;
+        const float distance = payload.dist[i];
+        if(splatDist < distance)
+        {
+          payload.dist[i] = splatDist;
+          splatDist       = distance;
 
-        const int id  = payload.id[i];
-        payload.id[i] = splatId;
-        splatId       = id;
+          const int id  = payload.id[i];
+          payload.id[i] = splatId;
+          splatId       = id;
+        }
       }
-    }
 
-    // ignore all inserted hits, except if the last one
-    if(payload.dist[PAYLOAD_ARRAY_SIZE - 1] > RayTCurrent())
-    {
-      IgnoreHit();
+      // ignore all inserted hits, except if the last one
+      if(payload.dist[PAYLOAD_ARRAY_SIZE - 1] > RayTCurrent())
+      {
+        IgnoreHit();
+      }
     }
   }
 }
+
+#if WIREFRAME
+void processTriangleWireframe(in float triangleHitT, in float2 splatBary, inout HitPayload payload)
+{
+  if(triangleHitT < payload.wireframeDist)
+  {
+    const float3 bary = float3(1.f - splatBary.x - splatBary.y, splatBary.x, splatBary.y);
+
+    // For triangle primitives (icosahedrons), compute proper ray differentials
+    const float3 triangleVertexPositions[3] = { HitTriangleVertexPosition(0), HitTriangleVertexPosition(1),
+                                                HitTriangleVertexPosition(2) };
+
+    const float3 derivative = computeDerivativeHighp(WorldToObject4x3(), WorldRayOrigin(), ObjectRayOrigin(), triangleVertexPositions,
+                                                     payload.differentialX, payload.differentialY, bary);
+
+    const float alpha = processWireframe(wireframeDefaultSettings(), bary, derivative);
+
+    if(alpha > 0.0)
+    {
+      payload.wireframeDist  = triangleHitT;
+      payload.wireframeAlpha = alpha;
+    }
+  }
+}
+
+void processAABBWireframe(in float aabbHitT, in float2 splatBary, inout HitPayload payload, uint hitKind)
+{
+  if(aabbHitT < payload.wireframeDist)
+  {
+    const float3 bary = float3(1.f - splatBary.x - splatBary.y, splatBary.x, splatBary.y);
+
+    const double aabbSize = 1.618033988749895f;  // Must match intersection shader (Golden Ratio)
+
+    const float3 derivative = computeAABBFaceDerivativeHighp(WorldToObject4x3(), WorldRayOrigin(), ObjectRayOrigin(), aabbSize,
+                                                             payload.differentialX, payload.differentialY, bary, hitKind);
+
+    const float alpha = processWireframe(wireframeDefaultSettings(), bary, derivative);
+
+    if(alpha > 0.0)
+    {
+      payload.wireframeDist  = aabbHitT;
+      payload.wireframeAlpha = alpha;
+    }
+  }
+}
+#endif

@@ -17,21 +17,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "shaderio.h"
-
-static const int PAYLOAD_INVALID_ID   = -1;
-static const float PAYLOAD_INF_DISTANCE = asfloat(0x7F7FFFFF);
-
-// the payload structure used for both Particle and Mesh tracing
-
-struct HitPayload
+/// Custom intersection attributes for 3DGS ray tracing
+/// Includes both barycentric coordinates and wireframe hit distance
+ 
+struct CustomIntersectionAttributes
 {
-    int id[PAYLOAD_ARRAY_SIZE];
-    float dist[PAYLOAD_ARRAY_SIZE];
-#if WIREFRAME
-    float3 differentialX;
-    float3 differentialY;
-    float wireframeDist;
-    float wireframeAlpha;
-#endif
+  float2 barycentrics;  // Barycentric coordinates for wireframe
+  float  aabbHitT;      // AABB hit distance for wireframe rendering
 };
+

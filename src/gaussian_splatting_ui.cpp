@@ -1625,8 +1625,8 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
       ImGui::EndDisabled();
       ImGui::EndTable();
     }
-    ImGui::End();
   }
+  ImGui::End();
 }
 
 
@@ -1844,7 +1844,8 @@ void GaussianSplattingUI::guiDrawFooterBar()
       ImGui::Text(" | Splat Dist ");
       ImGui::Text("%s", std::to_string(m_indirectReadback.particleDist).c_str());
 
-      /* DEBUG Feedback 
+      // DEBUG Feedback
+      /*
       ImGui::Text(" %s", "debug: ");
       ImGui::Text(" %s", std::to_string(m_indirectReadback.val1).c_str());
       ImGui::Text(" %s", std::to_string(m_indirectReadback.val2).c_str());

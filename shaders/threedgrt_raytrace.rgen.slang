@@ -24,6 +24,7 @@
 #include "cameras.h.slang"
 #include "color.h.slang"
 #include "wavefront.h.slang"
+#include "wireframe_extended.h.slang"
 
 #include "threedgs_particles_storage.h.slang"
 #include "threedgrt.h.slang"
@@ -120,8 +121,16 @@ void main()
   HitPayload payload = {};
 
 #if WIREFRAME
+  // Compute ray differentials for wireframe rendering
+  // Use camera-specific differential computation for accurate results
+#if CAMERA_TYPE == CAMERA_PINHOLE
   computeDifferentials(launchIdFloat, launchSizeFloat, frameInfo.viewInverse, frameInfo.projInverse,
                        payload.differentialX, payload.differentialY);
+#else
+  // Fisheye cameras require spherical projection-aware differential computation
+  computeDifferentialsFisheye(launchIdFloat, launchSizeFloat, frameInfo.fovRad, float2(0.0), frameInfo.viewInverse,
+                              rayDirection, payload.differentialX, payload.differentialY);
+#endif
 #endif
 
   // bounce loop
@@ -236,6 +245,10 @@ void main()
       // uses the inverse of the rotation-scale part of the model matrix.
       const float3 splatSetModelRayDirection = normalize(mul(rayDirection, float3x3(pcRay.modelMatrixRotScaleInverse)));
 
+#if WIREFRAME
+      bool wireframeDone = false;
+#endif
+
       while(outerIdx < frameInfo.maxPasses && (rayLastHitDistance <= tMax)
             && (maxComponent(transmittance) > double(frameInfo.minTransmittance)))
       {
@@ -248,7 +261,8 @@ void main()
         }
 #if WIREFRAME
         // Infinite means no wireframe hit by the ray
-        payload.wireframeDist = PAYLOAD_INF_DISTANCE;
+        payload.wireframeDist  = PAYLOAD_INF_DISTANCE;
+        payload.wireframeAlpha = 0.0;
 #endif
 
         // trace the PAYLOAD_ARRAY_SIZE any hits
@@ -296,18 +310,24 @@ void main()
               closestParticleDist  = dist;
               closestParticleFound = true;
             }
-#if WIREFRAME
-            if(dist == payload.wireframeDist)
-            {
-              radiance      = float3(1.0, 0.0, 0.0);  // wireframe color
-              transmittance = float3(0.0);            // opaque
-            }
-#endif
+
             // we move on in any case
             rayLastHitDistance = max(rayLastHitDistance, dist);
           }
         }
 
+#if WIREFRAME
+        if (bounce == 0 && !wireframeDone 
+#if DISABLE_OPACITY_GAUSSIAN
+           && payload.wireframeDist <= closestParticleDist
+#endif
+        )
+        {
+          radiance      = lerp(radiance, float3(1.0, 0.0, 0.0), payload.wireframeAlpha);
+          transmittance = float3(0.0);  // opaque
+          wireframeDone = true;
+        }
+#endif
         //
         outerIdx++;
       }

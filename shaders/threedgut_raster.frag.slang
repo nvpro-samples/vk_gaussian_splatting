@@ -53,14 +53,6 @@ FragmentOutput main(FragmentInput input)
 {
   FragmentOutput output;
 
-#if WIREFRAME
-  if (processWireframe(wireframeDefaultSettings(), input.barycentrics, fwidth(input.barycentrics)) > 0.0)
-  {
-    output.color = float4(1.0, 0.0, 0.0, 1.0);  // wireframe color, no blending
-    return output;
-  }
-#endif
-
   // use this to visualize full splat rectangular extent.
 #if 0
   {
@@ -104,9 +96,18 @@ FragmentOutput main(FragmentInput input)
                                            input.splatCol, input.splatPosition, input.splatScale, input.splatRotation, opacity);
 
   if(!acceptedHit)
+#if !WIREFRAME
     discard;
+#else
+    output.color = float4(0.0, 0.0, 0.0, 0.0);
+#endif
+  else
+    output.color = float4(input.splatCol.rgb, opacity);
 
-  output.color = float4(input.splatCol.rgb, opacity);
-  
+#if WIREFRAME
+  const float wireframeAlpha = processWireframe(wireframeDefaultSettings(), input.barycentrics, fwidth(input.barycentrics));
+  output.color = lerp(output.color, float4(1.0, 0.0, 0.0, 1.0), wireframeAlpha);
+#endif
+
   return output;
 }
