@@ -54,7 +54,7 @@ GaussianSplattingUI::GaussianSplattingUI(nvutils::ProfilerManager*   profilerMan
                               [&](const nvutils::ParameterBase* const) {
                                 if(m_app)
                                 {
-                                  m_app->screenShot(m_screenshotFilename);
+                                  m_app->saveScreenShot(m_screenshotFilename);
                                 }
                               }},
                          {".png"}, &m_screenshotFilename);

@@ -176,7 +176,7 @@ private:
     camera.ctr  = nvuCam.ctr;
     camera.up   = nvuCam.up;
     camera.fov  = nvuCam.fov;
-    camera.clip = nvuCam.clip;
+    camera.clip = nvuCam.nearFar;
     return camera;
   }
 
@@ -188,7 +188,7 @@ private:
         .ctr  = nvuCam.ctr,
         .up   = nvuCam.up,
         .fov  = nvuCam.fov,
-        .clip = nvuCam.clip,
+        .clip = nvuCam.nearFar,
     };
   }
 
@@ -200,7 +200,7 @@ private:
         .ctr  = camera.ctr,
         .up   = camera.up,
         .fov  = camera.fov,
-        .clip = camera.clip,
+        .nearFar = camera.clip,
     };
   }
 };
