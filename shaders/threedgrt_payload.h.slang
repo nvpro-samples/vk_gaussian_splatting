@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,25 +13,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "shaderio.h"
 
-static const int PAYLOAD_INVALID_ID   = -1;
+static const int   PAYLOAD_INVALID_ID   = -1;
 static const float PAYLOAD_INF_DISTANCE = asfloat(0x7F7FFFFF);
 
-// the payload structure used for both Particle and Mesh tracing
+static const bool kStochasticSort = (RTX_TRACE_STRATEGY == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT);
+static const bool kWireframe      = WIREFRAME;
+static const bool kPayloadSize    = PAYLOAD_ARRAY_SIZE;
 
-struct HitPayload
+typedef HitPayloadGeneric<kStochasticSort, kWireframe, kPayloadSize> HitPayload;
+
+// the payload structure used for both Particle and Mesh tracing
+struct HitPayloadGeneric<let kStochasticSplat : bool = false, let kWireframe : bool = false, let kSize : int>
 {
-    int id[PAYLOAD_ARRAY_SIZE];
-    float dist[PAYLOAD_ARRAY_SIZE];
-#if WIREFRAME
-    float3 differentialX;
-    float3 differentialY;
-    float wireframeDist;
-    float wireframeAlpha;
-#endif
+  int   id[kSize];
+  float dist[kSize];
+  uint  tlasInstanceOffset;  // Base offset for current TLAS (multi-TLAS support)
+
+  // Raygen-provided seed for stochastic any-hit
+  Conditional<uint, kStochasticSplat>   rngSeed;
+  Conditional<float4, kStochasticSplat> color[kSize];
+  Conditional<float3, kStochasticSplat> normal[kSize];
+
+  Conditional<float3, kWireframe> differentialX;
+  Conditional<float3, kWireframe> differentialY;
+  Conditional<float, kWireframe>  wireframeDist;
+  Conditional<float, kWireframe>  wireframeAlpha;
 };

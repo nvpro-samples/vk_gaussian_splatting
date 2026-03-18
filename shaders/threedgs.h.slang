@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -71,7 +71,7 @@ bool threedgsProjectedExtentBasis(float3 cov2Dv, float stdDev, float splatScale,
 
 #if MS_ANTIALIASING == 1
   const float detBlur = cov2Dv[0] * cov2Dv[2] - cov2Dv[1] * cov2Dv[1];
-  // apply the alpha compensation
+  // apply the alpha compensation (required for correct stochastic rendering)
   opacity *= sqrt(max(detOrig / detBlur, 0.0));
 #endif
 
@@ -109,7 +109,8 @@ bool threedgsProjectedExtentBasis(float3 cov2Dv, float stdDev, float splatScale,
   eigenValue1 = eigenValue2 = 0.2;
 #endif
 
-  const float2 eigenVector1 = normalize(float2(b, eigenValue1 - a));
+  // Handle near-axis-aligned covariance (when b ≈ 0)
+  const float2 eigenVector1 = normalize(float2((abs(b) < 0.001f) ? 1.0f : b, eigenValue1 - a));
   // since the eigen vectors are orthogonal, we derive the second one from the first
   const float2 eigenVector2 = float2(eigenVector1.y, -eigenVector1.x);
 

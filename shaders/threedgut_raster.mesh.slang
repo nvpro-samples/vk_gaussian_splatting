@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "shaderio.h"
 #include "threedgs.h.slang"
-#include "threedgs_particles_storage.h.slang"
+#include "threedgs_particle_storage.h.slang"
 #include "threedgut.h.slang"
 
 // Parallel Processing : Each global invocation (thread) processes one splat.
@@ -37,7 +37,9 @@ struct PrimitiveOutput
   [[vk::location(1)]] nointerpolation float4 splatCol : COLOR0;
   [[vk::location(2)]] nointerpolation float3 splatPosition : POSITION0;
   [[vk::location(3)]] nointerpolation float3 splatScale : SCALE0;
-  [[vk::location(4)]] nointerpolation float4 splatRotation : ROTATION0;  // a quaternion
+  [[vk::location(4)]] nointerpolation float3 splatInvRotation0 : ROTATION0;  // matrix row 0
+  [[vk::location(5)]] nointerpolation float3 splatInvRotation1 : ROTATION1;  // matrix row 1
+  [[vk::location(6)]] nointerpolation float3 splatInvRotation2 : ROTATION2;  // matrix row 2
 };
 
 // Per vertex output
@@ -47,9 +49,8 @@ struct VertexOutput
 };
 
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
-// sorted indices
-[[vk::binding(BINDING_INDICES_BUFFER, 0)]] RWStructuredBuffer<uint32_t> indices;
 // to get the actual number of splats (after culling if any)
 [[vk::binding(BINDING_INDIRECT_BUFFER, 0)]] RWStructuredBuffer<IndirectParams> indirectBuffer;
 
@@ -95,41 +96,53 @@ void main(
 
   if(baseIndex < splatCount)
   {
-    const uint splatIndex = indices[baseIndex];
+    // Access sorted indices via bindless device address
+    uint32_t* indices = assets.splatSortingIndicesAddress;
+    const uint globalSplatID = indices[baseIndex];
 
+    // Resolve global splat ID to correct descriptor and local index
+    SplatSetDesc splatSetDesc;
+    uint splatIndex;
+    resolveGlobalSplatID(assets, globalSplatID, splatSetDesc, splatIndex);
+    
     // emit primitives (triangles) as soon as possible
     triangles[localIndex * 2 + 0] = uint3(0, 2, 1) + localIndex * 4;
     triangles[localIndex * 2 + 1] = uint3(2, 0, 3) + localIndex * 4;
     
-    // Fetch particle minimal data
+    // Fetch particle minimal data 
     // Fetches are done as early as possible.
     // Moving those after culling statments will reduce the performance
-    float4       splatColor  = fetchColor(splatIndex);  // contains opacity as .a
-    const float3 splatCenter = fetchCenter(splatIndex);
-    const float3 splatScale  = exp(fetchScale(splatIndex));
+    float4       splatColor  = fetchColor(splatSetDesc, splatIndex);  // contains opacity as .a
+    const float3 splatCenter = fetchCenter(splatSetDesc, splatIndex);
+    const float3 splatScale  = exp(fetchScale(splatSetDesc, splatIndex));
     // INRIA quaternions are scalar first: w in splatRotation.x and xyz in splatRotation.yzw)
     // our internal representation (hence splatRotation), uses xyz, w. vec4ToQuat does convertion
-    const float4 splatRotation = normalize(vec4toQuat(fetchRotation(splatIndex)));
+    const float3x3 splatRotation = quatToMat3(normalize(vec4toQuat(fetchRotation(splatSetDesc, splatIndex))));
+    const float3x3 splatInvRotation = transpose(splatRotation);
 
-    // provides the splatIndex to the fragment shader
-    prims[localIndex * 2 + 0].splatId = splatIndex;
-    prims[localIndex * 2 + 1].splatId = splatIndex;
+    // Provide globalSplatID to fragment shader for descriptor resolution
+    prims[localIndex * 2 + 0].splatId = globalSplatID;
+    prims[localIndex * 2 + 1].splatId = globalSplatID;
     
     // emit per primitive data ASAP
     prims[localIndex * 2 + 0].splatPosition = splatCenter;
     prims[localIndex * 2 + 1].splatPosition = splatCenter;
     prims[localIndex * 2 + 0].splatScale    = splatScale;
     prims[localIndex * 2 + 1].splatScale    = splatScale;
-    prims[localIndex * 2 + 0].splatRotation = splatRotation;
-    prims[localIndex * 2 + 1].splatRotation = splatRotation;
+    prims[localIndex * 2 + 0].splatInvRotation0 = splatInvRotation[0];
+    prims[localIndex * 2 + 1].splatInvRotation0 = splatInvRotation[0];
+    prims[localIndex * 2 + 0].splatInvRotation1 = splatInvRotation[1];
+    prims[localIndex * 2 + 1].splatInvRotation1 = splatInvRotation[1];
+    prims[localIndex * 2 + 0].splatInvRotation2 = splatInvRotation[2];
+    prims[localIndex * 2 + 1].splatInvRotation2 = splatInvRotation[2];
 
     // fetch radiance from SH coefs > degree 0, we work in model coordinates
-    const float3 worldViewDir = normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
+    const float3 worldViewDir = normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), splatSetDesc.transformInverse).xyz);
 
 #if SHOW_SH_ONLY == 1
     splatColor.rgb = float3(0.5);
 #endif
-    splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
+    splatColor.rgb += fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatIndex, worldViewDir);
 
     // alpha based culling
     if(splatColor.a < frameInfo.alphaCullThreshold)
@@ -159,8 +172,8 @@ void main(
     float2 particleProjCenter;
     float3 particleProjCovariance;
 
-    if(!threedgutParticleProjection(resolution, sensorModel, pcRaster.modelMatrix, sensorState, splatCenter, splatScale,
-                                    quatToMat3(splatRotation), particleProjCenter, particleProjCovariance))
+    if(!threedgutParticleProjection(resolution, sensorModel, splatSetDesc.transform, sensorState, splatCenter, splatScale,
+                                    splatRotation, particleProjCenter, particleProjCovariance))
     {
       emitDegeneratedQuad(localIndex, verts);
       return;
@@ -204,10 +217,10 @@ void main(
     // particleProjCenter is in pixel coordinates, need to convert to NDC
     const float2 ndcXY = (particleProjCenter / frameInfo.viewport) * 2.0 - 1.0;
 
-    const float4 worldSplatCenter = mul(float4(splatCenter, 1.0), pcRaster.modelMatrix);
+    const float4 worldSplatCenter = mul(float4(splatCenter, 1.0), splatSetDesc.transform);
     const float4 viewSplatCenter  = mul(worldSplatCenter, frameInfo.viewMatrix);
     // TODO: projection matrix is not correct with fisheye, this is a coarse aprox to compute depth
-    const float4 clipSplatCenter = mul(viewSplatCenter, frameInfo.projectionMatrix);
+    const float4 clipSplatCenter = mul(viewSplatCenter, frameInfo.projectionMatrixJittered);
 
     const float3 ndcCenter = float3(ndcXY, clipSplatCenter.z / clipSplatCenter.w);
 #if EXTENT_METHOD == EXTENT_CONIC

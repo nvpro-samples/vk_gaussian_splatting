@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,6 +21,7 @@
 
 // clang-format off
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 
 struct VertexInput
@@ -46,14 +47,19 @@ VertexOutput main(VertexInput input)
 {
   VertexOutput output;
 
+  // Get mesh descriptor from bindless assets
+  MeshDesc meshDesc = assets.meshes[pcRaster.objIndex];
+
   float3 origin = mul(float4(0, 0, 0, 1), frameInfo.viewInverse).xyz;
 
-  output.worldPos = mul(float4(input.position, 1.0), pcRaster.modelMatrix).xyz;
+  output.worldPos = mul(float4(input.position, 1.0), meshDesc.transform).xyz;
   output.viewDir  = output.worldPos - origin;
   // output.texCoord = input.texCoord;
-  output.worldNrm = normalize(mul(input.normal, float3x3(transpose(pcRaster.modelMatrixInverse))));
+  // For normals, we need transpose(inverse(RS))
+  // We store inverse(RS), then transpose() it here (fast operation)
+  output.worldNrm = normalize(mul(input.normal, transpose(meshDesc.transformRotScaleInverse)));
 
-  output.position = mul(mul(float4(output.worldPos, 1.0), frameInfo.viewMatrix), frameInfo.projectionMatrix);
+  output.position = mul(mul(float4(output.worldPos, 1.0), frameInfo.viewMatrix), frameInfo.projectionMatrixJittered);
 
   return output;
 }

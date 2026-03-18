@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,16 +45,16 @@ struct Camera
 {
   int model = CAMERA_PINHOLE;
 
-  glm::vec3 eye = glm::vec3(0.0F, 0.0F, 2.0F);  // camera position
+  glm::vec3 eye = glm::vec3(1.7F, 1.5F, 1.7F);  // camera position
   glm::vec3 ctr = glm::vec3(0, 0, 0);           // center of rotation (look at point) for interaction
   glm::vec3 up  = glm::vec3(0, 1, 0);           // up vector
 
   float     fov  = 60.0f;            // field of view
   glm::vec2 clip = {0.1f, 2000.0f};  // znear, zfar
 
-  bool  dofEnabled = false;
-  float focusDist  = 1.3f;    // focus distance to compute depth of field (defocus effect)
-  float aperture   = 0.001f;  // aperture distance to compute depth of field, 0 does no DOF effect
+  int   dofMode   = DOF_DISABLED;
+  float focusDist = 1.3f;    // focus distance to compute depth of field (defocus effect)
+  float aperture  = 0.001f;  // aperture distance to compute depth of field, 0 does no DOF effect
 
   bool operator==(const Camera& cam) const
   {
@@ -69,6 +69,13 @@ public:
   void init(nvutils::CameraManipulator* cameraManip) { m_cameraManip = cameraManip; }
 
   void deinit()
+  {
+    m_camera = Camera();
+    m_presets.clear();
+    m_cameraManip = nullptr;
+  }
+
+  void reset()
   {
     m_camera = Camera();
     m_presets.clear();
@@ -92,6 +99,9 @@ public:
 
   // return the number of cameras in the set
   uint64_t size() const { return m_presets.size(); }
+
+  // remove all presets
+  void clearPresets() { m_presets.clear(); }
 
   // store the current camera parameter in a new preset entry
   // if a preset with same attributes already exists, no additional
@@ -133,11 +143,10 @@ public:
     return true;
   }
 
-  // remove a camera from the set
-  // default one (index 0) is forbiden
+  // remove a camera from the set (never allows deleting the last remaining preset)
   bool erasePreset(uint64_t index)
   {
-    if(m_presets.size() == 1 || index == 0 || index >= m_presets.size())
+    if(m_presets.size() <= 1 || index >= m_presets.size())
       return false;
 
     for(uint64_t i = index; i < m_presets.size() - 1; ++i)
@@ -155,10 +164,10 @@ public:
     return m_presets[index];
   }
 
-  // access the camera source of given index
+  // overwrite a camera preset with new values
   bool setPreset(uint64_t index, const Camera& camera)
   {
-    if(m_presets.size() == 1 || index == 0 || index >= m_presets.size())
+    if(index >= m_presets.size())
       return false;
     m_presets[index] = camera;
     return true;
@@ -176,7 +185,7 @@ private:
     camera.ctr  = nvuCam.ctr;
     camera.up   = nvuCam.up;
     camera.fov  = nvuCam.fov;
-    camera.clip = nvuCam.clip;
+    camera.clip = nvuCam.nearFar;
     return camera;
   }
 
@@ -188,7 +197,7 @@ private:
         .ctr  = nvuCam.ctr,
         .up   = nvuCam.up,
         .fov  = nvuCam.fov,
-        .clip = nvuCam.clip,
+        .clip = nvuCam.nearFar,
     };
   }
 
@@ -196,11 +205,11 @@ private:
   {
     // other fields from camera are "lost"
     return {
-        .eye  = camera.eye,
-        .ctr  = camera.ctr,
-        .up   = camera.up,
-        .fov  = camera.fov,
-        .clip = camera.clip,
+        .eye     = camera.eye,
+        .ctr     = camera.ctr,
+        .up      = camera.up,
+        .fov     = camera.fov,
+        .nearFar = camera.clip,
     };
   }
 };
@@ -233,15 +242,19 @@ static bool importCamerasINRIA(std::string filename, CameraSet& cameraSet)
       float                           fy       = item.at("fy").get<float>();
       float                           fx       = item.at("fx").get<float>();
 
-      glm::mat3 rotMat(rotation[0][0], rotation[1][0], rotation[2][0], rotation[0][1], rotation[1][1], rotation[2][1],
-                       rotation[0][2], rotation[1][2], rotation[2][2]);
+      // RDF->RUB
+      // we negate rotation and eye
 
-      glm::vec3 up = rotMat * glm::vec3(0.f, 1.f, 0.f);
-      glm::vec3 at = rotMat * glm::vec3(0.f, 0.f, 1.f);
+      glm::mat3 rotMat(rotation[0][0], rotation[1][0], rotation[2][0], 
+                       -rotation[0][1], rotation[1][1], rotation[2][1],
+                       rotation[0][2], -rotation[1][2], -rotation[2][2]);
 
+      glm::vec3 up = normalize(rotMat * glm::vec3(0.f, 1.f, 0.f));
+      glm::vec3 at = normalize(rotMat * glm::vec3(0.f, 0.f, 1.f));
+            
       Camera newCam;
-      newCam.eye = {position[0], position[1], position[2]};
-      newCam.ctr = at;
+      newCam.eye = {position[0], -position[1], -position[2]};
+      newCam.ctr = newCam.eye + at;
       newCam.up  = up;
 
       // add to CameraSet

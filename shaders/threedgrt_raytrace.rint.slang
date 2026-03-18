@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "shaderio.h"
-#include "threedgs_particles_storage.h.slang"
+#include "threedgs_particle_storage.h.slang"
 #include "threedgrt.h.slang"
 #include "threedgrt_custom_attributes.h.slang"
 #include "threedgrt_payload.h.slang"
@@ -26,14 +26,29 @@
 #include "wireframe_extended.h.slang"
 
 // clang-format off
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]] ConstantBuffer<PushConstantRay> pcRay;
 // clang-format on
+
+SplatSetDesc* getRtxSplatSetDescriptors()
+{
+  // RTX uses a per-TLAS-instance descriptor array when BLAS is split.
+  // Fallback to per-instance descriptors for non-split paths.
+  return (assets.splatSetDescriptorsRtx != nullptr) ? assets.splatSetDescriptorsRtx : assets.splatSetDescriptors;
+}
 
 [shader("intersection")]
 void main()
 {
+#if !RTX_USE_INSTANCES
+  // For non-instanced mode, InstanceID() maps directly to a descriptor index.
+  const uint   descIndex    = InstanceID();
+  SplatSetDesc splatSetDesc = getRtxSplatSetDescriptors()[descIndex];
+#endif
+  
 #if RTX_USE_INSTANCES
-  // allways testing the same unit particle, no data fetch inside Hit test function
+  // Instanced mode: allways testing the same unit particle, no data fetch inside Hit test function
+  // The TLAS instance transform already accounts for particle position/rotation/scale
   const float3 canonicalRayOrigin    = ObjectRayOrigin();
   const float3 canonicalRayDirection = ObjectRayDirection();
 
@@ -89,17 +104,17 @@ void main()
   // Attention: this non instanced AABB branch code is forced disabled by UI,
   // activating can lead to GPU freeze due to massive AABBOX overlaps (see readme).
 
-  const int particleId = PrimitiveIndex();
+  const int particleId = int(splatSetDesc.splatBase) + PrimitiveIndex();
 
-  // The two following transformations are to compute particleDensityHitCustom with transformed splat set model
-  const float3 modelRayOrigin = mul(float4(WorldRayOrigin(), 1.0), pcRay.modelMatrixInverse).xyz;
+  // Transform ray to splat model space using splatSetDesc transforms
+  const float3 modelRayOrigin = mul(float4(WorldRayOrigin(), 1.0), splatSetDesc.transformInverse).xyz;
   // Since the ray direction should not be affected by translation,
-  // uses the inverse of the rotation - scale part of the model matrix.
-  const float3 modelRayDirection = normalize(mul(WorldRayDirection(), float3x3(pcRay.modelMatrixRotScaleInverse)));
+  // uses the inverse of the rotation-scale part of the model matrix.
+  const float3 modelRayDirection = normalize(mul(WorldRayDirection(), splatSetDesc.transformRotScaleInverse));
 
   float hitT;
 
-  if(particleDensityHitCustom(modelRayOrigin, modelRayDirection, particleId, RayTMin(), RayTCurrent(), 9.0F, hitT))
+  if(particleDensityHitCustom(splatSetDesc, modelRayOrigin, modelRayDirection, particleId, RayTMin(), RayTCurrent(), 9.0F, hitT))
   {
     CustomIntersectionAttributes attr;
     attr.aabbHitT = PAYLOAD_INF_DISTANCE;
@@ -156,7 +171,8 @@ bool particleDensityHitInstance(in float3 canonicalRayOrigin,
          && (particleRayMinSquaredDistance(canonicalRayOrigin, normalize(canonicalUnormalizedRayDirection)) < maxParticleSquaredDistance);
 }
 
-bool particleDensityHitCustom(in float3 rayOrigin,
+bool particleDensityHitCustom(in SplatSetDesc splatSetDesc,
+                              in float3 rayOrigin,
                               in float3 rayDirection,
                               in int    particleId,
                               in float  minHitDistance,
@@ -164,18 +180,14 @@ bool particleDensityHitCustom(in float3 rayOrigin,
                               in float  maxParticleSquaredDistance,
                               out float hitDistance)
 {
-  float3   particlePosition;
-  float3   particleScale;
-  float3x3 particleInvRotation;
-
-  fetchParticlePSR(particleId, particlePosition, particleScale, particleInvRotation);
+  ThreedgrtParticle particle = { splatSetDesc, particleId, true }; // fetch the PSR only 
 
   float3 canonicalRayOrigin;
   float3 canonicalRayDirection;
-  particleCannonicalRay(rayOrigin, rayDirection, particlePosition, particleScale, particleInvRotation,
+  particleCannonicalRay(rayOrigin, rayDirection, particle.position, particle.scale, particle.invRotation,
                         canonicalRayOrigin, canonicalRayDirection);
 
-  hitDistance = particleRayDistance(canonicalRayOrigin, canonicalRayDirection, particleScale);
+  hitDistance = particleRayDistance(canonicalRayOrigin, canonicalRayDirection, particle.scale);
 
   return (hitDistance > minHitDistance) && (hitDistance < maxHitDistance)
          && (particleRayMinSquaredDistance(canonicalRayOrigin, canonicalRayDirection) < maxParticleSquaredDistance);

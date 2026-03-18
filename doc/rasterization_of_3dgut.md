@@ -128,5 +128,5 @@ Thanks to Qi Wu (@wilsonCernWq) for generating the 3DGUT dataset for us. Thanks 
 
 ## References
 
-Please consult the consolidated [References](../readme.md#References) section of the main `readme.md`.
+Please consult the consolidated [References](../README.md#references) section of the main `README.md`.
 

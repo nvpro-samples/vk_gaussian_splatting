@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,6 +21,7 @@
 #define _SPLAT_SET_H_
 
 #include <vector>
+#include <string>
 #include <cassert>
 
 // 3rd party spz library, used here for coordinate system convertions
@@ -39,6 +40,9 @@ struct SplatSet
   std::vector<float> opacity  = {};  // 1 value per point in ply file
   std::vector<float> scale    = {};  // 3 components per point in ply file
   std::vector<float> rotation = {};  // 4 components per point in ply file - a quaternion
+
+  // metadata
+  std::string path;  // File path to the source .ply file (used to identify the asset)
 
   // returns the number of splats in the set
   inline size_t size() const { return positions.size() / 3; }

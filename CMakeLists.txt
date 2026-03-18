@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.6...3.31)
 set(PROJECT_NAME "vk_gaussian_splatting")
 Project(${PROJECT_NAME} LANGUAGES C CXX)
 
+# Load version from VERSION file and expose to CMake and C++
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VKGS_VERSION_RAW)
+string(STRIP "${VKGS_VERSION_RAW}" VKGS_VERSION)
+message(STATUS "VKGS_VERSION: ${VKGS_VERSION}")
+
 # Add the cmake folder to the module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(NvproCore2 REQUIRED)
@@ -12,6 +17,9 @@ find_package(NvproCore2 REQUIRED)
 # if default scene is not disabled at build using this option, one can still disable it by 
 # providing "-loadDefaultScene 0" to the sample command line
 option(DISABLE_DEFAULT_SCENE "If set to true the default scene is not downloaded by CMake, and the sample does not try to open it when starting up with no scene as parameter" OFF)
+
+# DLSS Ray Reconstruction support
+option(USE_DLSS "Use DLSS-RR for denoising" ON)
 
 # Download the default scene
 if (NOT DISABLE_DEFAULT_SCENE)
@@ -85,6 +93,7 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_DEFINE_MATH_OPERATORS )
+target_compile_definitions(${PROJECT_NAME} PRIVATE VKGS_VERSION="${VKGS_VERSION}")
 
 #####################################################################################
 # common source code needed for this sample
@@ -119,12 +128,27 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 add_project_definitions(${PROJECT_NAME})
 
 #####################################################################################
+# Adding DLSS if selected
+if(USE_DLSS)
+  set(DLSS_VERSION "310.5.0")
+  find_package(NGX REQUIRED)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ngx)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_DLSS)
+  target_sources(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dlss_wrapper.cpp 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dlss_wrapper.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dlss_denoiser.cpp 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/dlss_denoiser.hpp
+  )
+endif()
+
+#####################################################################################
 # copies files
 #
 
 copy_to_runtime_and_install(${PROJECT_NAME}
   DIRECTORIES "${NVSHADERS_DIR}/nvshaders"
-  FILES ${Slang_GLSLANG}
+  FILES ${Slang_GLSLANG} ${DLSS_DLLS}
   LOCAL_DIRS "${CMAKE_CURRENT_LIST_DIR}/shaders"
   AUTO
 )

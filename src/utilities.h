@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,6 +24,7 @@
 #include <fmt/format.h>
 #include <glm/vec3.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <nvutils/file_operations.hpp>
 #include <nvutils/parallel_work.hpp>
@@ -130,24 +131,87 @@ static std::string formatSize(size_t sizeValue)
   return fmt::format("{:.3} {}", size, units[currentUnit]);
 }
 
+// prints N/A or +Inf / -Inf
+static std::string formatFloatInf(float value)
+{
+  if(std::isnan(value))
+  {
+    return "N/A";
+  }
+  else if(fabs(value) == FLT_MAX)
+  {  // Catches both +inf and -inf
+    return (value > 0.0f) ? "+Inf" : "-Inf";
+  }
+  else
+  {
+    return fmt::format("{}", value);
+  }
+}
+
+// Helper to get bytes per pixel for common Vulkan color formats
+static uint32_t getColorFormatBytesPerPixel(VkFormat format)
+{
+  switch(format)
+  {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+      return 4;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+      return 8;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+      return 16;
+    default:
+      return 8;  // Default to 64-bit
+  }
+}
+
 static void computeTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& translation, glm::mat4& transform, glm::mat4& transformInv)
 {
-  transform = glm::mat4(1.0f);  // Identity matrix
+  // Use quaternion-based rotation for consistent transform computation
+  glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+  glm::mat4 R = glm::mat4_cast(glm::quat(glm::radians(rotation)));
+  glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
 
-  // Apply transformations in Scale -> Rotate -> Translate order
-  // 1. Apply translation
-  transform = glm::translate(transform, translation);
-
-  // 2. Apply rotations (note: glm::radians converts degrees to radians)
-  transform = glm::rotate(transform, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-  transform = glm::rotate(transform, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-  transform = glm::rotate(transform, glm::radians(rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-
-  // 3. Apply scaling
-  transform = glm::scale(transform, scale);
-
-  //
+  transform    = T * R * S;
   transformInv = glm::inverse(transform);
+}
+
+// Overload with transformRotScaleInverse parameter (always compute all three for consistency)
+static void computeTransform(glm::vec3& scale,
+                             glm::vec3& rotation,
+                             glm::vec3& translation,
+                             glm::mat4& transform,
+                             glm::mat4& transformInv,
+                             glm::mat3& transformRotScaleInv)
+{
+  // Use quaternion-based rotation for consistent transform computation
+  glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+  glm::mat4 R = glm::mat4_cast(glm::quat(glm::radians(rotation)));
+  glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
+
+  transform    = T * R * S;
+  transformInv = glm::inverse(transform);
+  // For rotation-scale inverse: must use inverse() for non-uniform scaling
+  // Note: transpose(RS) = inverse(RS) only holds for orthogonal matrices (pure rotation)
+  transformRotScaleInv = glm::mat3(glm::inverse(R * S));
+}
+
+// Utility function to rotate a direction vector by rotation angles (in degrees)
+static glm::vec3 rotateDirection(const glm::vec3& rotation, const glm::vec3& direction)
+{
+  // Use quaternion-based rotation (consistent with computeTransform)
+  glm::mat4 R = glm::mat4_cast(glm::quat(glm::radians(rotation)));
+  return glm::vec3(R * glm::vec4(direction, 0.0f));
+}
+
+// Truncate filename to max length, keeping the last characters
+inline std::string truncateFilename(const std::string& filename, size_t maxLength = 25)
+{
+  if(filename.length() <= maxLength)
+    return filename;
+  return filename.substr(filename.length() - maxLength);
 }
 
 }  // namespace vk_gaussian_splatting

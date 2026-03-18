@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "splat_set_vk.h"
 #include "shaderio.h"
 #include "utilities.h"
+#include "memory_monitor_vk.h"
 
+#include <vulkan/vk_enum_string_helper.h>  // For string_VkResult
 #include <iostream>
 #include <chrono>
 
@@ -49,6 +51,35 @@ glm::ivec2 computeDataTextureSize(int elementsPerTexel, int elementsPerSplat, in
     texSize.y *= 2;
   return texSize;
 };
+
+// Check if the required texture size for a splat set would exceed device limits
+// Returns the estimated required texture height (width is fixed at 4096)
+uint32_t computeMaxDataTextureSize(uint32_t splatCount, uint32_t shDegree)
+{
+  // Estimate required texture height for the largest texture (spherical harmonics)
+  int sphericalHarmonicsComponentCount = 15;  // SH degree 0-1 (default)
+  if(shDegree == 2)
+    sphericalHarmonicsComponentCount = 24;
+  else if(shDegree == 3)
+    sphericalHarmonicsComponentCount = 45;
+
+  // Round up to multiple of 4
+  int paddedCount = (sphericalHarmonicsComponentCount + 3) & ~3;
+
+  // Estimate required height: we need (splatCount * paddedCount) / (4096 * 4) rows
+  // Start with 1024 and keep doubling
+  uint32_t estimatedHeight = 1024;
+  int64_t  requiredTexels  = static_cast<int64_t>(splatCount) * paddedCount / 4;  // 4 elements per texel
+  int64_t  availableTexels = 4096LL * estimatedHeight;
+
+  while(availableTexels < requiredTexels)
+  {
+    estimatedHeight *= 2;
+    availableTexels = 4096LL * estimatedHeight;
+  }
+
+  return estimatedHeight;
+}
 
 // quantize a float onto a uint8
 uint8_t toUint8(float v, float rangeMin, float rangeMax)
@@ -83,21 +114,56 @@ void storeSh(int format, float* srcBuffer, uint64_t srcIndex, void* dstBuffer, u
 ///////////////////
 // class definition
 
-void SplatSetVk::initDataStorage(SplatSet& splatSet, uint32_t storage, uint32_t format)
+void SplatSetVk::initDataStorage(uint32_t _shFormat, uint32_t _rgbaFormat)
 {
-  // TODO check if properly deinit before anything
-
   // store the parameters for further usage
-  m_storage = storage;
-  m_format  = format;
+  shFormat   = _shFormat;
+  rgbaFormat = _rgbaFormat;
 
-  if(m_storage == STORAGE_BUFFERS)
+  // Store metadata (from inherited SplatSet data)
+  splatCount = static_cast<uint32_t>(size());
+  shDegree   = static_cast<uint32_t>(maxShDegree());
+
+  // Initialize default material: fully emissive, no lighting interaction
+  splatMaterial.ambient       = glm::vec3(0.0f);
+  splatMaterial.diffuse       = glm::vec3(0.0f);
+  splatMaterial.specular      = glm::vec3(0.0f);
+  splatMaterial.transmittance = glm::vec3(0.0f);
+  splatMaterial.emission      = glm::vec3(1.0f);  // Fully emissive
+  splatMaterial.shininess     = 0.0f;
+  splatMaterial.ior           = 1.0f;
+  splatMaterial.illum         = 0;
+
+  // Note: Material is now stored per-instance in SplatSetInstanceVk::descriptor
+  // This splatMaterial serves as the default for new instances
+
+  if(dataStorage == STORAGE_BUFFERS)
   {
-    initDataBuffers(splatSet);
+    initDataBuffers();
   }
-  else if(m_storage == STORAGE_TEXTURES)
+  else if(dataStorage == STORAGE_TEXTURES)
   {
-    initDataTextures(splatSet);
+    // Check if scene is too large for texture storage mode
+    if(m_deviceInfo)
+    {
+      uint32_t maxTextureDim   = m_deviceInfo->properties10.limits.maxImageDimension2D;
+      uint32_t estimatedHeight = computeMaxDataTextureSize(splatCount, shDegree);
+
+      if(estimatedHeight > maxTextureDim)
+      {
+        LOGE("Failed to create texture storage for splat set (index=%zu): Scene too large for texture mode\n", index);
+        LOGE("  Splat count: %.2f M, SH degree: %u, Estimated height needed: %u, Device max: %u\n",
+             splatCount / 1000000.0, shDegree, estimatedHeight, maxTextureDim);
+        LOGW("  Falling back to BUFFER storage mode.\n");
+
+        // Fall back to buffer storage
+        dataStorage = STORAGE_BUFFERS;
+        initDataBuffers();
+        return;
+      }
+    }
+
+    initDataTextures();
   }
   else
     LOGE("Invalid storage format");
@@ -105,224 +171,199 @@ void SplatSetVk::initDataStorage(SplatSet& splatSet, uint32_t storage, uint32_t 
 
 void SplatSetVk::deinitDataStorage()
 {
-  if(m_storage == STORAGE_BUFFERS)
-  {
-    deinitDataBuffers();
-  }
-  else if(m_storage == STORAGE_TEXTURES)
-  {
-    deinitDataTextures();
-  }
-  else
-    LOGE("Invalid storage format");
+  // Note: Material is now stored per-instance, no buffer to destroy here
+
+  // Unconditionally deinit both buffers and textures.
+  // This is safe because nvvk::LargeBuffer/Image default-initialize to null,
+  // and destroyLargeBuffer/destroyImage check for null handles.
+  // This prevents leaks if dataStorage changed between init and deinit
+  // (e.g., UI toggled from textures to buffers, or fallback occurred).
+  deinitDataBuffers();
+  deinitDataTextures();
 }
 
 ///////////////////
 // using data buffers to store splatset in VRAM
 
-void SplatSetVk::initDataBuffers(SplatSet& splatSet)
+void SplatSetVk::initDataBuffers()
 {
   if(false)
   {
     // dump splat info for debug
     uint32_t splatId = 4178424;
-    if(splatId < splatSet.size())
+    if(splatId < size())
     {
 
-      std::cout << splatSet.positions[splatId * 3 + 0] << " ";
-      std::cout << splatSet.positions[splatId * 3 + 1] << " ";
-      std::cout << splatSet.positions[splatId * 3 + 2] << "  0 1 0  ";
-      std::cout << splatSet.f_dc[splatId * 3 + 0] << " ";
-      std::cout << splatSet.f_dc[splatId * 3 + 1] << " ";
-      std::cout << splatSet.f_dc[splatId * 3 + 2] << "  ";
+      std::cout << positions[splatId * 3 + 0] << " ";
+      std::cout << positions[splatId * 3 + 1] << " ";
+      std::cout << positions[splatId * 3 + 2] << "  0 1 0  ";
+      std::cout << f_dc[splatId * 3 + 0] << " ";
+      std::cout << f_dc[splatId * 3 + 1] << " ";
+      std::cout << f_dc[splatId * 3 + 2] << "  ";
       for(int i = 0; i < 45; ++i)
       {
-        std::cout << splatSet.f_rest[splatId * 45 + i] << " ";
+        std::cout << f_rest[splatId * 45 + i] << " ";
       }
-      std::cout << " " << splatSet.opacity[splatId] << "  ";
-      std::cout << splatSet.scale[splatId * 3 + 0] << " ";
-      std::cout << splatSet.scale[splatId * 3 + 1] << " ";
-      std::cout << splatSet.scale[splatId * 3 + 2] << "  ";
-      std::cout << splatSet.rotation[splatId * 4 + 0] << " ";
-      std::cout << splatSet.rotation[splatId * 4 + 1] << " ";
-      std::cout << splatSet.rotation[splatId * 4 + 2] << " ";
-      std::cout << splatSet.rotation[splatId * 4 + 3] << std::endl;
+      std::cout << " " << opacity[splatId] << "  ";
+      std::cout << scale[splatId * 3 + 0] << " ";
+      std::cout << scale[splatId * 3 + 1] << " ";
+      std::cout << scale[splatId * 3 + 2] << "  ";
+      std::cout << rotation[splatId * 4 + 0] << " ";
+      std::cout << rotation[splatId * 4 + 1] << " ";
+      std::cout << rotation[splatId * 4 + 2] << " ";
+      std::cout << rotation[splatId * 4 + 3] << std::endl;
     }
   }
   auto       startTime  = std::chrono::high_resolution_clock::now();
-  const auto splatCount = (uint32_t)splatSet.positions.size() / 3;
+  const auto splatCount = (uint32_t)positions.size() / 3;
 
-  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
+  // Queue for sparse binding (required for LargeBuffer)
+  VkQueue queue = m_app->getQueue(0).queue;
 
-  // host buffers flags
-  VkBufferUsageFlagBits2   hostBufferUsageFlags = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT;
-  VmaMemoryUsage           hostMemoryUsageFlags = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-  VmaAllocationCreateFlags hostAllocCreateFlags = VMA_ALLOCATION_CREATE_MAPPED_BIT
-                                                  // for parallel access
-                                                  | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
-  // device buffers flags
+  // Device buffer usage flags
   VkBufferUsageFlagBits2 deviceBufferUsageFlags =
       VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT
       | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
-  VmaMemoryUsage deviceMemoryUsageFlags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-  // set of buffer to be freed after command execution
-  std::vector<nvvk::Buffer> buffersToDestroy;
 
   // Centers and Scales (scales and rotations are only for raytrace, raster
   // uses pre-computed covariances, see covariance section hereafter)
   {
-    const uint32_t bufferSize1Comp = splatCount * 1 * sizeof(float);
-    const uint32_t bufferSize3Comp = splatCount * 3 * sizeof(float);
-    const uint32_t bufferSize4Comp = splatCount * 4 * sizeof(float);
+    const VkDeviceSize bufferSize3Comp = VkDeviceSize(splatCount) * 3 * sizeof(float);
+    const VkDeviceSize bufferSize4Comp = VkDeviceSize(splatCount) * 4 * sizeof(float);
 
-    // allocate host and device buffers
-    nvvk::Buffer hostBufferCenters;
-    m_alloc->createBuffer(hostBufferCenters, bufferSize3Comp, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBufferCenters.buffer);
-    nvvk::Buffer hostBufferScales;
-    m_alloc->createBuffer(hostBufferScales, bufferSize3Comp, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBufferScales.buffer);
-    nvvk::Buffer hostBufferRotations;
-    m_alloc->createBuffer(hostBufferRotations, bufferSize4Comp, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBufferRotations.buffer);
+    std::cout << "Allocating splat buffers: centers/scales=" << bufferSize3Comp << " B, rotations=" << bufferSize4Comp
+              << " B (" << splatCount << " splats)" << std::endl;
 
-    m_alloc->createBuffer(centersBuffer, bufferSize3Comp, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(centersBuffer, bufferSize3Comp, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(centersBuffer.buffer);
-    m_alloc->createBuffer(scalesBuffer, bufferSize3Comp, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(scalesBuffer, bufferSize3Comp, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(scalesBuffer.buffer);
-    m_alloc->createBuffer(rotationsBuffer, bufferSize4Comp, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(rotationsBuffer, bufferSize4Comp, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(rotationsBuffer.buffer);
 
-    // fill host buffer
-    memcpy(hostBufferCenters.mapping, splatSet.positions.data(), bufferSize3Comp);
-    memcpy(hostBufferScales.mapping, splatSet.scale.data(), bufferSize3Comp);
-    memcpy(hostBufferRotations.mapping, splatSet.rotation.data(), bufferSize4Comp);
-
-    // copy from host buffer to device buffer
-    // barrier at the end of this method.
-    VkBufferCopy bc3Comp{.srcOffset = 0, .dstOffset = 0, .size = bufferSize3Comp};
-    vkCmdCopyBuffer(cmd, hostBufferCenters.buffer, centersBuffer.buffer, 1, &bc3Comp);
-    vkCmdCopyBuffer(cmd, hostBufferScales.buffer, scalesBuffer.buffer, 1, &bc3Comp);
-    VkBufferCopy bc4Comp{.srcOffset = 0, .dstOffset = 0, .size = bufferSize4Comp};
-    vkCmdCopyBuffer(cmd, hostBufferRotations.buffer, rotationsBuffer.buffer, 1, &bc4Comp);
-
-    // free host buffer after command execution
-    buffersToDestroy.push_back(hostBufferCenters);
-    buffersToDestroy.push_back(hostBufferScales);
-    buffersToDestroy.push_back(hostBufferRotations);
+    NVVK_CHECK(m_uploader->appendLargeBuffer(centersBuffer, 0, bufferSize3Comp, positions.data()));
+    NVVK_CHECK(m_uploader->appendLargeBuffer(scalesBuffer, 0, bufferSize3Comp, scale.data()));
+    NVVK_CHECK(m_uploader->appendLargeBuffer(rotationsBuffer, 0, bufferSize4Comp, rotation.data()));
 
     // memory statistics
-    memoryStats.srcCenters  = bufferSize3Comp;
-    memoryStats.odevCenters = bufferSize3Comp;  // no compression or quantization
-    memoryStats.devCenters  = bufferSize3Comp;  // same size as source
+    memoryStats.hostCenters        = bufferSize3Comp;
+    memoryStats.deviceUsedCenters  = bufferSize3Comp;
+    memoryStats.deviceAllocCenters = bufferSize3Comp;
+
+    memoryStats.hostScales        = bufferSize3Comp;
+    memoryStats.deviceUsedScales  = bufferSize3Comp;
+    memoryStats.deviceAllocScales = bufferSize3Comp;
+
+    memoryStats.hostRotations        = bufferSize4Comp;
+    memoryStats.deviceUsedRotations  = bufferSize4Comp;
+    memoryStats.deviceAllocRotations = bufferSize4Comp;
   }
 
   // covariances (for raster only)
   {
-    const uint32_t bufferSize = splatCount * 2 * 3 * sizeof(float);
+    const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * 2 * 3 * sizeof(float);
 
-    // allocate host and device buffers
-    nvvk::Buffer hostBuffer;
-    m_alloc->createBuffer(hostBuffer, bufferSize, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBuffer.buffer);
+    std::cout << "Allocating covariance buffers: " << bufferSize << " B (" << splatCount << " splats)" << std::endl;
 
-    m_alloc->createBuffer(covariancesBuffer, bufferSize, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(covariancesBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(covariancesBuffer.buffer);
 
-    // map and fill host buffer
-    float* hostBufferMapped = (float*)(hostBuffer.mapping);
+    // Compute covariances into temporary CPU buffer
+    std::vector<float> covData(size_t(splatCount) * 6);
 
-    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto stride3 = splatIdx * 3;
       const auto stride4 = splatIdx * 4;
       const auto stride6 = splatIdx * 6;
-      glm::vec3  scale{std::exp(splatSet.scale[stride3 + 0]), std::exp(splatSet.scale[stride3 + 1]),
-                      std::exp(splatSet.scale[stride3 + 2])};
+      glm::vec3  scl{std::exp(scale[stride3 + 0]), std::exp(scale[stride3 + 1]), std::exp(scale[stride3 + 2])};
 
-      glm::quat rotation{splatSet.rotation[stride4 + 0], splatSet.rotation[stride4 + 1], splatSet.rotation[stride4 + 2],
-                         splatSet.rotation[stride4 + 3]};
-      rotation = glm::normalize(rotation);
+      glm::quat rot{rotation[stride4 + 0], rotation[stride4 + 1], rotation[stride4 + 2], rotation[stride4 + 3]};
+      rot = glm::normalize(rot);
 
-      // computes the covariance
-      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
-      const glm::mat3 rotationMatrix        = glm::mat3_cast(rotation);  // where rotation is a quaternion
+      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scl));
+      const glm::mat3 rotationMatrix        = glm::mat3_cast(rot);
       const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
       glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
 
-      hostBufferMapped[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
-      hostBufferMapped[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
-      hostBufferMapped[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
+      covData[stride6 + 0] = glm::value_ptr(transformedCovariance)[0];
+      covData[stride6 + 1] = glm::value_ptr(transformedCovariance)[3];
+      covData[stride6 + 2] = glm::value_ptr(transformedCovariance)[6];
 
-      hostBufferMapped[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
-      hostBufferMapped[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
-      hostBufferMapped[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
+      covData[stride6 + 3] = glm::value_ptr(transformedCovariance)[4];
+      covData[stride6 + 4] = glm::value_ptr(transformedCovariance)[7];
+      covData[stride6 + 5] = glm::value_ptr(transformedCovariance)[8];
     }
     END_PAR_LOOP();
 
-    // copy from host buffer to device buffer
-    // barrier at the end of this method.
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
-    vkCmdCopyBuffer(cmd, hostBuffer.buffer, covariancesBuffer.buffer, 1, &bc);
-
-    // free host buffer after command execution
-    buffersToDestroy.push_back(hostBuffer);
+    NVVK_CHECK(m_uploader->appendLargeBuffer(covariancesBuffer, 0, bufferSize, covData.data()));
 
     // memory statistics
-    memoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
-    memoryStats.odevCov = bufferSize;  // no compression
-    memoryStats.devCov  = bufferSize;  // covariance takes less space than rotation + scale
+    memoryStats.hostCov        = (splatCount * (4 + 3)) * sizeof(float);
+    memoryStats.deviceUsedCov  = bufferSize;
+    memoryStats.deviceAllocCov = bufferSize;
   }
 
   // Colors. SH degree 0 is not view dependent, so we directly transform to base color
   // this will make some economy of processing in the shader at each frame
   {
-    const uint32_t bufferSize = splatCount * 4 * sizeof(float);
+    const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * 4 * formatSize(rgbaFormat);
 
-    // allocate host and device buffers
-    nvvk::Buffer hostBuffer;
-    m_alloc->createBuffer(hostBuffer, bufferSize, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBuffer.buffer);
+    std::cout << "Allocating color buffers: " << bufferSize << " B (" << splatCount << " splats, format=" << rgbaFormat << ")" << std::endl;
 
-    m_alloc->createBuffer(colorsBuffer, bufferSize, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(colorsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(colorsBuffer.buffer);
 
-    // fill host buffer
-    float* hostBufferMapped = (float*)(hostBuffer.mapping);
+    // Compute colors into temporary CPU buffer
+    std::vector<uint8_t> colorData(bufferSize);
+    void*                colorPtr = colorData.data();
 
-    //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     START_PAR_LOOP(splatCount, splatIdx)
     {
-      const auto  stride3           = splatIdx * 3;
-      const auto  stride4           = splatIdx * 4;
-      const float SH_C0             = 0.28209479177387814f;
-      hostBufferMapped[stride4 + 0] = glm::clamp(0.5f + SH_C0 * splatSet.f_dc[stride3 + 0], 0.0f, 1.0f);
-      hostBufferMapped[stride4 + 1] = glm::clamp(0.5f + SH_C0 * splatSet.f_dc[stride3 + 1], 0.0f, 1.0f);
-      hostBufferMapped[stride4 + 2] = glm::clamp(0.5f + SH_C0 * splatSet.f_dc[stride3 + 2], 0.0f, 1.0f);
-      hostBufferMapped[stride4 + 3] = glm::clamp(1.0f / (1.0f + std::exp(-splatSet.opacity[splatIdx])), 0.0f, 1.0f);
+      const auto  stride3 = splatIdx * 3;
+      const auto  stride4 = splatIdx * 4;
+      const float SH_C0   = 0.28209479177387814f;
+      const float r       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 0], 0.0f, 1.0f);
+      const float g       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 1], 0.0f, 1.0f);
+      const float b       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 2], 0.0f, 1.0f);
+      const float a       = glm::clamp(1.0f / (1.0f + std::exp(-opacity[splatIdx])), 0.0f, 1.0f);
+
+      if(rgbaFormat == FORMAT_FLOAT32)
+      {
+        static_cast<float*>(colorPtr)[stride4 + 0] = r;
+        static_cast<float*>(colorPtr)[stride4 + 1] = g;
+        static_cast<float*>(colorPtr)[stride4 + 2] = b;
+        static_cast<float*>(colorPtr)[stride4 + 3] = a;
+      }
+      else if(rgbaFormat == FORMAT_FLOAT16)
+      {
+        static_cast<uint16_t*>(colorPtr)[stride4 + 0] = glm::packHalf1x16(r);
+        static_cast<uint16_t*>(colorPtr)[stride4 + 1] = glm::packHalf1x16(g);
+        static_cast<uint16_t*>(colorPtr)[stride4 + 2] = glm::packHalf1x16(b);
+        static_cast<uint16_t*>(colorPtr)[stride4 + 3] = glm::packHalf1x16(a);
+      }
+      else if(rgbaFormat == FORMAT_UINT8)
+      {
+        static_cast<uint8_t*>(colorPtr)[stride4 + 0] = toUint8(r, 0.f, 1.f);
+        static_cast<uint8_t*>(colorPtr)[stride4 + 1] = toUint8(g, 0.f, 1.f);
+        static_cast<uint8_t*>(colorPtr)[stride4 + 2] = toUint8(b, 0.f, 1.f);
+        static_cast<uint8_t*>(colorPtr)[stride4 + 3] = toUint8(a, 0.f, 1.f);
+      }
     }
     END_PAR_LOOP()
 
-    // copy from host buffer to device buffer
-    // barrier at the end of this method.
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
-    vkCmdCopyBuffer(cmd, hostBuffer.buffer, colorsBuffer.buffer, 1, &bc);
-
-    // free host buffer after command execution
-    buffersToDestroy.push_back(hostBuffer);
+    NVVK_CHECK(m_uploader->appendLargeBuffer(colorsBuffer, 0, bufferSize, colorData.data()));
 
     // memory statistics
-    memoryStats.srcSh0  = bufferSize;
-    memoryStats.odevSh0 = bufferSize;
-    memoryStats.devSh0  = bufferSize;
+    memoryStats.hostSh0        = splatCount * 4 * sizeof(float);  // original data is always float
+    memoryStats.deviceUsedSh0  = bufferSize;
+    memoryStats.deviceAllocSh0 = bufferSize;
   }
 
   // Spherical harmonics of degree 1 to 3
-  if(!splatSet.f_rest.empty())
+  if(!f_rest.empty())
   {
-    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)splatSet.f_rest.size() / splatCount;
+    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)f_rest.size() / splatCount;
     const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
     // find the maximum SH degree stored in the file
     int sphericalHarmonicsDegree = 0;
@@ -346,22 +387,19 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
     // same for the time beeing, would be less if we do not upload all src degrees
     int targetSplatStride = splatStride;
 
-    // allocate host and device buffers
-    const uint32_t bufferSize = splatCount * splatStride * formatSize(m_format);
+    const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * splatStride * formatSize(shFormat);
 
-    nvvk::Buffer hostBuffer;
-    m_alloc->createBuffer(hostBuffer, bufferSize, hostBufferUsageFlags, hostMemoryUsageFlags, hostAllocCreateFlags);
-    NVVK_DBG_NAME(hostBuffer.buffer);
+    std::cout << "Allocating SH buffers: " << bufferSize << " B (" << splatCount << " splats, stride=" << splatStride << ")" << std::endl;
 
-    m_alloc->createBuffer(sphericalHarmonicsBuffer, bufferSize, deviceBufferUsageFlags, deviceMemoryUsageFlags);
+    NVVK_CHECK(m_alloc->createLargeBuffer(sphericalHarmonicsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(sphericalHarmonicsBuffer.buffer);
 
-    // fill host buffer
-    float* hostBufferMapped = (float*)(hostBuffer.mapping);
+    // Compute SH data into temporary CPU buffer (bufferSize bytes, element size depends on shFormat)
+    std::vector<uint8_t> shData(bufferSize);
+    void*                shPtr = shData.data();
 
     auto startShTime = std::chrono::high_resolution_clock::now();
 
-    // for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto srcBase   = splatStride * splatIdx;
@@ -373,9 +411,9 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
         for(auto rgb = 0; rgb < 3; rgb++)
         {
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
-          const auto dstIndex = destBase + dstOffset++;  // inc after add
+          const auto dstIndex = destBase + dstOffset++;
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, shPtr, dstIndex);
         }
       }
       // degree 2, five coefs per component
@@ -384,9 +422,9 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
         for(auto rgb = 0; rgb < 3; rgb++)
         {
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
-          const auto dstIndex = destBase + dstOffset++;  // inc after add
+          const auto dstIndex = destBase + dstOffset++;
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, shPtr, dstIndex);
         }
       }
       // degree 3, seven coefs per component
@@ -395,9 +433,9 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
         for(auto rgb = 0; rgb < 3; rgb++)
         {
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
-          const auto dstIndex = destBase + dstOffset++;  // inc after add
+          const auto dstIndex = destBase + dstOffset++;
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, hostBufferMapped, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, shPtr, dstIndex);
         }
       }
     }
@@ -407,21 +445,18 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
     long long buildShTime = std::chrono::duration_cast<std::chrono::milliseconds>(endShTime - startShTime).count();
     std::cout << "Sh data updated in " << buildShTime << "ms" << std::endl;
 
-    // copy from host buffer to device buffer
-    // barrier at the end of this method.
-    VkBufferCopy bc{.srcOffset = 0, .dstOffset = 0, .size = bufferSize};
-    vkCmdCopyBuffer(cmd, hostBuffer.buffer, sphericalHarmonicsBuffer.buffer, 1, &bc);
-
-    // free host buffer after command execution
-    buffersToDestroy.push_back(hostBuffer);
+    NVVK_CHECK(m_uploader->appendLargeBuffer(sphericalHarmonicsBuffer, 0, bufferSize, shData.data()));
 
     // memory statistics
-    memoryStats.srcShOther  = (uint32_t)splatSet.f_rest.size() * sizeof(float);
-    memoryStats.odevShOther = bufferSize;  // no compression or quantization
-    memoryStats.devShOther  = bufferSize;
+    memoryStats.hostShOther        = (uint32_t)f_rest.size() * sizeof(float);
+    memoryStats.deviceUsedShOther  = bufferSize;
+    memoryStats.deviceAllocShOther = bufferSize;
   }
 
-  // sync with end of copy to device
+  // Record all staged uploads and submit
+  VkCommandBuffer cmd = m_app->createTempCmdBuffer();
+  m_uploader->cmdUploadAppended(cmd);
+
   VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
   barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -430,21 +465,21 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
                        0, 1, &barrier, 0, NULL, 0, NULL);
 
   m_app->submitAndWaitTempCmdBuffer(cmd);
-
-  // free temp buffers
-  for(auto& buffer : buffersToDestroy)
-  {
-    m_alloc->destroyBuffer(buffer);
-  }
+  m_uploader->releaseStaging();
 
   // update statistics totals
-  memoryStats.srcShAll  = memoryStats.srcSh0 + memoryStats.srcShOther;
-  memoryStats.odevShAll = memoryStats.odevSh0 + memoryStats.odevShOther;
-  memoryStats.devShAll  = memoryStats.devSh0 + memoryStats.devShOther;
+  memoryStats.hostShAll        = memoryStats.hostSh0 + memoryStats.hostShOther;
+  memoryStats.deviceUsedShAll  = memoryStats.deviceUsedSh0 + memoryStats.deviceUsedShOther;
+  memoryStats.deviceAllocShAll = memoryStats.deviceAllocSh0 + memoryStats.deviceAllocShOther;
 
-  memoryStats.srcAll  = memoryStats.srcCenters + memoryStats.srcCov + memoryStats.srcSh0 + memoryStats.srcShOther;
-  memoryStats.odevAll = memoryStats.odevCenters + memoryStats.odevCov + memoryStats.odevSh0 + memoryStats.odevShOther;
-  memoryStats.devAll  = memoryStats.devCenters + memoryStats.devCov + memoryStats.devSh0 + memoryStats.devShOther;
+  memoryStats.hostAll = memoryStats.hostCenters + memoryStats.hostScales + memoryStats.hostRotations
+                        + memoryStats.hostCov + memoryStats.hostShAll;
+  memoryStats.deviceUsedAll = memoryStats.deviceUsedCenters + memoryStats.deviceUsedScales
+                              + memoryStats.deviceUsedRotations + memoryStats.deviceUsedCov + memoryStats.deviceUsedShAll;
+  memoryStats.deviceAllocAll = memoryStats.deviceAllocCenters + memoryStats.deviceAllocScales + memoryStats.deviceAllocRotations
+                               + memoryStats.deviceAllocCov + memoryStats.deviceAllocShAll;
+
+  // Note: Descriptor initialization removed - now handled per-instance by SplatSetInstanceVk::rebuildDescriptor()
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
@@ -453,22 +488,35 @@ void SplatSetVk::initDataBuffers(SplatSet& splatSet)
 
 void SplatSetVk::deinitDataBuffers()
 {
-  m_alloc->destroyBuffer(centersBuffer);
-  m_alloc->destroyBuffer(scalesBuffer);
-  m_alloc->destroyBuffer(rotationsBuffer);
-  m_alloc->destroyBuffer(colorsBuffer);
-  m_alloc->destroyBuffer(covariancesBuffer);
-  m_alloc->destroyBuffer(sphericalHarmonicsBuffer);
+  if(centersBuffer.buffer)
+    m_alloc->destroyLargeBuffer(centersBuffer);
+  if(scalesBuffer.buffer)
+    m_alloc->destroyLargeBuffer(scalesBuffer);
+  if(rotationsBuffer.buffer)
+    m_alloc->destroyLargeBuffer(rotationsBuffer);
+  if(colorsBuffer.buffer)
+    m_alloc->destroyLargeBuffer(colorsBuffer);
+  if(covariancesBuffer.buffer)
+    m_alloc->destroyLargeBuffer(covariancesBuffer);
+  if(sphericalHarmonicsBuffer.buffer)
+    m_alloc->destroyLargeBuffer(sphericalHarmonicsBuffer);
+
+  centersBuffer            = {};
+  scalesBuffer             = {};
+  rotationsBuffer          = {};
+  colorsBuffer             = {};
+  covariancesBuffer        = {};
+  sphericalHarmonicsBuffer = {};
 }
 
 ///////////////////
 // using texture maps to store splatset in VRAM
 
-void SplatSetVk::initDataTextures(SplatSet& splatSet)
+void SplatSetVk::initDataTextures()
 {
   auto startTime = std::chrono::high_resolution_clock::now();
 
-  const auto splatCount = (uint32_t)splatSet.positions.size() / 3;
+  const auto splatCount = (uint32_t)positions.size() / 3;
 
   // centers (3 components but texture map is only allowed with 4 components)
   // TODO: May pack as done for covariances not to waste alpha chanel ? but must
@@ -481,7 +529,7 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
     std::vector<float> scales(scalesMapSize.x * scalesMapSize.y * 4);  // includes some padding and unused w channel
 
     glm::ivec2         rotationsMapSize = computeDataTextureSize(4, 4, splatCount);
-    std::vector<float> rotations(splatSet.rotation);
+    std::vector<float> rotations(rotation);
     rotations.resize(rotationsMapSize.x * rotationsMapSize.y * 4);  // includes some padding
 
     //for(uint32_t i = 0; i < splatCount; ++i)
@@ -490,8 +538,8 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
       // we skip the alpha channel that is left undefined and not used in the shader
       for(uint32_t cmp = 0; cmp < 3; ++cmp)
       {
-        centers[splatIdx * 4 + cmp] = splatSet.positions[splatIdx * 3 + cmp];
-        scales[splatIdx * 4 + cmp]  = splatSet.scale[splatIdx * 3 + cmp];
+        centers[splatIdx * 4 + cmp] = positions[splatIdx * 3 + cmp];
+        scales[splatIdx * 4 + cmp]  = scale[splatIdx * 3 + cmp];
       }
     }
     END_PAR_LOOP()
@@ -507,9 +555,17 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
                 (void*)rotations.data(), VK_FORMAT_R32G32B32A32_SFLOAT, *m_sampler, rotationsMap);
 
     // memory statistics
-    memoryStats.srcCenters  = splatCount * 3 * sizeof(float);
-    memoryStats.odevCenters = splatCount * 3 * sizeof(float);  // no compression or quantization yet
-    memoryStats.devCenters  = centersMapSize.x * centersMapSize.y * 4 * sizeof(float);
+    memoryStats.hostCenters        = splatCount * 3 * sizeof(float);
+    memoryStats.deviceUsedCenters  = splatCount * 3 * sizeof(float);  // no compression or quantization yet
+    memoryStats.deviceAllocCenters = centersMapSize.x * centersMapSize.y * 4 * sizeof(float);
+
+    memoryStats.hostScales        = splatCount * 3 * sizeof(float);
+    memoryStats.deviceUsedScales  = splatCount * 3 * sizeof(float);
+    memoryStats.deviceAllocScales = scalesMapSize.x * scalesMapSize.y * 4 * sizeof(float);
+
+    memoryStats.hostRotations        = splatCount * 4 * sizeof(float);
+    memoryStats.deviceUsedRotations  = splatCount * 4 * sizeof(float);
+    memoryStats.deviceAllocRotations = rotationsMapSize.x * rotationsMapSize.y * 4 * sizeof(float);
   }
   // covariances
   {
@@ -521,16 +577,14 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
       const auto stride3 = splatIdx * 3;
       const auto stride4 = splatIdx * 4;
       const auto stride6 = splatIdx * 6;
-      glm::vec3  scale{std::exp(splatSet.scale[stride3 + 0]), std::exp(splatSet.scale[stride3 + 1]),
-                      std::exp(splatSet.scale[stride3 + 2])};
+      glm::vec3  scl{std::exp(scale[stride3 + 0]), std::exp(scale[stride3 + 1]), std::exp(scale[stride3 + 2])};
 
-      glm::quat rotation{splatSet.rotation[stride4 + 0], splatSet.rotation[stride4 + 1], splatSet.rotation[stride4 + 2],
-                         splatSet.rotation[stride4 + 3]};
-      rotation = glm::normalize(rotation);
+      glm::quat rot{rotation[stride4 + 0], rotation[stride4 + 1], rotation[stride4 + 2], rotation[stride4 + 3]};
+      rot = glm::normalize(rot);
 
       // computes the covariance
-      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scale));
-      const glm::mat3 rotationMatrix        = glm::mat3_cast(rotation);  // where rotation is a quaternion
+      const glm::mat3 scaleMatrix           = glm::mat3(glm::scale(scl));
+      const glm::mat3 rotationMatrix        = glm::mat3_cast(rot);  // where rotation is a quaternion
       const glm::mat3 covarianceMatrix      = rotationMatrix * scaleMatrix;
       glm::mat3       transformedCovariance = covarianceMatrix * glm::transpose(covarianceMatrix);
 
@@ -548,40 +602,69 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
     initTexture(mapSize.x, mapSize.y, (uint32_t)covariances.size() * sizeof(float), (void*)covariances.data(),
                 VK_FORMAT_R32G32B32A32_SFLOAT, *m_sampler, covariancesMap);
     // memory statistics
-    memoryStats.srcCov  = (splatCount * (4 + 3)) * sizeof(float);
-    memoryStats.odevCov = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
-    memoryStats.devCov  = mapSize.x * mapSize.y * 4 * sizeof(float);
+    memoryStats.hostCov        = (splatCount * (4 + 3)) * sizeof(float);
+    memoryStats.deviceUsedCov  = splatCount * 6 * sizeof(float);  // covariance takes less space than rotation + scale
+    memoryStats.deviceAllocCov = mapSize.x * mapSize.y * 4 * sizeof(float);
   }
   // SH degree 0 is not view dependent, so we directly transform to base color
   // this will make some economy of processing in the shader at each frame
   {
-    glm::ivec2           mapSize = computeDataTextureSize(4, 4, splatCount);
-    std::vector<uint8_t> colors(mapSize.x * mapSize.y * 4);  // includes some padding
+    glm::ivec2           mapSize    = computeDataTextureSize(4, 4, splatCount);
+    const uint32_t       elemSize   = formatSize(rgbaFormat);
+    const uint32_t       bufferSize = mapSize.x * mapSize.y * 4 * elemSize;
+    std::vector<uint8_t> colors(bufferSize, 0);
+    void*                data = colors.data();
     //for(uint32_t splatIdx = 0; splatIdx < splatCount; ++splatIdx)
     START_PAR_LOOP(splatCount, splatIdx)
     {
       const auto  stride3 = splatIdx * 3;
       const auto  stride4 = splatIdx * 4;
       const float SH_C0   = 0.28209479177387814f;
-      colors[stride4 + 0] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * splatSet.f_dc[stride3 + 0]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 1] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * splatSet.f_dc[stride3 + 1]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 2] = (uint8_t)glm::clamp(std::floor((0.5f + SH_C0 * splatSet.f_dc[stride3 + 2]) * 255), 0.0f, 255.0f);
-      colors[stride4 + 3] =
-          (uint8_t)glm::clamp(std::floor((1.0f / (1.0f + std::exp(-splatSet.opacity[splatIdx]))) * 255), 0.0f, 255.0f);
+      const float r       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 0], 0.0f, 1.0f);
+      const float g       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 1], 0.0f, 1.0f);
+      const float b       = glm::clamp(0.5f + SH_C0 * f_dc[stride3 + 2], 0.0f, 1.0f);
+      const float a       = glm::clamp(1.0f / (1.0f + std::exp(-opacity[splatIdx])), 0.0f, 1.0f);
+
+      if(rgbaFormat == FORMAT_FLOAT32)
+      {
+        static_cast<float*>(data)[stride4 + 0] = r;
+        static_cast<float*>(data)[stride4 + 1] = g;
+        static_cast<float*>(data)[stride4 + 2] = b;
+        static_cast<float*>(data)[stride4 + 3] = a;
+      }
+      else if(rgbaFormat == FORMAT_FLOAT16)
+      {
+        static_cast<uint16_t*>(data)[stride4 + 0] = glm::packHalf1x16(r);
+        static_cast<uint16_t*>(data)[stride4 + 1] = glm::packHalf1x16(g);
+        static_cast<uint16_t*>(data)[stride4 + 2] = glm::packHalf1x16(b);
+        static_cast<uint16_t*>(data)[stride4 + 3] = glm::packHalf1x16(a);
+      }
+      else if(rgbaFormat == FORMAT_UINT8)
+      {
+        static_cast<uint8_t*>(data)[stride4 + 0] = toUint8(r, 0.f, 1.f);
+        static_cast<uint8_t*>(data)[stride4 + 1] = toUint8(g, 0.f, 1.f);
+        static_cast<uint8_t*>(data)[stride4 + 2] = toUint8(b, 0.f, 1.f);
+        static_cast<uint8_t*>(data)[stride4 + 3] = toUint8(a, 0.f, 1.f);
+      }
     }
     END_PAR_LOOP()
     // place the result in the dedicated texture map
-    initTexture(mapSize.x, mapSize.y, (uint32_t)colors.size(), (void*)colors.data(), VK_FORMAT_R8G8B8A8_UNORM, *m_sampler, colorsMap);
+    VkFormat vkFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+    if(rgbaFormat == FORMAT_FLOAT16)
+      vkFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    else if(rgbaFormat == FORMAT_UINT8)
+      vkFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    initTexture(mapSize.x, mapSize.y, bufferSize, data, vkFormat, *m_sampler, colorsMap);
     // memory statistics
-    memoryStats.srcSh0  = splatCount * 4 * sizeof(float);  // original sh0 and opacity are floats
-    memoryStats.odevSh0 = splatCount * 4 * sizeof(uint8_t);
-    memoryStats.devSh0  = mapSize.x * mapSize.y * 4 * sizeof(uint8_t);
+    memoryStats.hostSh0        = splatCount * 4 * sizeof(float);  // original sh0 and opacity are floats
+    memoryStats.deviceUsedSh0  = splatCount * 4 * elemSize;
+    memoryStats.deviceAllocSh0 = bufferSize;
   }
   // Prepare the spherical harmonics of degree 1 to 3
-  if(!splatSet.f_rest.empty())
+  if(!f_rest.empty())
   {
     const uint32_t sphericalHarmonicsElementsPerTexel       = 4;
-    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)splatSet.f_rest.size() / splatCount;
+    const uint32_t totalSphericalHarmonicsComponentCount    = (uint32_t)f_rest.size() / splatCount;
     const uint32_t sphericalHarmonicsCoefficientsPerChannel = totalSphericalHarmonicsComponentCount / 3;
     // find the maximum SH degree stored in the file
     int sphericalHarmonicsDegree = 0;
@@ -608,7 +691,7 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
     glm::ivec2 mapSize =
         computeDataTextureSize(sphericalHarmonicsElementsPerTexel, paddedSphericalHarmonicsComponentCount, splatCount);
 
-    const uint32_t bufferSize = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * formatSize(m_format);
+    const uint32_t bufferSize = mapSize.x * mapSize.y * sphericalHarmonicsElementsPerTexel * formatSize(shFormat);
 
     std::vector<uint8_t> paddedSHArray(bufferSize, 0);
 
@@ -628,7 +711,7 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, data, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, data, dstIndex);
         }
       }
 
@@ -640,7 +723,7 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, data, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, data, dstIndex);
         }
       }
       // degree 3, seven coefs per component
@@ -651,44 +734,57 @@ void SplatSetVk::initDataTextures(SplatSet& splatSet)
           const auto srcIndex = srcBase + (sphericalHarmonicsCoefficientsPerChannel * rgb + 3 + 5 + i);
           const auto dstIndex = destBase + dstOffset++;  // inc after add
 
-          storeSh(m_format, splatSet.f_rest.data(), srcIndex, data, dstIndex);
+          storeSh(shFormat, f_rest.data(), srcIndex, data, dstIndex);
         }
       }
     }
     END_PAR_LOOP()
 
     // place the result in the dedicated texture map
-    if(m_format == FORMAT_FLOAT32)
+    if(shFormat == FORMAT_FLOAT32)
     {
       initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R32G32B32A32_SFLOAT, *m_sampler, sphericalHarmonicsMap);
     }
-    else if(m_format == FORMAT_FLOAT16)
+    else if(shFormat == FORMAT_FLOAT16)
     {
       initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R16G16B16A16_SFLOAT, *m_sampler, sphericalHarmonicsMap);
     }
-    else if(m_format == FORMAT_UINT8)
+    else if(shFormat == FORMAT_UINT8)
     {
       initTexture(mapSize.x, mapSize.y, bufferSize, data, VK_FORMAT_R8G8B8A8_UNORM, *m_sampler, sphericalHarmonicsMap);
     }
 
     // memory statistics
-    memoryStats.srcShOther  = (uint32_t)splatSet.f_rest.size() * sizeof(float);
-    memoryStats.odevShOther = (uint32_t)splatSet.f_rest.size() * formatSize(m_format);
-    memoryStats.devShOther  = bufferSize;
+    memoryStats.hostShOther        = (uint32_t)f_rest.size() * sizeof(float);
+    memoryStats.deviceUsedShOther  = (uint32_t)f_rest.size() * formatSize(shFormat);
+    memoryStats.deviceAllocShOther = bufferSize;
   }
 
   // update statistics totals
-  memoryStats.srcShAll  = memoryStats.srcSh0 + memoryStats.srcShOther;
-  memoryStats.odevShAll = memoryStats.odevSh0 + memoryStats.odevShOther;
-  memoryStats.devShAll  = memoryStats.devSh0 + memoryStats.devShOther;
+  memoryStats.hostShAll        = memoryStats.hostSh0 + memoryStats.hostShOther;
+  memoryStats.deviceUsedShAll  = memoryStats.deviceUsedSh0 + memoryStats.deviceUsedShOther;
+  memoryStats.deviceAllocShAll = memoryStats.deviceAllocSh0 + memoryStats.deviceAllocShOther;
 
-  memoryStats.srcAll  = memoryStats.srcCenters + memoryStats.srcCov + memoryStats.srcSh0 + memoryStats.srcShOther;
-  memoryStats.odevAll = memoryStats.odevCenters + memoryStats.odevCov + memoryStats.odevSh0 + memoryStats.odevShOther;
-  memoryStats.devAll  = memoryStats.devCenters + memoryStats.devCov + memoryStats.devSh0 + memoryStats.devShOther;
+  memoryStats.hostAll = memoryStats.hostCenters + memoryStats.hostScales + memoryStats.hostRotations
+                        + memoryStats.hostCov + memoryStats.hostShAll;
+  memoryStats.deviceUsedAll = memoryStats.deviceUsedCenters + memoryStats.deviceUsedScales
+                              + memoryStats.deviceUsedRotations + memoryStats.deviceUsedCov + memoryStats.deviceUsedShAll;
+  memoryStats.deviceAllocAll = memoryStats.deviceAllocCenters + memoryStats.deviceAllocScales + memoryStats.deviceAllocRotations
+                               + memoryStats.deviceAllocCov + memoryStats.deviceAllocShAll;
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
   std::cout << "Data textures updated in " << buildTime << "ms" << std::endl;
+
+  // Store texture indices for bindless texture array access
+  // In single-instance mode, we use a simple sequential scheme starting from 0
+  // TODO Use enums
+  textureIndexCenters     = 0;
+  textureIndexScales      = 1;
+  textureIndexRotations   = 2;
+  textureIndexColors      = 3;
+  textureIndexCovariances = 4;
+  textureIndexSH          = 5;
 }
 
 void SplatSetVk::deinitDataTextures()
@@ -700,6 +796,8 @@ void SplatSetVk::deinitDataTextures()
 
   deinitTexture(colorsMap);
   deinitTexture(sphericalHarmonicsMap);
+
+  // Note: descriptorBuffer removed - now managed per-instance by SplatSetManagerVk
 }
 
 void SplatSetVk::initTexture(uint32_t width, uint32_t height, uint32_t bufsize, void* data, VkFormat format, const VkSampler& sampler, nvvk::Image& texture)
@@ -723,6 +821,7 @@ void SplatSetVk::initTexture(uint32_t width, uint32_t height, uint32_t bufsize, 
   texture.descriptor.sampler = sampler;
 
   m_app->submitAndWaitTempCmdBuffer(cmd);
+  m_uploader->releaseStaging();
 }
 
 void SplatSetVk::deinitTexture(nvvk::Image& texture)
@@ -763,36 +862,36 @@ float kernelScale(float density, float modulatedMinResponse, float kernelDegree,
   return powf(logf(minResponse) / a, 1.0f / b);
 }
 
-glm::mat4 SplatSetVk::rtxComputeTransformMatrix(SplatSet& splatSet, uint64_t splatIdx)
+glm::mat4 SplatSetVk::rtxComputeTransformMatrix(uint64_t splatIdx)
 {
   const auto stride3 = splatIdx * 3;
   const auto stride4 = splatIdx * 4;
 
   // compute the transformation matrix
-  glm::vec3 scale{std::exp(splatSet.scale[stride3 + 0]), std::exp(splatSet.scale[stride3 + 1]),
-                  std::exp(splatSet.scale[stride3 + 2])};
+  glm::vec3 scl{std::exp(scale[stride3 + 0]), std::exp(scale[stride3 + 1]), std::exp(scale[stride3 + 2])};
 
-  glm::quat rotation{splatSet.rotation[stride4 + 0], splatSet.rotation[stride4 + 1], splatSet.rotation[stride4 + 2],
-                     splatSet.rotation[stride4 + 3]};
-  rotation = glm::normalize(rotation);
+  glm::quat rot{rotation[stride4 + 0], rotation[stride4 + 1], rotation[stride4 + 2], rotation[stride4 + 3]};
+  rot = glm::normalize(rot);
 
-  glm::vec3 position{splatSet.positions[stride3 + 0], splatSet.positions[stride3 + 1], splatSet.positions[stride3 + 2]};
+  glm::vec3 position{positions[stride3 + 0], positions[stride3 + 1], positions[stride3 + 2]};
 
-  const float density = 1.0f / (1.0f + std::exp(-splatSet.opacity[splatIdx]));
+  const float density = 1.0f / (1.0f + std::exp(-opacity[splatIdx]));
 
   const float kerScale = kernelScale(density, m_rtxKernelMinResponse, float(m_rtxKernelDegree), m_rtxKernelAdaptiveClamping);
 
-  const glm::vec3 totalScale = scale * icosaVrtScale * kerScale;
+  const glm::vec3 totalScale = scl * icosaVrtScale * kerScale;
 
   const glm::mat4 translateMatrix = glm::translate(position);
   const glm::mat4 scaleMatrix     = glm::scale(totalScale);
-  const glm::mat4 rotationMatrix  = glm::mat4_cast(rotation);  // where rotation is a quaternion
+  const glm::mat4 rotationMatrix  = glm::mat4_cast(rot);  // where rotation is a quaternion
 
-  return transform * translateMatrix * rotationMatrix * scaleMatrix;
+  // Note: This is the LOCAL splat transform. Instance transform is applied by caller in rtxInitAccelerationStructures
+  return translateMatrix * rotationMatrix * scaleMatrix;
 }
 
 // transformed unit regular icosahedron
-void SplatSetVk::rtxCreateSplatIcosahedron(std::vector<glm::vec3>& vertices,
+void SplatSetVk::rtxCreateSplatIcosahedron(uint64_t                offset,
+                                           std::vector<glm::vec3>& vertices,
                                            std::vector<uint32_t>&  indices,
                                            std::vector<SplatAabb>& aabbs,
                                            glm::mat4               transform)  // = glm::mat4(1.0))
@@ -812,11 +911,8 @@ void SplatSetVk::rtxCreateSplatIcosahedron(std::vector<glm::vec3>& vertices,
 
   SplatAabb aabb{.minimum = glm::vec3(std::numeric_limits<float>::max()), .maximum = glm::vec3(std::numeric_limits<float>::min())};
 
-  const auto vertexOffset = vertices.size();
-  const auto indexOffset  = indices.size();
-
-  vertices.resize(vertices.size() + s_vertices.size());
-  indices.resize(indices.size() + s_indices.size());
+  const auto vertexOffset = offset * 12;
+  const auto indexOffset  = offset * 20 * 3;
 
   for(auto i = 0; i < s_vertices.size(); ++i)
   {
@@ -825,15 +921,27 @@ void SplatSetVk::rtxCreateSplatIcosahedron(std::vector<glm::vec3>& vertices,
     aabb.maximum               = glm::max(pos, aabb.maximum);
     aabb.minimum               = glm::min(pos, aabb.minimum);
   }
-  aabbs.push_back(aabb);
+  aabbs[offset] = aabb;
   for(auto i = 0; i < s_indices.size(); ++i)
   {
     indices[indexOffset + i] = uint32_t(vertexOffset) + s_indices[i];
   }
 }
 
-void SplatSetVk::rtxInitSplatModel(SplatSet& splatSet, bool useInstances, bool useAABBs, bool compressBlas, int kernelDegree, float kernelMinResponse, bool kernelAdaptiveClamping)
+bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compressBlas, int kernelDegree, float kernelMinResponse, bool kernelAdaptiveClamping)
 {
+  // CRITICAL: Destroy old buffers first if they exist (e.g., when switching modes)
+  // Without this, we'll have memory leaks and potential crashes
+  if(m_splatModel.vertexBuffer.buffer != VK_NULL_HANDLE || m_splatModel.indexBuffer.buffer != VK_NULL_HANDLE
+     || m_splatModel.aabbBuffer.buffer != VK_NULL_HANDLE)
+  {
+    std::cout << "  Destroying old splat model buffers before recreating..." << std::endl;
+    rtxDeinitSplatModel();
+  }
+
+  // Start in delayed state (will be updated to success or error at end)
+  rtxStatus = RtxStatus::eDelayed;
+
   // stored for later use by rtxComputeTransformMatrix and rtxInitAccelerationStructures
   m_rtxUseAABBs               = useAABBs;
   m_rtxUseInstances           = useInstances;
@@ -846,19 +954,28 @@ void SplatSetVk::rtxInitSplatModel(SplatSet& splatSet, bool useInstances, bool u
   std::vector<uint32_t>  indices;
   std::vector<SplatAabb> aabbs;
 
+  const uint64_t splatCount = size();
+
   if(useInstances)
   {
-    rtxCreateSplatIcosahedron(vertices, indices, aabbs);
+    // One unit icosahedron for instancing
+    vertices.resize(12);
+    indices.resize(20 * 3);
+    aabbs.resize(1);
+    rtxCreateSplatIcosahedron(0, vertices, indices, aabbs);
   }
   else
   {
-    // TODO: change method to not use push_back but pre-allocate, output will allow for Parallel loop
-    const uint64_t splatCount = splatSet.size();
-    for(auto splatIdx = 0; splatIdx < splatCount; ++splatIdx)
+    // One icosahedron per splat
+    vertices.resize(splatCount * 12);
+    indices.resize(splatCount * 20 * 3);
+    aabbs.resize(splatCount);
+    START_PAR_LOOP(splatCount, splatIdx)
     {
-      const glm::mat4 transform = rtxComputeTransformMatrix(splatSet, splatIdx);
-      rtxCreateSplatIcosahedron(vertices, indices, aabbs, transform);
+      const glm::mat4 transform = rtxComputeTransformMatrix(splatIdx);
+      rtxCreateSplatIcosahedron(splatIdx, vertices, indices, aabbs, transform);
     }
+    END_PAR_LOOP()
   }
 
   // Store vertex and index count and aabbs
@@ -872,27 +989,132 @@ void SplatSetVk::rtxInitSplatModel(SplatSet& splatSet, bool useInstances, bool u
   VkBufferUsageFlags rayTracingFlags =  // used also for building acceleration structures
       flag | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
-  // indices
-  NVVK_CHECK(m_alloc->createBuffer(m_splatModel.vertexBuffer, vertices.size() * sizeof(glm::vec3),
-                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | rayTracingFlags));
-  NVVK_CHECK(m_uploader->appendBuffer(m_splatModel.vertexBuffer, 0, std::span(vertices)));
-  NVVK_DBG_NAME(m_splatModel.vertexBuffer.buffer);
+  // Get queue for sparse binding (required for LargeBuffer)
+  VkQueue queue = m_app->getQueue(0).queue;
 
-  // vertices
-  NVVK_CHECK(m_alloc->createBuffer(m_splatModel.indexBuffer, indices.size() * sizeof(uint32_t),
-                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | rayTracingFlags));
-  NVVK_CHECK(m_uploader->appendBuffer(m_splatModel.indexBuffer, 0, std::span(indices)));
-  NVVK_DBG_NAME(m_splatModel.indexBuffer.buffer);
+  // Log buffer sizes for debugging
+  VkDeviceSize vertexSize = vertices.size() * sizeof(glm::vec3);
+  VkDeviceSize indexSize  = indices.size() * sizeof(uint32_t);
+  VkDeviceSize aabbSize   = aabbs.size() * sizeof(SplatAabb);
 
-  // aabbs
-  NVVK_CHECK(m_alloc->createBuffer(m_splatModel.aabbBuffer, aabbs.size() * sizeof(SplatAabb),
-                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | rayTracingFlags));
-  NVVK_CHECK(m_uploader->appendBuffer(m_splatModel.aabbBuffer, 0, std::span(aabbs)));
-  NVVK_DBG_NAME(m_splatModel.aabbBuffer.buffer);
+  std::cout << "Creating splat model buffers (mode: " << (useAABBs ? "AABB" : "Icosahedron") << "):" << std::endl;
+
+  VkDeviceSize totalSize = 0;
+  VkResult     result;
+
+  // Create buffers based on mode
+  if(useAABBs)
+  {
+    // AABB mode: Only create AABB buffer
+    std::cout << "  AABB buffer:   " << (aabbSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+    totalSize = aabbSize;
+
+    std::cout << "  Creating AABB buffer..." << std::endl;
+    result = m_alloc->createLargeBuffer(m_splatModel.aabbBuffer, aabbSize,
+                                        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags,
+                                        queue);
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to allocate AABB buffer (%.2f GB): %s\n", aabbSize / (1024.0 * 1024.0 * 1024.0), string_VkResult(result));
+      queryVRAMInfo(m_app->getPhysicalDevice());
+      rtxDeinitSplatModel();  // Cleanup any partial allocations
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+    NVVK_DBG_NAME(m_splatModel.aabbBuffer.buffer);
+
+    std::cout << "  AABB buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    result = m_uploader->appendLargeBuffer(m_splatModel.aabbBuffer, 0, aabbSize, aabbs.data());
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to upload AABB data: %s\n", string_VkResult(result));
+      rtxDeinitSplatModel();
+      m_uploader->cancelAppended();
+      m_uploader->releaseStaging();
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+
+    // Track memory
+    memoryStats.rtxAabbBuffer = aabbSize;
+  }
+  else
+  {
+    // Icosahedron mode: Create vertex and index buffers
+    std::cout << "  Vertex buffer: " << (vertexSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+    std::cout << "  Index buffer:  " << (indexSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+    totalSize = vertexSize + indexSize;
+
+    std::cout << "  Creating vertex buffer..." << std::endl;
+    result = m_alloc->createLargeBuffer(m_splatModel.vertexBuffer, vertexSize,
+                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags,
+                                        queue);
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to allocate vertex buffer (%.2f GB): %s\n", vertexSize / (1024.0 * 1024.0 * 1024.0), string_VkResult(result));
+      queryVRAMInfo(m_app->getPhysicalDevice());
+      rtxDeinitSplatModel();
+      m_uploader->cancelAppended();
+      m_uploader->releaseStaging();
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+    NVVK_DBG_NAME(m_splatModel.vertexBuffer.buffer);
+
+    std::cout << "  Vertex buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    result = m_uploader->appendLargeBuffer(m_splatModel.vertexBuffer, 0, vertexSize, vertices.data());
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to upload vertex data: %s\n", string_VkResult(result));
+      rtxDeinitSplatModel();
+      m_uploader->cancelAppended();
+      m_uploader->releaseStaging();
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+
+    std::cout << "  Creating index buffer..." << std::endl;
+    result = m_alloc->createLargeBuffer(m_splatModel.indexBuffer, indexSize,
+                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags, queue);
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to allocate index buffer (%.2f GB): %s\n", indexSize / (1024.0 * 1024.0 * 1024.0), string_VkResult(result));
+      queryVRAMInfo(m_app->getPhysicalDevice());
+      rtxDeinitSplatModel();
+      m_uploader->cancelAppended();
+      m_uploader->releaseStaging();
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+    NVVK_DBG_NAME(m_splatModel.indexBuffer.buffer);
+
+    std::cout << "  Index buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    result = m_uploader->appendLargeBuffer(m_splatModel.indexBuffer, 0, indexSize, indices.data());
+    if(result != VK_SUCCESS)
+    {
+      LOGE("Failed to upload index data: %s\n", string_VkResult(result));
+      rtxDeinitSplatModel();
+      m_uploader->cancelAppended();
+      m_uploader->releaseStaging();
+      rtxStatus = RtxStatus::eError;
+      return false;
+    }
+
+    // Track memory
+    memoryStats.rtxVertexBuffer = vertexSize;
+    memoryStats.rtxIndexBuffer  = indexSize;
+  }
+
+  std::cout << "  Total:         " << (totalSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+  std::cout << "  All buffers created and uploaded via chunked staging." << std::endl;
 
   m_uploader->cmdUploadAppended(cmd);
   m_app->submitAndWaitTempCmdBuffer(cmd);
-  m_uploader->releaseStaging();
+  m_uploader->releaseStaging();  // Release staging buffers after submission
+
+  // Success! Set status and return
+  rtxStatus = RtxStatus::eSuccess;
+  return true;
 }
 
 nvvk::AccelerationStructureGeometryInfo SplatSetVk::rtxCreateSplatModelAccelerationStructureGeometryInfo()
@@ -951,90 +1173,6 @@ nvvk::AccelerationStructureGeometryInfo SplatSetVk::rtxCreateSplatModelAccelerat
 
     return nvvk::AccelerationStructureGeometryInfo{.geometry = geometry, .rangeInfo = rangeInfo};
   }
-}
-
-void SplatSetVk::rtxInitAccelerationStructures(SplatSet& splatSet)
-{
-  SCOPED_TIMER(std::string(__FUNCTION__) + "\n");
-
-  // GS BLAS - Storing the icosahedron or AABB in a geometry
-  {
-    std::vector<nvvk::AccelerationStructureGeometryInfo> asGeoInfo{rtxCreateSplatModelAccelerationStructureGeometryInfo()};
-
-    if(m_rtxCompressBlas)
-      rtAccelerationStructures.blasSubmitBuildAndWait(asGeoInfo, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-                                                                     | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR
-                                                                     | VK_BUILD_ACCELERATION_STRUCTURE_LOW_MEMORY_BIT_KHR);
-    else
-      rtAccelerationStructures.blasSubmitBuildAndWait(asGeoInfo, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
-
-    // Statistics
-    LOGI("%s%s\n", nvutils::ScopedTimer::indent().c_str(), rtAccelerationStructures.blasBuildStatistics.toString().c_str());
-  }
-
-  // GS TLAS
-  {
-    const auto instCount = m_rtxUseInstances ? splatSet.size() : 1;
-
-    std::vector<VkAccelerationStructureInstanceKHR> tlasInstances(
-        instCount, {
-                       // We do not use gl_InstanceCustomIndexEXT
-                       .instanceCustomIndex = 0,
-                       //  Only be hit if rayMask & instance.mask != 0
-                       .mask = 0xFF,
-                       // We will use the any hit hit group for all objects)
-                       .instanceShaderBindingTableRecordOffset = 0,
-                       // 0 = backface culling on
-                       // VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-                       // VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE_BIT_KHR
-                       .flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR,
-                       // use the only BLAS
-                       .accelerationStructureReference = rtAccelerationStructures.blasSet[0].address,
-                   });
-
-    // estimate the memory usage and early return if max than authorized limit
-    VkDeviceSize sizeBytes = std::span<VkAccelerationStructureInstanceKHR const>(tlasInstances).size_bytes();
-
-    // TODO: Should query the device
-    if(sizeBytes >= m_deviceInfo->properties11.maxMemoryAllocationSize)
-    {
-      LOGW("Model too large to generate RTX acceleration structure, Raytracing will be deactivated\n");
-      rtxValid = false;
-      rtxDeinitAccelerationStructures();
-      return;
-    }
-
-    if(m_rtxUseInstances)
-    {  // one instance per splat
-      // for(uint32_t splatIdx = 0; splatIdx < instCount; ++splatIdx)
-      START_PAR_LOOP(instCount, splatIdx)
-      {
-        const glm::mat4 transform = rtxComputeTransformMatrix(splatSet, splatIdx);
-
-        // set the transformation matrix
-        tlasInstances[splatIdx].transform = nvvk::toTransformMatrixKHR(transform);
-      }
-      END_PAR_LOOP()
-    }
-    else
-    {  // first instance contains all splats
-      tlasInstances[0].transform = nvvk::toTransformMatrixKHR(glm::mat4(1.0f));
-    }
-
-    // then build the static TLAS
-    rtAccelerationStructures.tlasSubmitBuildAndWait(tlasInstances, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
-  }
-
-  // Update memory statistics
-  tlasSizeBytes = rtAccelerationStructures.tlasBuildData.sizeInfo.accelerationStructureSize;
-  blasSizeBytes = 0;
-  for(auto& bd : rtAccelerationStructures.blasBuildData)
-  {
-    blasSizeBytes += bd.sizeInfo.accelerationStructureSize;
-  }
-
-  //
-  rtxValid = true;
 }
 
 }  // namespace vk_gaussian_splatting

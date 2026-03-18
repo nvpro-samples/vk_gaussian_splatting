@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -71,7 +71,12 @@ bool ObjLoader::load(const std::filesystem::path& filename)
   // If there were none, add a default
   if(m_materials.empty())
   {
-    m_materials.emplace_back(ObjMaterial());
+    ObjMaterial defaultMat;
+    defaultMat.ambient   = glm::vec3(0.1f, 0.1f, 0.1f);
+    defaultMat.diffuse   = glm::vec3(0.7f, 0.7f, 0.7f);
+    defaultMat.specular  = glm::vec3(1.0f, 1.0f, 1.0f);
+    defaultMat.shininess = 32.0f;
+    m_materials.emplace_back(defaultMat);
     m_matNames.emplace_back("Default");
   }
 
@@ -185,7 +190,8 @@ bool ObjLoader::load(const std::filesystem::path& filename)
   // Fixing material indices
   for(auto& mi : m_matIndices)
   {
-    if(mi < 0 || mi > m_materials.size())
+    // Note: mi is uint32_t so no need to check < 0
+    if(mi >= m_materials.size())
       mi = 0;
   }
 

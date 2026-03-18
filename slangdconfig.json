@@ -1,5 +1,6 @@
 {
     "slang.predefinedMacros": [
+        "PARTICLES_SPP=18",
         "PAYLOAD_ARRAY_SIZE=18"
     ],
     "slang.additionalSearchPaths": [

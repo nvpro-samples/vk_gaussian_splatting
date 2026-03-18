@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,11 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <gaussian_splatting_ui.h>
+#include "elem_camera_custom.hpp"
+
+#if USE_DLSS
+#include "dlss_wrapper.hpp"
+#endif
 
 using namespace vk_gaussian_splatting;
 
@@ -127,18 +132,56 @@ int main(int argc, char** argv)
   };
   vkSetup.deviceExtensions.emplace_back(VK_NV_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, &serFeatures, false);
 
+  // Memory budget extension for querying VRAM usage
+  vkSetup.deviceExtensions.emplace_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+
+  // Fragment shader interlock for order-independent transparency (FTB rendering)
+  static VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT interlockFeatures = {
+      .sType                        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT,
+      .fragmentShaderPixelInterlock = VK_TRUE,
+  };
+  vkSetup.deviceExtensions.emplace_back(VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME, &interlockFeatures, true);
+
+  // Note: Line rasterization features (smoothLines, rectangularLines) are part of Vulkan 1.4 core
+  // and are enabled automatically via enableAllFeatures = true
+
   if(!appInfo.headless)
   {
     nvvk::addSurfaceExtensions(vkSetup.instanceExtensions);
     vkSetup.deviceExtensions.emplace_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
   }
 
+#if USE_DLSS
+  // Adding the DLSS extensions to the instance
+  static std::vector<VkExtensionProperties> extraInstanceExtensions;
+  DlssRayReconstruction::getRequiredInstanceExtensions({}, extraInstanceExtensions);
+  for(auto& ext : extraInstanceExtensions)
+  {
+    vkSetup.instanceExtensions.emplace_back(ext.extensionName);
+  }
+
+  // Adding the extra device extensions required by DLSS (Using callback)
+  static std::vector<VkExtensionProperties> extraDeviceExtensions;
+  vkSetup.postSelectPhysicalDeviceCallback = [](VkInstance instance, VkPhysicalDevice physicalDevice, nvvk::ContextInitInfo& vkSetup) {
+    DlssRayReconstruction::getRequiredDeviceExtensions({}, instance, physicalDevice, extraDeviceExtensions);
+    for(auto& ext : extraDeviceExtensions)
+    {
+      vkSetup.deviceExtensions.push_back({.extensionName = ext.extensionName, .specVersion = ext.specVersion});
+    }
+    return true;
+  };
+#endif
+
   // Setting up the validation layers
   nvvk::ValidationSettings vvlInfo{};
-  // vvlInfo.validate_best_practices = true;
-  vvlInfo.validate_core = false;
+  vvlInfo.setPreset(nvvk::ValidationSettings::LayerPresets::eStandard);
   //vvlInfo.setPreset(nvvk::ValidationSettings::LayerPresets::eSynchronization);
-  vkSetup.instanceCreateInfoExt = vvlInfo.buildPNextChain();  // Adding the validation layer settings
+  // Disable expensive shader validation during pipeline creation
+  vvlInfo.check_shaders         = VK_FALSE;
+  vvlInfo.check_shaders_caching = VK_FALSE;
+
+  // Adding the validation layer settings
+  vkSetup.instanceCreateInfoExt = vvlInfo.buildPNextChain();
 
   // Create Vulkan context
   if(vkContext.init(vkSetup) != VK_SUCCESS)
@@ -184,10 +227,14 @@ int main(int argc, char** argv)
   // onAttach will be invoked on elements at this stage
   application.addElement(elemSequencer);
   application.addElement(gaussianSplatting);
-  application.addElement(std::make_shared<nvapp::ElementDefaultWindowTitle>("", fmt::format("({})", "GLSL")));
 
-  auto elemCamera = std::make_shared<nvapp::ElementCamera>();
+  auto elemCamera = std::make_shared<vk_gaussian_splatting::ElementCameraCustom>();
   elemCamera->setCameraManipulator(gaussianSplatting->cameraManip);
+  // Disable camera updates when dragging comparison slider or transform gizmo
+  elemCamera->setDisableCallback([gaussianSplatting]() {
+    return gaussianSplatting->isDraggingComparisonSlider() || gaussianSplatting->isDraggingTransformHelper()
+           || gaussianSplatting->isDraggingCursorTarget();
+  });
   application.addElement(elemCamera);
 
   if(benchmarkMode)

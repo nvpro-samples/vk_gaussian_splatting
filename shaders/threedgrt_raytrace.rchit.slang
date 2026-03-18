@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,9 +21,9 @@
 #include "threedgrt_payload.h.slang"
 
 // clang-format off
-#if RTX_USE_MESHES
-[[vk::binding(BINDING_MESH_DESCRIPTORS, 0)]] StructuredBuffer<ObjDesc> objDesc;
-#endif
+// Always bind assets (no conditional compilation)
+// This shader only runs when mesh TLAS is hit, so meshCount > 0 is implicit
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
 [[vk::push_constant]] ConstantBuffer<PushConstantRay> pcRay;
 // clang-format on
@@ -31,23 +31,21 @@
 [shader("closesthit")]
 void main(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attribs)
 {
-#if RTX_USE_MESHES
-  //
+  // Mesh hit - retrieve geometry and material data
   payload.dist[0] = RayTCurrent();
 
-  //
-  const ObjDesc objResource = objDesc[InstanceID()];
+  const MeshDesc meshDesc = assets.meshes[InstanceID()];
 
-  payload.id[0] = int(InstanceID());                                        // to retrieve objResource in ray gen
-  payload.id[1] = int(objResource.materialIndexAddress[PrimitiveIndex()]);  // to retrieve material in raygen
+  payload.id[0] = int(InstanceID());                                     // to retrieve meshDesc in ray gen
+  payload.id[1] = int(meshDesc.materialIndexAddress[PrimitiveIndex()]);  // to retrieve material in raygen
 
   // Indices of the triangle
-  int3 tri = ((int3*)objResource.indexAddress)[PrimitiveIndex()];
+  int3 tri = ((int3*)meshDesc.indexAddress)[PrimitiveIndex()];
 
   // Vertex of the triangle
-  ObjVertex v0 = objResource.vertexAddress[tri.x];
-  ObjVertex v1 = objResource.vertexAddress[tri.y];
-  ObjVertex v2 = objResource.vertexAddress[tri.z];
+  ObjVertex v0 = meshDesc.vertexAddress[tri.x];
+  ObjVertex v1 = meshDesc.vertexAddress[tri.y];
+  ObjVertex v2 = meshDesc.vertexAddress[tri.z];
 
   const float3 barycentrics =
       float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
@@ -66,5 +64,4 @@ void main(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes att
   payload.dist[4] = worldNrm.x;
   payload.dist[5] = worldNrm.y;
   payload.dist[6] = worldNrm.z;
-#endif
 }

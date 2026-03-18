@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -48,7 +48,7 @@
 
 #include "shaderio.h"
 #include "threedgs.h.slang"
-#include "threedgs_particles_storage.h.slang"
+#include "threedgs_particle_storage.h.slang"
 
 // clang-format off
 
@@ -67,9 +67,13 @@ struct VertexOutput
   [[vk::location(1)]] float2 outFragPos : TEXCOORD1;
 #endif
   [[vk::location(2)]] float4 position : SV_Position;
+#if STOCHASTIC_SPLAT || NEED_SURFACE_INFO
+  [[vk::location(3)]] nointerpolation uint outSplatId : SPLATID;
+#endif
 };
 
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo> frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
 
 // clang-format on
@@ -79,17 +83,23 @@ VertexOutput main(VertexInput input)
 {
   VertexOutput output;
 
-  const uint splatIndex = input.inSplatIndex;
+  const uint globalSplatID = input.inSplatIndex;
 
-  const float4x4 modelViewMatrix = mul(pcRaster.modelMatrix, frameInfo.viewMatrix);
+  // Resolve global splat ID to correct descriptor and local index
+  SplatSetDesc splatSetDesc;
+  uint splatIndex;
+  resolveGlobalSplatID(assets, globalSplatID, splatSetDesc, splatIndex);
+  
+  // Use transform from descriptor, not push constants
+  const float4x4 modelViewMatrix = mul(splatSetDesc.transform, frameInfo.viewMatrix);
 
-  // Fetch data as early as possible
-  const float3x3 cov3Dm      = fetchCovariance(splatIndex);
-  float4         splatColor  = fetchColor(splatIndex);
-  const float3   splatCenter = fetchCenter(splatIndex);
+  // Fetch data as early as possible (using bindless descriptors)
+  const float3x3 cov3Dm      = fetchCovariance(splatSetDesc, splatIndex);
+  float4         splatColor  = fetchColor(splatSetDesc, splatIndex);
+  const float3   splatCenter = fetchCenter(splatSetDesc, splatIndex);
 
   const float4 viewCenter = mul(float4(splatCenter, 1.0), modelViewMatrix);
-  const float4 clipCenter = mul(viewCenter, frameInfo.projectionMatrix);
+  const float4 clipCenter = mul(viewCenter, frameInfo.projectionMatrixJittered);
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
   const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
@@ -125,13 +135,13 @@ VertexOutput main(VertexInput input)
   // const float3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
   // Row-major: vector * matrix (camera position transformed by inverse model matrix)
   const float3 worldViewDir =
-      normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
+      normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), splatSetDesc.transformInverse).xyz);
 
-  splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
+  splatColor.rgb += fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatIndex, worldViewDir);
 
   // emit as early as possible for perf reasons, only for original 3DGS,
-  // see later on for MipSplatting = on
-#if MS_ANTIALIASING == 0
+  // see later on for MipSplatting or Stochastic mode
+#if MS_ANTIALIASING == 0 
   output.outFragCol = splatColor;
 #endif
 
@@ -149,8 +159,13 @@ VertexOutput main(VertexInput input)
   }
 
 #if MS_ANTIALIASING == 1
-  // emit the color with alpha compensation
+  // emit the color with alpha compensation (after threedgsProjectedExtentBasis modified splatColor.a)
   output.outFragCol = splatColor;
+#endif
+
+#if STOCHASTIC_SPLAT || NEED_SURFACE_INFO
+  // emit the splat ID for stochastic rendering or surface reconstruction
+  output.outSplatId = globalSplatID;
 #endif
 
   const float3 ndcCenter = clipCenter.xyz / clipCenter.w;

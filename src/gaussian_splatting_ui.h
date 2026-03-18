@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -90,10 +90,13 @@
 #include "splat_set_vk.h"
 #include "ply_loader_async.h"
 #include "splat_sorter_async.h"
-#include "mesh_set_vk.h"
-#include "light_set_vk.h"
+#include "mesh_manager_vk.h"
+#include "light_manager_vk.h"
 #include "camera_set.h"
 #include "gaussian_splatting.h"
+#include "image_compare_ui.h"
+#include "shader_feedback_ui.h"
+#include "memory_monitor_vk.h"
 
 // Json
 #include <tinygltf/json.hpp>
@@ -103,6 +106,9 @@ namespace vk_gaussian_splatting {
 
 class GaussianSplattingUI : public GaussianSplatting, public nvapp::IAppElement
 {
+  friend class VkgsProjectReader;
+  friend class VkgsProjectWriter;
+
 public:  // Methods specializing IAppElement
   GaussianSplattingUI(nvutils::ProfilerManager* profilerManager, nvutils::ParameterRegistry* parameterRegistry, bool* benchmarkEnabled);
 
@@ -124,11 +130,30 @@ public:  // Methods specializing IAppElement
 
   void onFileDrop(const std::filesystem::path& filename) override;
 
+  // Override reset to clear selections and detach helpers before base reset
+  void reset() override;
+
   // handle recent files save/load at imgui level
   void guiRegisterIniFileHandlers();
 
+  // Query if user is dragging comparison split divider (used to disable camera)
+  bool isDraggingComparisonSlider() const { return m_imageCompareUI.isDraggingSplitDivider(); }
+  bool isDraggingTransformHelper() const { return m_helpers.transform.isDragging(); }
+  bool isDraggingCursorTarget() const { return m_cursorTargetDragging; }
+
 private:
+  // Selection helper methods
+  void selectMeshInstance(std::shared_ptr<MeshInstanceVk> instance);
+  void selectSplatSetInstance(std::shared_ptr<SplatSetInstanceVk> instance);
+  void selectLightInstance(std::shared_ptr<LightSourceInstanceVk> instance);
+
+  // Camera preset helper
+  bool cameraPresetNeedsShaderRebuild(uint64_t presetIndex);
+
+  void guiLoadSceneAndDrawProgressIfNeeded(void);
+  void guiDrawViewport(void);
   void guiDrawAssetsWindow(void);
+  void resetSelection();  // Clear any selection and detach transform gizmo
   void guiDrawRendererTree();
   void guiDrawCameraTree();
   void guiDrawLightTree();
@@ -137,6 +162,7 @@ private:
 
   void guiDrawPropertiesWindow(void);
   void guiDrawRendererProperties();
+  void guiDrawCommonSplatSetProperties();
   void guiDrawSplatSetProperties();
   void guiDrawMeshTransformProperties();
   void guiDrawMeshMaterialProperties();
@@ -146,13 +172,41 @@ private:
 
   void guiDrawRendererStatisticsWindow();
 
-  void guiDrawMemoryStatisticsWindow(void);
+  // UI utility functions for icon button styling
+  void pushIconStyle(bool isActive);
+  void popIconStyle();
 
-  void guiDrawDebugWindow(void);
 
+  // Shader feedback window + footer bar (delegated to ShaderFeedbackUI)
+  void guiDrawShaderFeedbackWindow(void);
   void guiDrawFooterBar(void);
 
+  // Reusable selectors (used in both menu bar and property panels)
+  void guiDrawSortingSelector(bool inMenuBar = false);
+  void guiDrawLightingModeSelector(bool inMenuBar = false);
+  void guiDrawShadowsModeSelector(bool inMenuBar = false);
+  void guiDrawTracingStrategySelector(bool inMenuBar = false);
+
   bool guiGetTransform(glm::vec3& scale, glm::vec3& rotation, glm::vec3& translation, glm::mat4& transform, glm::mat4& transformInv, bool disabled /*=false*/);
+  bool guiGetTransform(glm::vec3& scale,
+                       glm::vec3& rotation,
+                       glm::vec3& translation,
+                       glm::mat4& transform,
+                       glm::mat4& transformInv,
+                       glm::mat3& transformRotScaleInv,
+                       bool       disabled /*=false*/);
+
+  // Helper method to toggle comparison mode
+  void toggleComparisonMode(bool enable);
+
+  // Summary info overlay (GPU name, FPS, VRAM)
+  void guiDrawSummaryOverlay(ImVec2 imagePos, ImVec2 imageSize);
+
+  // Helper method to save current visualization to image file
+  void saveVisualizationImageToFile(const std::filesystem::path& filename);
+
+  // Helper method to get settings string for comparison display
+  std::string getSettingsString(int pipeline, int visualize);
 
   // methods to handle recent files in file menu
   void guiAddToRecentFiles(std::filesystem::path filePath, int historySize = 20);
@@ -165,7 +219,12 @@ private:
   // hide/show ui elements
   bool m_showRendererStatistics = true;
   bool m_showMemoryStatistics   = true;
-  bool m_showShaderDebugging    = false;
+  bool m_showShaderFeedback     = false;
+
+  // Persistent cursor target overlay (locks shader feedback cursor)
+  bool   m_showCursorTargetOverlay = false;
+  bool   m_cursorTargetDragging    = false;
+  ImVec2 m_cursorTargetPos         = ImVec2(-1.0f, -1.0f);  // in viewport image pixels (top-left origin)
 
   std::shared_ptr<nvapp::ElementProfiler::ViewSettings> m_profilerViewSettings;
 
@@ -189,20 +248,39 @@ private:
     GUI_CAMERA_TYPE,          // type of camera
     GUI_FRUSTUM_CULLING,      // where to perform frustum culling (or disabled)
     GUI_SH_FORMAT,            // data format for storage of SH in VRAM
+    GUI_RGBA_FORMAT,          // data format for storage of RGBA colors in VRAM
     GUI_PARTICLE_FORMAT,      // Particle tracing mode for RTX
     GUI_KERNEL_DEGREE,        // Kernel degree for RTX
     GUI_VISUALIZE,            // visualization mode
+    GUI_VISUALIZE_DLSS_ON,    // visualization mode with DLSS enabled
     GUI_ILLUM_MODEL,          // TODO rename, "illumination" model is not the proper name
     GUI_DIST_SHADER_WG_SIZE,  // Distance shader workgroup size
     GUI_MESH_SHADER_WG_SIZE,  // Mesh shader workgroup size
-    GUI_RAY_HIT_PER_PASS,     // Max number of ray hits stored per pass (payload array size)
+    GUI_RAY_HIT_PER_PASS,     // Particle samples per pass (controls PARTICLES_SPP)
+    GUI_RTX_TRACE_STRATEGY,   // Ray tracing trace strategy (full any hit vs monte carlo)
     GUI_TEMPORAL_SAMPLING,    // Temporal sampling mode
     GUI_LIGHT_TYPE,           // Type of light
-    GUI_EXTENT_METHOD         // extent projection method
+    GUI_ATTENUATION_MODE,     // Light attenuation mode
+    GUI_EXTENT_METHOD,        // extent projection method
+    GUI_COMPARISON_DISPLAY,   // comparison display mode (reference, current, difference)
+    GUI_DLSS_MODE,            // DLSS quality mode (Disabled, Optimal, Minimal, Maximal)
+    GUI_FTB_SYNC_MODE,        // FTB depth buffer synchronization mode (interlock vs disabled)
+    GUI_COLOR_FORMAT,         // Color buffer format (precision/memory tradeoff)
+    GUI_NORMAL_METHOD,        // Normal vector computation method (max density plane, iso surface)
+    GUI_LIGHTING_MODE,        // Lighting mode (disabled, direct, indirect)
+    GUI_SHADOWS_MODE,         // Shadows mode (disabled, hard, soft)
+    GUI_DOF_MODE,             // Depth of Field mode (disabled, fixed focus, auto focus)
+    GUI_DOF_MODE_NO_AUTO      // Depth of Field mode (disabled, fixed focus)
   };
 
   // UI utility for choice (a.k.a. "combo") menus
   nvgui::EnumRegistry m_ui;
+  ImageCompareUI      m_imageCompareUI;    // UI overlay for image comparison
+  ShaderFeedbackUI    m_shaderFeedbackUI;  // Shader feedback window + footer bar
+
+  // Comparison mode: captured settings (for display in UI overlay)
+  int m_referenceCapturePipeline      = 0;  // Pipeline used when reference was captured
+  int m_referenceCaptureVisualization = 0;  // Visualization mode when reference was captured
 
   // which property to display in the property editor
   enum
@@ -218,12 +296,29 @@ private:
   bool        m_objListUpdated = false;
   const float TREE_INDENT      = 16.0f;
 
+  // Summary info overlay
+  bool m_showSummaryOverlay = false;  // Toggle for the summary overlay
+  // Last known screen-space rect of the summary overlay window.
+  // Used to block viewport interactions (e.g., image-compare click handling) when the overlay is on top.
+  ImVec2                                m_summaryOverlayRectMin{0.0f, 0.0f};
+  ImVec2                                m_summaryOverlayRectMax{0.0f, 0.0f};
+  bool                                  m_summaryOverlayRectValid = false;
+  std::string                           m_cachedGpuName;                      // GPU device name (cached once at init)
+  VRAMSummary                           m_cachedVRAM;                         // Cached VRAM usage/budget
+  double                                m_cachedFps       = 0.0;              // Cached FPS value
+  double                                m_cachedFrameTime = 0.0;              // Cached frame time in ms
+  std::chrono::steady_clock::time_point m_lastOverlayRefreshTime{};           // Last time overlay data was refreshed
+  static constexpr double               OVERLAY_REFRESH_INTERVAL_SEC = 0.25;  // Refresh overlay data every N seconds
+
+  void  updateTitleIfNeeded();
+  float m_titleUpdateTimer = 0.0f;
+
   // Project loading
   bool loadingProject = false;
   json data;
 
   // Debuging
-  void dumpSplat(uint32_t splatIdx);
+  void dumpSplat();
 };
 
 }  // namespace vk_gaussian_splatting

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -47,7 +47,14 @@
 
 #include "shaderio.h"
 #include "threedgs.h.slang"
-#include "threedgs_particles_storage.h.slang"
+#include "threedgs_particle_storage.h.slang"
+
+#if NEED_SURFACE_INFO
+#include "threedgrt.h.slang"  // For computeEllipsoidNormalMaxDensityPlane and ThreedgrtParticle
+#if QUANTIZE_NORMALS
+#include "octahedral_normal.h.slang"
+#endif
+#endif
 
 // Parallel Processing : Each global invocation (thread) processes one splat.
 // Batch Processing : The workgroup can process up to RASTER_MESH_WORKGROUP_SIZE splats(outputQuadCount)
@@ -61,6 +68,17 @@ static const int MAX_PRIMITIVES = 2 * RASTER_MESH_WORKGROUP_SIZE;
 struct PrimitiveOutput
 {
   [[vk::location(0)]] nointerpolation float4 outSplatCol : COLOR0;
+#if STOCHASTIC_SPLAT || NEED_SURFACE_INFO
+  [[vk::location(3)]] nointerpolation uint outSplatId : SPLATID;
+#endif
+#if NEED_SURFACE_INFO
+#if QUANTIZE_NORMALS
+  // Octahedral encoding: unit normal packed into 32-bit uint (16 bits per component)
+  [[vk::location(4)]] nointerpolation uint outSplatNormalPacked : NORMAL0;
+#else
+  [[vk::location(4)]] nointerpolation float3 outSplatNormal : NORMAL0;
+#endif
+#endif
 };
 
 // Per vertex output
@@ -73,9 +91,8 @@ struct VertexOutput
 };
 
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]  ConstantBuffer<FrameInfo> frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]] ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]] ConstantBuffer<PushConstant> pcRaster;
-// sorted indices
-[[vk::binding(BINDING_INDICES_BUFFER, 0)]]  RWStructuredBuffer<uint32_t> indices;
 // to get the actual number of splats (after culling if any)
 [[vk::binding(BINDING_INDIRECT_BUFFER, 0)]] RWStructuredBuffer<IndirectParams> indirectBuffer;
 
@@ -94,18 +111,16 @@ void emitDegeneratedQuad(uint localIndex, out OutputVertices<VertexOutput, MAX_V
 [numthreads(RASTER_MESH_WORKGROUP_SIZE, 1, 1)]
 [outputtopology("triangle")]
 [shader("mesh")]
-void main(
-  uint3 groupThreadID : SV_GroupThreadID,
-  uint3 groupID : SV_GroupID,
-  uint3 dispatchThreadID : SV_DispatchThreadID,
-  OutputIndices<uint3, MAX_PRIMITIVES> tris,
-  OutputVertices<VertexOutput, MAX_VERTICES> verts,
-  OutputPrimitives<PrimitiveOutput, MAX_PRIMITIVES> prims
-)
+void main(uint3                                             groupThreadID: SV_GroupThreadID,
+          uint3                                             groupID: SV_GroupID,
+          uint3                                             dispatchThreadID: SV_DispatchThreadID,
+          OutputIndices<uint3, MAX_PRIMITIVES>              tris,
+          OutputVertices<VertexOutput, MAX_VERTICES>        verts,
+          OutputPrimitives<PrimitiveOutput, MAX_PRIMITIVES> prims)
 {
-  const uint32_t baseIndex = dispatchThreadID.x;
-  const uint localIndex = groupThreadID.x;
-  
+  const uint32_t baseIndex  = dispatchThreadID.x;
+  const uint     localIndex = groupThreadID.x;
+
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_DIST
   // if culling is already performed we use the subset of splats
   const uint splatCount = indirectBuffer[0].instanceCount;
@@ -123,16 +138,27 @@ void main(
 
   if(baseIndex < splatCount)
   {
-    const uint splatIndex = indices[baseIndex];
+    // Access sorted indices via bindless device address
+    uint32_t*  indices       = assets.splatSortingIndicesAddress;
+    const uint globalSplatID = indices[baseIndex];
+
+#if STOCHASTIC_SPLAT || NEED_SURFACE_INFO
+    // emit the splat ID for stochastic rendering or surface reconstruction
+    prims[localIndex * 2 + 0].outSplatId = globalSplatID;
+    prims[localIndex * 2 + 1].outSplatId = globalSplatID;
+#endif
+
+    // Resolve global splat ID to correct descriptor and local index
+    SplatSetDesc splatSetDesc;
+    uint         splatIndex;
+    resolveGlobalSplatID(assets, globalSplatID, splatSetDesc, splatIndex);
 
     // emit primitives (triangles) as soon as possible
     tris[localIndex * 2 + 0] = uint3(0, 2, 1) + localIndex * 4;
     tris[localIndex * 2 + 1] = uint3(2, 0, 3) + localIndex * 4;
 
-    const float4x4 modelViewMatrix = mul(pcRaster.modelMatrix, frameInfo.viewMatrix);
-
     // Fetches are done as needed to allow early exit (culling)
-    float4       splatColor  = fetchColor(splatIndex);
+    float4 splatColor = fetchColor(splatSetDesc, splatIndex);
 
     // alpha based culling
     if(splatColor.a < frameInfo.alphaCullThreshold)
@@ -142,11 +168,14 @@ void main(
       return;
     }
 
-    const float3 splatCenter = fetchCenter(splatIndex);
+    const float3 splatCenter = fetchCenter(splatSetDesc, splatIndex);
+    
+    // Use transform from descriptor, not push constants
+    const float4x4 modelViewMatrix = mul(splatSetDesc.transform, frameInfo.viewMatrix);
 
     // Row-major: vector * matrix
     const float4 viewCenter = mul(float4(splatCenter, 1.0), modelViewMatrix);
-    const float4 clipCenter  = mul(viewCenter, frameInfo.projectionMatrix);
+    const float4 clipCenter = mul(viewCenter, frameInfo.projectionMatrixJittered);
 
 #if FRUSTUM_CULLING_MODE == FRUSTUM_CULLING_AT_RASTER
     const float clip = (1.0 + frameInfo.frustumDilation) * clipCenter.w;
@@ -160,10 +189,10 @@ void main(
 #endif
 
     // the vertices of the quad
-    const float2 positions[4] = {float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0)};
+    const float2 positions[4] = { float2(-1.0, -1.0), float2(1.0, -1.0), float2(1.0, 1.0), float2(-1.0, 1.0) };
 
 #if !USE_BARYCENTRIC
-    // emit per vertex attributes as early as possible
+    // emit per vertex attributes as soon as possible
     [unroll]
     for(uint i = 0; i < 4; ++i)
     {
@@ -172,7 +201,55 @@ void main(
     }
 #endif
 
-    const float3x3 cov3Dm = fetchCovariance(splatIndex);
+#if SHOW_SH_ONLY == 1
+    splatColor.rgb = float3(0.5, 0.5, 0.5);
+#endif
+
+#if NEED_SURFACE_INFO
+    {
+      // Create particle struct for normal computation (position, scale, rotation only)
+      ThreedgrtParticle particle = ThreedgrtParticle(splatSetDesc, splatIndex, true);
+
+      // Camera position in model space (inverse transform)
+      const float3 modelCameraPos = mul(float4(frameInfo.cameraPosition, 1.0), splatSetDesc.transformInverse).xyz;
+      const float3 modelRayDir    = normalize(splatCenter - modelCameraPos);
+
+      // Use the robust function that handles degenerate (flat) particles
+      float3 normalModel = computeEllipsoidNormalMaxDensityPlane(frameInfo, modelCameraPos, modelRayDir, particle);
+
+      // Transform normal to world space
+      // For normals, we use transpose(inverse(M)), but for pure rotation this is just the rotation part
+      float3 normalWorld = normalize(mul(float4(normalModel, 0.0), splatSetDesc.transform).xyz);
+#if QUANTIZE_NORMALS
+      // Pack normal using octahedral encoding (32-bit)
+      const uint packedNormal = encodeNormalOctahedral(normalWorld);
+
+      prims[localIndex * 2 + 0].outSplatNormalPacked = packedNormal;
+      prims[localIndex * 2 + 1].outSplatNormalPacked = packedNormal;
+#else
+      prims[localIndex * 2 + 0].outSplatNormal = normalWorld;
+      prims[localIndex * 2 + 1].outSplatNormal = normalWorld;
+#endif
+    }
+#endif
+
+    // fetch radiance from SH coefs > degree 0
+    // const float3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
+    // Row-major: vector * matrix (camera position transformed by inverse model matrix)
+    const float3 worldViewDir =
+        normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), splatSetDesc.transformInverse).xyz);
+
+    splatColor.rgb += fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatIndex, worldViewDir);
+
+    // emit per primitive color as early as possible for perf reasons,
+    // only for original 3DGS, see later on for MipSplatting
+#if MS_ANTIALIASING == 0
+    prims[localIndex * 2 + 0].outSplatCol = splatColor;
+    prims[localIndex * 2 + 1].outSplatCol = splatColor;
+#endif
+
+    const float3x3 cov3Dm = fetchCovariance(splatSetDesc, splatIndex);
+
     // Computes the projected covariance
     const float3 cov2Dv = threedgsCovarianceProjection(cov3Dm, viewCenter, frameInfo.focal, modelViewMatrix);
 
@@ -186,26 +263,8 @@ void main(
       return;
     }
 
-#if SHOW_SH_ONLY == 1
-    splatColor.rgb = float3(0.5, 0.5, 0.5);
-#endif
-
-    // fetch radiance from SH coefs > degree 0
-    // const float3 worldViewDir = normalize(splatCenter - frameInfo.cameraPosition);
-    // Row-major: vector * matrix (camera position transformed by inverse model matrix)
-    const float3 worldViewDir = normalize(splatCenter - mul(float4(frameInfo.cameraPosition, 1.0), pcRaster.modelMatrixInverse).xyz);
-
-    splatColor.rgb += fetchViewDependentRadiance(splatIndex, worldViewDir);
-
-    // emit per primitive color as early as possible for perf reasons, 
-    // only for original 3DGS, see later on for MipSplatting
-#if MS_ANTIALIASING == 0
-    prims[localIndex * 2 + 0].outSplatCol = splatColor;
-    prims[localIndex * 2 + 1].outSplatCol = splatColor;
-#endif
-
 #if MS_ANTIALIASING == 1
-    // emit the color with alpha compensation
+    // emit the color with alpha compensation after threedgsProjectedExtentBasis modified splatColor.a
     prims[localIndex * 2 + 0].outSplatCol = splatColor;
     prims[localIndex * 2 + 1].outSplatCol = splatColor;
 #endif
@@ -220,8 +279,8 @@ void main(
     {
       const float2 fragPos = positions[i].xy;
 
-      const float2 ndcOffset = float2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport * 2.0
-                             * frameInfo.inverseFocalAdjustment;
+      const float2 ndcOffset = float2(fragPos.x * basisVector1 + fragPos.y * basisVector2) * frameInfo.basisViewport
+                               * 2.0 * frameInfo.inverseFocalAdjustment;
 
       const float4 quadPos = float4(ndcCenter.xy + ndcOffset, ndcCenter.z, 1.0);
 

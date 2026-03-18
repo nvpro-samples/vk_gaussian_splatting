@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,7 +27,7 @@
 #include <mutex>
 #include <filesystem>
 
-#include "splat_set.h"
+#include "splat_set_vk.h"
 
 namespace vk_gaussian_splatting {
 
@@ -59,12 +59,24 @@ public:
   // triggers the load of a new scene
   // return false if loader not in idled state
   // output must not be accessed if status is not LOADED or READY (after reset)
-  bool loadScene(std::filesystem::path filename, SplatSet& output);
+  bool loadScene(std::filesystem::path filename, std::shared_ptr<SplatSetVk> output);
   // cancel scene loading if possible
   // non blocking, may have no effect
   void cancel();
   // return loader status
   State getStatus();
+  // get the loaded splat set if status is succeed
+  std::shared_ptr<SplatSetVk> getLoadedSplatSet()
+  {
+    if(getStatus() == PlyLoaderAsync::State::E_LOADED)
+    {
+      return m_result;
+    }
+    else
+    {
+      return nullptr;
+    }
+  };
   // Resets the loader to READY after LOADED or FAILURE
   // used to ack that the consumer has consumed the loaded model
   // loader must be reset to be able to launch a new load
@@ -114,7 +126,8 @@ private:
   // the ply pathname
   std::filesystem::path m_filename = "";
   // the output data storage
-  SplatSet* m_output = nullptr;
+  std::shared_ptr<SplatSetVk> m_output = nullptr;
+  std::shared_ptr<SplatSetVk> m_result = nullptr;
   // the loading percentage
   float m_progress = 0.0f;
 };

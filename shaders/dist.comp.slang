@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "shaderio.h"
-#include "threedgs_particles_storage.h.slang"
+#include "threedgs_particle_storage.h.slang"
 #include "threedgut_camera_models.h.slang"
 #include "threedgut_camera_projections.h.slang"
 
 // clang-format off
 [[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]   ConstantBuffer<FrameInfo>    frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]]           ConstantBuffer<SceneAssets> assets;
 [[vk::push_constant]]                        ConstantBuffer<PushConstant> pcRaster;
-[[vk::binding(BINDING_DISTANCES_BUFFER, 0)]] RWStructuredBuffer<uint32_t> distances;
-[[vk::binding(BINDING_INDICES_BUFFER, 0)]]   RWStructuredBuffer<uint32_t> indices;
 [[vk::binding(BINDING_INDIRECT_BUFFER, 0)]]  RWStructuredBuffer<IndirectParams> indirectBuffer;
 // clang-format on
 
@@ -42,16 +41,21 @@ uint encodeMinMaxFp32(float val)
 [shader("compute")]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-  const uint id = dispatchThreadID.x;
+  const uint globalSplatID = dispatchThreadID.x;
   // each workgroup (but the last one if splat count is not a multiple)
   // processes DISTANCE_COMPUTE_WORKGROUP_SIZE points
-  if(id >= frameInfo.splatCount)
+  if(globalSplatID >= frameInfo.splatCount)
     return;
 
-  float4 splatPos = float4(fetchCenter(id), 1.0);
+  // Resolve global splat ID to correct descriptor and local index
+  SplatSetDesc splatSetDesc;
+  uint splatIndex;
+  resolveGlobalSplatID(assets, globalSplatID, splatSetDesc, splatIndex);
+  
+  float4 splatPos = float4(fetchCenter(splatSetDesc, splatIndex), 1.0);
 
-  // Row-major: multiply in reverse order (vector * matrix * matrix)
-  float4 viewPos      = mul(mul(splatPos, pcRaster.modelMatrix), frameInfo.viewMatrix);
+  // Use transform from descriptor, not push constants
+  float4 viewPos      = mul(mul(splatPos, splatSetDesc.transform), frameInfo.viewMatrix);
   // TODO: projection matrix is not correct with fisheye, this is a coarse aprox to compute depth
   float4 ndcPos       = mul(viewPos, frameInfo.projectionMatrix);
   ndcPos            = ndcPos / ndcPos.w;
@@ -86,17 +90,74 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 #endif
 #endif
 
+#if SIZE_CULLING_MODE == SIZE_CULLING_ENABLED
+  // Size culling: cull splats whose projected bounding sphere is smaller than a threshold
+  {
+    // Fetch the scale of the splat (3D scale factors define the ellipsoid extents)
+    // Note: scales are stored in log-space, so we need to exponentiate them
+    float3 scale = exp(fetchScale(splatSetDesc, splatIndex)) * frameInfo.splatScale;
+    
+    // Use the maximum scale as the bounding sphere radius (1 standard deviation)
+    float radius = max(scale.x, max(scale.y, scale.z));
+    
+    // Splats are rendered with sqrt(8) standard deviations extent (see raster shaders)
+    // Multiply by 2 to get diameter for "pixel coverage" comparison
+    const float sqrt8 = 2.8284271247f;  // sqrt(8)
+    float extent = radius * sqrt8 * 2.0f;  // diameter in world units
+    
+    // Transform extent to view space (account for instance transform scaling)
+    // Use the maximum scale factor from the instance transform
+    float3 transformScale = float3(
+      length(splatSetDesc.transform[0].xyz),
+      length(splatSetDesc.transform[1].xyz),
+      length(splatSetDesc.transform[2].xyz)
+    );
+    extent *= max(transformScale.x, max(transformScale.y, transformScale.z));
+    
+    // Project extent to screen space (perspective projection)
+    // The focal length is already in pixel units (fx, fy from camera intrinsics)
+    // Note: focal.y may be negative due to Vulkan's coordinate system convention
+    // projectedPixels = extent * focal / depth
+    float viewDist = abs(viewPos.z);
+    if(viewDist > 0.0001f)  // Avoid division by zero
+    {
+      // Use max of absolute focal lengths for conservative projection
+      float maxFocal = max(abs(frameInfo.focal.x), abs(frameInfo.focal.y));
+      float projectedPixels = (extent * maxFocal) / viewDist;
+      
+      // Cull if projected size is below threshold
+      if(projectedPixels < frameInfo.sizeCullingMinPixels)
+        return;
+    }
+    
+  }
+#endif
+
   // increments the visible splat counter in the indirect buffer
   uint original;
   InterlockedAdd(indirectBuffer[0].instanceCount, 1, original);
-  const uint instance_index = original;
-  // stores the distance
-  distances[instance_index] = encodeMinMaxFp32(-depth);
-  // stores the base index
-  indices[instance_index] = id;
+  const uint instanceIndex = original;
+
+  // stores the global splat ID (used by raster shaders to resolve descriptor + local index)
+  uint32_t *indices = assets.splatSortingIndicesAddress;
+  indices[instanceIndex] = globalSplatID;
+
   // set the workgroup count for the mesh shading pipeline
-  if(instance_index % RASTER_MESH_WORKGROUP_SIZE == 0)
+  if (instanceIndex % RASTER_MESH_WORKGROUP_SIZE == 0)
   {
-    InterlockedAdd(indirectBuffer[0].groupCountX, 1);
+      InterlockedAdd(indirectBuffer[0].groupCountX, 1);
   }
+
+#if !STOCHASTIC_SPLAT
+  // stores the distance
+  uint32_t *distances = assets.splatSortingDistancesAddress;
+  // For back-to-front (default): negate depth so ascending radix sort yields farthest-first
+  // For front-to-back: use positive depth so ascending radix sort yields nearest-first
+#if FRONT_TO_BACK
+  distances[instanceIndex] = encodeMinMaxFp32(depth);
+#else
+  distances[instanceIndex] = encodeMinMaxFp32(-depth);
+#endif
+#endif
+
 }

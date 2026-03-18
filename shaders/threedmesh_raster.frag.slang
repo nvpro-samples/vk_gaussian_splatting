@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,10 +21,9 @@
 #include "wavefront.h.slang"
 
 // clang-format off
-[[vk::push_constant]]                        ConstantBuffer<PushConstant>  pcRaster;
-[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]]   ConstantBuffer<FrameInfo>     frameInfo;
-[[vk::binding(BINDING_MESH_DESCRIPTORS, 0)]] StructuredBuffer<ObjDesc>     objDesc;
-[[vk::binding(BINDING_LIGHT_SET, 0)]]        StructuredBuffer<LightSource> lights;
+[[vk::push_constant]]                      ConstantBuffer<PushConstant>  pcRaster;
+[[vk::binding(BINDING_FRAME_INFO_UBO, 0)]] ConstantBuffer<FrameInfo>     frameInfo;
+[[vk::binding(BINDING_ASSETS, 0)]]         ConstantBuffer<SceneAssets>   assets;
 
 struct FragmentInput
 {
@@ -50,13 +49,56 @@ FragmentOutput main(FragmentInput input)
   output.color = float4(0.0, 0.0, 0.0, 0.0);
 #else
 
-  ObjDesc objResource = objDesc[pcRaster.objIndex];
-  // In GLSL version materialIndexAddress was erroneously dereferenced using pcRaster.objIndex. Now corrected using input.primitiveID.
-  ObjMaterial material = objResource.materialAddress[objResource.materialIndexAddress[input.primitiveID]];
+#if FRONT_TO_BACK && NEED_SURFACE_INFO
+  // FTB mode: Three-pass rendering for correct mesh/splat compositing
+  // Pass 1 (ftbColorPass=0): Depth pre-pass - output black, write depth only
+  // Pass 3 (ftbColorPass=1): Color pass - read transmittance, output mesh_color * transmittance
 
-  float3 color = float3(0.0);
+  if(pcRaster.ftbColorPass == 0)
+  {
+    // Depth pre-pass: output black (color doesn't matter, we just need depth)
+    output.color = float4(0.0, 0.0, 0.0, 0.0);
+    return output;
+  }
 
-  wavefrontComputeShadingDirectOnly(lights, frameInfo.lightCount, input.worldPos, input.worldNrm, material, input.viewDir, color);
+  // Color pass: compute shading and modulate by transmittance
+#endif
+
+  // Get per-instance mesh descriptor using bindless access
+  MeshDesc meshDesc = assets.meshes[pcRaster.objIndex];
+
+  // Retrieve material for this triangle
+  ObjMaterial material = meshDesc.materialAddress[meshDesc.materialIndexAddress[input.primitiveID]];
+
+#if (LIGHTING_MODE != LIGHTING_DISABLED)
+  float3 color = float3(0.0, 0.0, 0.0);  // Start with black
+
+  // Add emissive contribution first (for light proxies and other emissive materials)
+  color += material.emission;
+
+  // Only apply lighting if material needs it
+  if(material.needShading == 1)
+  {
+    // Apply lighting from each light source (using bindless lights)
+    for(int i = 0; i < assets.lightCount; ++i)
+    {
+      bool inShadow = false;  // Rasterization doesn't have shadow rays (yet)
+      wavefrontComputeShadingDirectOnly(assets.lights[i], input.worldPos, input.worldNrm, material, input.viewDir, inShadow, double3(1.0), color);
+    }
+
+    if(assets.lightCount == 0)
+    {
+      // No lights in scene - use headlight (camera-attached point light with no attenuation)
+      const LightSource headlight = createHeadlight(frameInfo.cameraPosition);
+      bool              inShadow  = false;
+      wavefrontComputeShadingDirectOnly(headlight, input.worldPos, input.worldNrm, material, input.viewDir, inShadow, double3(1.0), color);
+    }
+  }
+  // else: Pure emissive material (light proxy) - no lighting interaction
+#else
+  // Shading disabled - display unlit material color (emission + ambient + diffuse)
+  float3 color = material.emission + material.ambient + material.diffuse;
+#endif
 
   output.color = float4(color, 1);
 

@@ -325,5 +325,5 @@ Settings: Storage=Buffers, Pipeline=**variable**, SH Format=float32, **Rendering
 
 ## References
 
-Please consult the consolidated [References](../readme.md#References) section of the main `readme.md`.
+Please consult the consolidated [References](../README.md#references) section of the main `README.md`.
 
