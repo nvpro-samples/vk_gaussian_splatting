@@ -149,8 +149,6 @@ void TransformHelperVk::init(const Resources& res)
 
   // Compile shaders and create graphics pipeline
   rebuildPipelines();
-
-  std::cout << "TransformHelperVk initialized" << std::endl;
 }
 
 void TransformHelperVk::deinit()
@@ -170,8 +168,6 @@ void TransformHelperVk::deinit()
   m_uploader = nullptr;
   m_device   = VK_NULL_HANDLE;
   m_sampler  = VK_NULL_HANDLE;
-
-  std::cout << "TransformHelperVk deinitialized" << std::endl;
 }
 
 //-----------------------------------------------------------------------------

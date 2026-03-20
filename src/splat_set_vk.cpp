@@ -194,24 +194,15 @@ void SplatSetVk::initDataBuffers()
     if(splatId < size())
     {
 
-      std::cout << positions[splatId * 3 + 0] << " ";
-      std::cout << positions[splatId * 3 + 1] << " ";
-      std::cout << positions[splatId * 3 + 2] << "  0 1 0  ";
-      std::cout << f_dc[splatId * 3 + 0] << " ";
-      std::cout << f_dc[splatId * 3 + 1] << " ";
-      std::cout << f_dc[splatId * 3 + 2] << "  ";
+      LOGD("%f %f %f  0 1 0  %f %f %f  ", positions[splatId * 3 + 0], positions[splatId * 3 + 1],
+           positions[splatId * 3 + 2], f_dc[splatId * 3 + 0], f_dc[splatId * 3 + 1], f_dc[splatId * 3 + 2]);
       for(int i = 0; i < 45; ++i)
       {
-        std::cout << f_rest[splatId * 45 + i] << " ";
+        LOGD("%f ", f_rest[splatId * 45 + i]);
       }
-      std::cout << " " << opacity[splatId] << "  ";
-      std::cout << scale[splatId * 3 + 0] << " ";
-      std::cout << scale[splatId * 3 + 1] << " ";
-      std::cout << scale[splatId * 3 + 2] << "  ";
-      std::cout << rotation[splatId * 4 + 0] << " ";
-      std::cout << rotation[splatId * 4 + 1] << " ";
-      std::cout << rotation[splatId * 4 + 2] << " ";
-      std::cout << rotation[splatId * 4 + 3] << std::endl;
+      LOGD(" %f  %f %f %f  %f %f %f %f\n", opacity[splatId], scale[splatId * 3 + 0], scale[splatId * 3 + 1],
+           scale[splatId * 3 + 2], rotation[splatId * 4 + 0], rotation[splatId * 4 + 1], rotation[splatId * 4 + 2],
+           rotation[splatId * 4 + 3]);
     }
   }
   auto       startTime  = std::chrono::high_resolution_clock::now();
@@ -231,8 +222,8 @@ void SplatSetVk::initDataBuffers()
     const VkDeviceSize bufferSize3Comp = VkDeviceSize(splatCount) * 3 * sizeof(float);
     const VkDeviceSize bufferSize4Comp = VkDeviceSize(splatCount) * 4 * sizeof(float);
 
-    std::cout << "Allocating splat buffers: centers/scales=" << bufferSize3Comp << " B, rotations=" << bufferSize4Comp
-              << " B (" << splatCount << " splats)" << std::endl;
+    LOGD("Allocating splat buffers: centers/scales=%llu B, rotations=%llu B (%u splats)\n",
+         static_cast<unsigned long long>(bufferSize3Comp), static_cast<unsigned long long>(bufferSize4Comp), splatCount);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(centersBuffer, bufferSize3Comp, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(centersBuffer.buffer);
@@ -263,7 +254,7 @@ void SplatSetVk::initDataBuffers()
   {
     const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * 2 * 3 * sizeof(float);
 
-    std::cout << "Allocating covariance buffers: " << bufferSize << " B (" << splatCount << " splats)" << std::endl;
+    LOGD("Allocating covariance buffers: %llu B (%u splats)\n", static_cast<unsigned long long>(bufferSize), splatCount);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(covariancesBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(covariancesBuffer.buffer);
@@ -309,7 +300,7 @@ void SplatSetVk::initDataBuffers()
   {
     const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * 4 * formatSize(rgbaFormat);
 
-    std::cout << "Allocating color buffers: " << bufferSize << " B (" << splatCount << " splats, format=" << rgbaFormat << ")" << std::endl;
+    LOGD("Allocating color buffers: %llu B (%u splats, format=%d)\n", static_cast<unsigned long long>(bufferSize), splatCount, rgbaFormat);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(colorsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(colorsBuffer.buffer);
@@ -389,7 +380,7 @@ void SplatSetVk::initDataBuffers()
 
     const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * splatStride * formatSize(shFormat);
 
-    std::cout << "Allocating SH buffers: " << bufferSize << " B (" << splatCount << " splats, stride=" << splatStride << ")" << std::endl;
+    LOGD("Allocating SH buffers: %llu B (%u splats, stride=%zu)\n", static_cast<unsigned long long>(bufferSize), splatCount, splatStride);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(sphericalHarmonicsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(sphericalHarmonicsBuffer.buffer);
@@ -443,7 +434,7 @@ void SplatSetVk::initDataBuffers()
 
     auto      endShTime   = std::chrono::high_resolution_clock::now();
     long long buildShTime = std::chrono::duration_cast<std::chrono::milliseconds>(endShTime - startShTime).count();
-    std::cout << "Sh data updated in " << buildShTime << "ms" << std::endl;
+    LOGD("Sh data updated in %lldms\n", buildShTime);
 
     NVVK_CHECK(m_uploader->appendLargeBuffer(sphericalHarmonicsBuffer, 0, bufferSize, shData.data()));
 
@@ -483,7 +474,7 @@ void SplatSetVk::initDataBuffers()
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-  std::cout << "Data buffers updated in " << buildTime << "ms" << std::endl;
+  LOGD("Data buffers updated in %lldms\n", buildTime);
 }
 
 void SplatSetVk::deinitDataBuffers()
@@ -774,7 +765,7 @@ void SplatSetVk::initDataTextures()
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-  std::cout << "Data textures updated in " << buildTime << "ms" << std::endl;
+  LOGD("Data textures updated in %lldms\n", buildTime);
 
   // Store texture indices for bindless texture array access
   // In single-instance mode, we use a simple sequential scheme starting from 0
@@ -935,7 +926,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
   if(m_splatModel.vertexBuffer.buffer != VK_NULL_HANDLE || m_splatModel.indexBuffer.buffer != VK_NULL_HANDLE
      || m_splatModel.aabbBuffer.buffer != VK_NULL_HANDLE)
   {
-    std::cout << "  Destroying old splat model buffers before recreating..." << std::endl;
+    LOGD("  Destroying old splat model buffers before recreating...\n");
     rtxDeinitSplatModel();
   }
 
@@ -997,7 +988,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
   VkDeviceSize indexSize  = indices.size() * sizeof(uint32_t);
   VkDeviceSize aabbSize   = aabbs.size() * sizeof(SplatAabb);
 
-  std::cout << "Creating splat model buffers (mode: " << (useAABBs ? "AABB" : "Icosahedron") << "):" << std::endl;
+  LOGD("Creating splat model buffers (mode: %s):\n", useAABBs ? "AABB" : "Icosahedron");
 
   VkDeviceSize totalSize = 0;
   VkResult     result;
@@ -1006,10 +997,10 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
   if(useAABBs)
   {
     // AABB mode: Only create AABB buffer
-    std::cout << "  AABB buffer:   " << (aabbSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+    LOGD("  AABB buffer:   %.3f GB\n", aabbSize / (1024.0 * 1024.0 * 1024.0));
     totalSize = aabbSize;
 
-    std::cout << "  Creating AABB buffer..." << std::endl;
+    LOGD("  Creating AABB buffer...\n");
     result = m_alloc->createLargeBuffer(m_splatModel.aabbBuffer, aabbSize,
                                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags,
                                         queue);
@@ -1023,7 +1014,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
     }
     NVVK_DBG_NAME(m_splatModel.aabbBuffer.buffer);
 
-    std::cout << "  AABB buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    LOGD("  AABB buffer created, uploading via chunked staging (256MB chunks)...\n");
     result = m_uploader->appendLargeBuffer(m_splatModel.aabbBuffer, 0, aabbSize, aabbs.data());
     if(result != VK_SUCCESS)
     {
@@ -1041,11 +1032,11 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
   else
   {
     // Icosahedron mode: Create vertex and index buffers
-    std::cout << "  Vertex buffer: " << (vertexSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
-    std::cout << "  Index buffer:  " << (indexSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
+    LOGD("  Vertex buffer: %.3f GB\n", vertexSize / (1024.0 * 1024.0 * 1024.0));
+    LOGD("  Index buffer:  %.3f GB\n", indexSize / (1024.0 * 1024.0 * 1024.0));
     totalSize = vertexSize + indexSize;
 
-    std::cout << "  Creating vertex buffer..." << std::endl;
+    LOGD("  Creating vertex buffer...\n");
     result = m_alloc->createLargeBuffer(m_splatModel.vertexBuffer, vertexSize,
                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags,
                                         queue);
@@ -1061,7 +1052,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
     }
     NVVK_DBG_NAME(m_splatModel.vertexBuffer.buffer);
 
-    std::cout << "  Vertex buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    LOGD("  Vertex buffer created, uploading via chunked staging (256MB chunks)...\n");
     result = m_uploader->appendLargeBuffer(m_splatModel.vertexBuffer, 0, vertexSize, vertices.data());
     if(result != VK_SUCCESS)
     {
@@ -1073,7 +1064,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
       return false;
     }
 
-    std::cout << "  Creating index buffer..." << std::endl;
+    LOGD("  Creating index buffer...\n");
     result = m_alloc->createLargeBuffer(m_splatModel.indexBuffer, indexSize,
                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | rayTracingFlags, queue);
     if(result != VK_SUCCESS)
@@ -1088,7 +1079,7 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
     }
     NVVK_DBG_NAME(m_splatModel.indexBuffer.buffer);
 
-    std::cout << "  Index buffer created, uploading via chunked staging (256MB chunks)..." << std::endl;
+    LOGD("  Index buffer created, uploading via chunked staging (256MB chunks)...\n");
     result = m_uploader->appendLargeBuffer(m_splatModel.indexBuffer, 0, indexSize, indices.data());
     if(result != VK_SUCCESS)
     {
@@ -1105,8 +1096,8 @@ bool SplatSetVk::rtxInitSplatModel(bool useInstances, bool useAABBs, bool compre
     memoryStats.rtxIndexBuffer  = indexSize;
   }
 
-  std::cout << "  Total:         " << (totalSize / (1024.0 * 1024.0 * 1024.0)) << " GB" << std::endl;
-  std::cout << "  All buffers created and uploaded via chunked staging." << std::endl;
+  LOGD("  Total:         %.3f GB\n", totalSize / (1024.0 * 1024.0 * 1024.0));
+  LOGD("  All buffers created and uploaded via chunked staging.\n");
 
   m_uploader->cmdUploadAppended(cmd);
   m_app->submitAndWaitTempCmdBuffer(cmd);

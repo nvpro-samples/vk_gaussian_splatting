@@ -51,7 +51,7 @@ void LightManagerVk::init(nvapp::Application* app, nvvk::ResourceAllocator* allo
   // No buffer creation here - created on first light
   lightsBuffer = {};
 
-  LOGI("LightManagerVk::init: Initialized (0 lights)\n");
+  LOGD("LightManagerVk::init: Initialized (0 lights)\n");
 }
 
 void LightManagerVk::reset()
@@ -76,7 +76,7 @@ void LightManagerVk::reset()
   // Reset naming counter (will be recreated from 0 when new lights are added)
   m_nextLightNumber = 0;
 
-  LOGI("LightManagerVk::reset: Marked all assets for deletion\n");
+  LOGD("LightManagerVk::reset: Marked all assets for deletion\n");
 }
 
 void LightManagerVk::deinit()
@@ -162,7 +162,7 @@ std::shared_ptr<LightSourceInstanceVk> LightManagerVk::createLight()
   // Mark for GPU buffer rebuild
   pendingRequests |= Request::eRebuildBuffer;
 
-  LOGI("Created light: %s\n", instance->name.c_str());
+  LOGD("Created light: %s\n", instance->name.c_str());
   return instance;
 }
 
@@ -201,7 +201,7 @@ std::shared_ptr<LightSourceInstanceVk> LightManagerVk::duplicateInstance(std::sh
   // Mark for GPU buffer rebuild
   pendingRequests |= Request::eRebuildBuffer;
 
-  LOGI("Duplicated light: %s\n", newInstance->name.c_str());
+  LOGD("Duplicated light: %s\n", newInstance->name.c_str());
   return newInstance;
 }
 
@@ -256,7 +256,7 @@ void LightManagerVk::deleteInstance(std::shared_ptr<LightSourceInstanceVk> insta
       if(assetIt != lightSources.end())
       {
         lightSources.erase(assetIt);
-        LOGI("Deleted light asset (last reference)\n");
+        LOGD("Deleted light asset (last reference)\n");
       }
     }
   }
@@ -273,7 +273,7 @@ void LightManagerVk::deleteInstance(std::shared_ptr<LightSourceInstanceVk> insta
   // Mark for GPU buffer rebuild
   pendingRequests |= Request::eRebuildBuffer;
 
-  LOGI("Deleted light instance (remaining: %zu)\n", instances.size());
+  LOGD("Deleted light instance (remaining: %zu)\n", instances.size());
 }
 
 void LightManagerVk::updateLight(std::shared_ptr<LightSourceInstanceVk> instance)
@@ -389,7 +389,7 @@ void LightManagerVk::recreateProxyForAsset(std::shared_ptr<LightSourceVk> asset)
     }
   }
 
-  LOGI("Recreated proxy mesh for light asset (new type: %d)\n", static_cast<int>(asset->type));
+  LOGD("Recreated proxy mesh for light asset (new type: %d)\n", static_cast<int>(asset->type));
 }
 
 // =============================================================================
@@ -453,7 +453,7 @@ void LightManagerVk::rebuildBuffer()
     {
       m_alloc->destroyBuffer(oldBuffer);
     }
-    LOGI("Light buffer destroyed (0 lights)\n");
+    LOGD("Light buffer destroyed (0 lights)\n");
     return;
   }
 
@@ -500,7 +500,7 @@ void LightManagerVk::rebuildBuffer()
     m_alloc->destroyBuffer(oldBuffer);
   }
 
-  LOGI("Light buffer rebuilt: %zu lights, %zu bytes\n", instances.size(), bufferSize);
+  LOGD("Light buffer rebuilt: %zu lights, %zu bytes\n", instances.size(), bufferSize);
 }
 
 void LightManagerVk::updateBuffer()
@@ -542,7 +542,7 @@ void LightManagerVk::updateBuffer()
   m_app->submitAndWaitTempCmdBuffer(cmdBuf);
   m_uploader->releaseStaging();
 
-  LOGI("Light buffer updated: %zu lights\n", instances.size());
+  LOGD("Light buffer updated: %zu lights\n", instances.size());
 }
 
 // =============================================================================
@@ -612,7 +612,7 @@ std::shared_ptr<MeshVk> LightManagerVk::createProxySphere()
   // Create mesh (each light gets its own mesh for independent materials)
   auto mesh = m_meshSetVk->createMesh("light_proxy_sphere", vertices, indices, materials, matIndices);
 
-  LOGI("Created proxy sphere: %zu vertices, %zu indices\n", vertices.size(), indices.size());
+  LOGD("Created proxy sphere: %zu vertices, %zu indices\n", vertices.size(), indices.size());
   return mesh;
 }
 
@@ -697,7 +697,7 @@ std::shared_ptr<MeshVk> LightManagerVk::createProxyCone(int segments)
 
   auto mesh = m_meshSetVk->createMesh("light_proxy_cone", vertices, indices, materials, matIndices);
 
-  LOGI("Created proxy cone: %zu vertices, %zu indices\n", vertices.size(), indices.size());
+  LOGD("Created proxy cone: %zu vertices, %zu indices\n", vertices.size(), indices.size());
   return mesh;
 }
 
@@ -786,7 +786,7 @@ std::shared_ptr<MeshVk> LightManagerVk::createProxyQuad()
 
   auto mesh = m_meshSetVk->createMesh("light_proxy_quad", vertices, indices, materials, matIndices);
 
-  LOGI("Created proxy quad: %zu vertices, %zu indices\n", vertices.size(), indices.size());
+  LOGD("Created proxy quad: %zu vertices, %zu indices\n", vertices.size(), indices.size());
   return mesh;
 }
 

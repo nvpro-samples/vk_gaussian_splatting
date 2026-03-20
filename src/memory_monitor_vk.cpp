@@ -20,6 +20,8 @@
 #include "memory_monitor_vk.h"
 #include "utilities.h"
 
+#include <nvutils/logger.hpp>
+
 #include <iostream>
 #include <fmt/format.h>
 
@@ -36,7 +38,7 @@ void queryVRAMInfo(VkPhysicalDevice physicalDevice)
 
   vkGetPhysicalDeviceMemoryProperties2(physicalDevice, &memProps2);
 
-  std::cout << "\n========== VRAM Memory Information ==========\n";
+  LOGI("\n========== VRAM Memory Information ==========\n");
 
   // Iterate through memory heaps
   for(uint32_t i = 0; i < memProps2.memoryProperties.memoryHeapCount; i++)
@@ -83,21 +85,21 @@ void queryVRAMInfo(VkPhysicalDevice physicalDevice)
       heapType = " (System RAM - Host Memory)";
     }
 
-    std::cout << "\nMemory Heap " << i << heapType << ":\n";
-    std::cout << "  Total Size: " << formatMemorySize(heapSize) << "\n";
-    std::cout << "  Budget:     " << formatMemorySize(budget) << " (available for this app)\n";
-    std::cout << "  Used:       " << formatMemorySize(usage) << " (used by this app)\n";
-    std::cout << "  Free:       " << formatMemorySize(free) << " (free for this app)\n";
+    LOGI("\nMemory Heap %u%s:\n", i, heapType.c_str());
+    LOGI("  Total Size: %s\n", formatMemorySize(heapSize).c_str());
+    LOGI("  Budget:     %s (available for this app)\n", formatMemorySize(budget).c_str());
+    LOGI("  Used:       %s (used by this app)\n", formatMemorySize(usage).c_str());
+    LOGI("  Free:       %s (free for this app)\n", formatMemorySize(free).c_str());
 
     // Calculate and display percentage
     if(budget > 0)
     {
       float usagePercent = (float(usage) / float(budget)) * 100.0f;
-      std::cout << "  Usage:      " << fmt::format("{:.1f}%", usagePercent) << "\n";
+      LOGI("  Usage:      %.1f%%\n", usagePercent);
     }
   }
 
-  std::cout << "=============================================\n\n";
+  LOGI("=============================================\n\n");
 }
 
 VRAMSummary queryVRAMSummary(VkPhysicalDevice physicalDevice)

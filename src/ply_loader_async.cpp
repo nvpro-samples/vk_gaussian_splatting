@@ -59,7 +59,7 @@ bool loadSplatFile(const std::filesystem::path&                          filenam
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
   if(!file.is_open())
   {
-    std::cout << "Error: failed to open .splat file: " << filename << std::endl;
+    LOGE("Error: failed to open .splat file: %s\n", filename.string().c_str());
     return false;
   }
 
@@ -67,18 +67,18 @@ bool loadSplatFile(const std::filesystem::path&                          filenam
   const std::streamsize fileSize = file.tellg();
   if(fileSize % 32 != 0)
   {
-    std::cout << "Error: invalid .splat file size (not a multiple of 32 bytes): " << filename << std::endl;
+    LOGE("Error: invalid .splat file size (not a multiple of 32 bytes): %s\n", filename.string().c_str());
     return false;
   }
 
   const uint32_t numSplats = static_cast<uint32_t>(fileSize / 32);
   if(numSplats == 0)
   {
-    std::cout << "Error: empty .splat file: " << filename << std::endl;
+    LOGE("Error: empty .splat file: %s\n", filename.string().c_str());
     return false;
   }
 
-  std::cout << "Loading .splat file with " << numSplats << " Gaussians..." << std::endl;
+  LOGI("Loading .splat file with %zu Gaussians...\n", numSplats);
 
   // Read entire file into memory
   file.seekg(0, std::ios::beg);
@@ -88,7 +88,7 @@ bool loadSplatFile(const std::filesystem::path&                          filenam
 
   if(!file)
   {
-    std::cout << "Error: failed to read .splat file: " << filename << std::endl;
+    LOGE("Error: failed to read .splat file: %s\n", filename.string().c_str());
     return false;
   }
 
@@ -177,7 +177,7 @@ bool loadSplatFile(const std::filesystem::path&                          filenam
   // Print timing info
   auto      endTime  = std::chrono::high_resolution_clock::now();
   long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-  std::cout << "Loaded " << numSplats << " splats from .splat file in " << loadTime << "ms" << std::endl;
+  LOGI("Loaded %zu splats from .splat file in %lldms\n", numSplats, loadTime);
 
   return true;
 }
@@ -347,7 +347,7 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
     //
     auto      endTime  = std::chrono::high_resolution_clock::now();
     long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    std::cout << "File loaded in " << loadTime << "ms" << std::endl;
+    LOGI("File loaded in %lldms\n", loadTime);
     //
     return cloud.numPoints != 0;
   }
@@ -357,7 +357,7 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
   miniply::PLYReader reader(filename.string().c_str());
   if(!reader.valid())
   {
-    std::cout << "Error: ply loader failed to open file: " << filename << std::endl;
+    LOGE("Error: ply loader failed to open file: %s\n", filename.string().c_str());
     return false;
   }
 
@@ -371,7 +371,7 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
       const uint32_t numVerts = reader.num_rows();
       if(numVerts == 0)
       {
-        std::cout << "Warning: ply loader skipping empty ply element " << std::endl;
+        LOGW("Warning: ply loader skipping empty ply element\n");
         continue;  // move to next while iteration
       }
 
@@ -442,11 +442,11 @@ bool PlyLoaderAsync::innerLoad(std::filesystem::path filename, SplatSet& output)
     //
     auto      endTime  = std::chrono::high_resolution_clock::now();
     long long loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    std::cout << "File loaded in " << loadTime << "ms" << std::endl;
+    LOGI("File loaded in %lldms\n", loadTime);
   }
   else
   {
-    std::cout << "Error: invalid 3DGS PLY file" << std::endl;
+    LOGE("Error: invalid 3DGS PLY file\n");
   }
 
   return gsFound;

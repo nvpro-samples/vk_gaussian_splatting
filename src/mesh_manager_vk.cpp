@@ -165,7 +165,7 @@ std::shared_ptr<MeshVk> MeshManagerVk::createMesh(const std::string&            
   pendingRequests |= Request::eUpdateDescriptors;
   pendingRequests |= Request::eRebuildBLAS;
 
-  LOGI("createMesh: Created mesh '%s' (meshes.size=%zu)\n", name.c_str(), meshes.size());
+  LOGD("createMesh: Created mesh '%s' (meshes.size=%zu)\n", name.c_str(), meshes.size());
 
   return mesh;
 }
@@ -219,7 +219,7 @@ std::shared_ptr<MeshInstanceVk> MeshManagerVk::createInstance(std::shared_ptr<Me
   pendingRequests |= Request::eUpdateDescriptors;
   pendingRequests |= Request::eRebuildTLAS;
 
-  LOGI("createInstance: Created instance '%s' (instances.size=%zu)\n", instance->name.c_str(), instances.size());
+  LOGD("createInstance: Created instance '%s' (instances.size=%zu)\n", instance->name.c_str(), instances.size());
 
   return instance;
 }
@@ -245,7 +245,7 @@ std::shared_ptr<MeshInstanceVk> MeshManagerVk::registerInstance(std::shared_ptr<
   pendingRequests |= Request::eUpdateDescriptors;
   pendingRequests |= Request::eRebuildTLAS;
 
-  LOGI("registerInstance: Registered instance '%s' (instances.size=%zu)\n", instance->name.c_str(), instances.size());
+  LOGD("registerInstance: Registered instance '%s' (instances.size=%zu)\n", instance->name.c_str(), instances.size());
 
   return instance;
 }
@@ -284,7 +284,7 @@ std::shared_ptr<MeshInstanceVk> MeshManagerVk::duplicateInstance(std::shared_ptr
     return nullptr;
   }
 
-  LOGI("duplicateInstance: Duplicated instance (source='%s' -> new='%s')\n", sourceInstance->name.c_str(),
+  LOGD("duplicateInstance: Duplicated instance (source='%s' -> new='%s')\n", sourceInstance->name.c_str(),
        newInstance->name.c_str());
 
   return newInstance;
@@ -420,7 +420,7 @@ void MeshManagerVk::rtxInitAccelerationStructures()
                        | VK_BUILD_ACCELERATION_STRUCTURE_LOW_MEMORY_BIT_KHR));
 
     // Statistics
-    LOGI("%s%s\n", nvutils::ScopedTimer::indent().c_str(), rtAccelerationStructures.blasBuildStatistics.toString().c_str());
+    LOGD("%s%s\n", nvutils::ScopedTimer::indent().c_str(), rtAccelerationStructures.blasBuildStatistics.toString().c_str());
   }
 
   // Mesh TLAS - one entry/node per instance
@@ -490,7 +490,7 @@ void MeshManagerVk::rtxUpdateTopLevelAccelerationStructure()
     // Check if instance count changed - if so, rebuild TLAS from scratch
     if(tlasInstances.size() != rtAccelerationStructures.tlasSize)
     {
-      LOGI("Instance count changed (%zu -> %zu), rebuilding TLAS\n", rtAccelerationStructures.tlasSize, tlasInstances.size());
+      LOGD("Instance count changed (%zu -> %zu), rebuilding TLAS\n", rtAccelerationStructures.tlasSize, tlasInstances.size());
 
       // Wait for GPU to finish using old TLAS resources before destroying them
       vkDeviceWaitIdle(m_app->getDevice());
@@ -533,7 +533,7 @@ void MeshManagerVk::deleteInstance(std::shared_ptr<MeshInstanceVk> instance)
   instance->flags |= MeshInstanceVk::Flags::eDelete;
   pendingRequests |= Request::eProcessDeletions;
 
-  LOGI("deleteInstance: Marked instance for deletion ('%s')\n", instance->name.c_str());
+  LOGD("deleteInstance: Marked instance for deletion ('%s')\n", instance->name.c_str());
 }
 
 void MeshManagerVk::deleteInstanceOnly(std::shared_ptr<MeshInstanceVk> instance)
@@ -550,7 +550,7 @@ void MeshManagerVk::deleteInstanceOnly(std::shared_ptr<MeshInstanceVk> instance)
   instance->flags |= MeshInstanceVk::Flags::eDelete;
   pendingRequests |= Request::eProcessDeletions;
 
-  LOGI("deleteInstanceOnly: Marked instance for deletion ('%s')\n", instance->name.c_str());
+  LOGD("deleteInstanceOnly: Marked instance for deletion ('%s')\n", instance->name.c_str());
 }
 
 // =============================================================================
@@ -636,7 +636,7 @@ void MeshManagerVk::processVramUpdates(bool processRtx)
       instances.resize(originalSize - shiftLeft);
 
       if(shiftLeft > 0)
-        LOGI("Deleted %zu mesh instances\n", shiftLeft);
+        LOGD("Deleted %zu mesh instances\n", shiftLeft);
     }
 
     // Step 1.2: Delete meshes (only if no instances reference them)
@@ -685,7 +685,7 @@ void MeshManagerVk::processVramUpdates(bool processRtx)
       meshes.resize(originalSize - shiftLeft);
 
       if(shiftLeft > 0)
-        LOGI("Deleted %zu meshes\n", shiftLeft);
+        LOGD("Deleted %zu meshes\n", shiftLeft);
     }
 
     if(instanceCountChanged)

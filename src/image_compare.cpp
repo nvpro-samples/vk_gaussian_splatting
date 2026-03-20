@@ -47,9 +47,7 @@ bool ImageCompare::compileSlangShader(const std::string& filename, VkShaderModul
 
   if(m_slangCompiler->getSpirvSize() == 0)
   {
-    std::cerr << "\033[31m"
-              << "Missing entry point in shader " << std::endl;
-    std::cerr << filename << "\033[0m" << std::endl;
+    LOGE("Missing entry point in shader %s\n", filename.c_str());
     return false;
   }
   NVVK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &module));
@@ -221,7 +219,7 @@ void ImageCompare::capture(VkCommandBuffer cmd, const ImageInfo& imageInfo)
     m_historySampleCount = 0;
   }
 
-  LOGI("Capture image stored for comparison\n");
+  LOGD("Capture image stored for comparison\n");
 }
 
 void ImageCompare::updateCurrentImageIfNeeded(const ImageInfo& imageInfo)
@@ -329,7 +327,7 @@ void ImageCompare::releaseCaptureImage()
     m_historySampleCount = 0;
   }
 
-  LOGI("Capture image released\n");
+  LOGD("Capture image released\n");
 }
 
 void ImageCompare::rebuildPipelines()

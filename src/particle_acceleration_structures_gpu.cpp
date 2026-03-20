@@ -210,7 +210,7 @@ VkResult ParticleAccelerationStructureHelperGpu::create(const CreateInfo& info, 
     const auto stats = blasBuilder.getStatistics();
     if(stats.totalOriginalSize > 0)
     {
-      std::cout << stats.toString() << std::endl;
+      LOGD("%s\n", stats.toString().c_str());
     }
 
     blasBuilder.deinit();
@@ -376,7 +376,7 @@ VkResult ParticleAccelerationStructureHelperGpu::createBlasOnly(const BlasCreate
     const auto stats = blasBuilder.getStatistics();
     if(stats.totalOriginalSize > 0)
     {
-      std::cout << stats.toString() << std::endl;
+      LOGD("%s\n", stats.toString().c_str());
     }
 
     blasBuilder.deinit();

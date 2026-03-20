@@ -1101,7 +1101,7 @@ void GaussianSplatting::processUpdateRequests(bool forceAll)
   if(!needUpdate)
     return;
 
-  LOGI("processUpdateRequests: Buffer updates requested (MeshPending=%d, Shaders=%d, LightsPending=%d, SplatSetPending=%d, Assets=%d)\n",
+  LOGD("processUpdateRequests: Buffer updates requested (MeshPending=%d, Shaders=%d, LightsPending=%d, SplatSetPending=%d, Assets=%d)\n",
        static_cast<uint32_t>(m_assets.meshes.pendingRequests), m_requestUpdateShaders,
        static_cast<uint32_t>(m_assets.lights.pendingRequests), splatSetRequestsToCheck, m_requestUpdateAssetsBuffer);
 
@@ -1696,12 +1696,12 @@ void GaussianSplatting::updateSlangMacros()
        {"RTX_USE_AABBS", std::to_string((int)prmRtxData.useAABBs)}};
 
   // Print all macro values to console for debugging
-  std::cout << "=== Slang Shader Macros ===" << std::endl;
+  LOGI("=== Slang Shader Macros ===\n");
   for(const auto& macro : m_shaderMacros)
   {
-    std::cout << "  " << macro.first << " = " << macro.second << std::endl;
+    LOGI("  %s = %s\n", macro.first.c_str(), macro.second.c_str());
   }
-  std::cout << "===========================" << std::endl;
+  LOGI("===========================\n");
 
   m_slangCompiler.clearMacros();
 
@@ -1730,9 +1730,7 @@ bool GaussianSplatting::compileSlangShader(const std::string& filename, VkShader
 
   if(m_slangCompiler.getSpirvSize() == 0)
   {
-    std::cerr << "\033[31m"
-              << "Missing entry point in shader " << std::endl;
-    std::cerr << filename << "\033[0m" << std::endl;
+    LOGE("Missing entry point in shader %s\n", filename.c_str());
     return false;
   }
   NVVK_CHECK(vkCreateShaderModule(m_device, &createInfo, nullptr, &module));
@@ -1794,7 +1792,7 @@ bool GaussianSplatting::initShaders(void)
 
   auto      endTime   = std::chrono::high_resolution_clock::now();
   long long buildTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-  std::cout << "Shaders updated in " << buildTime << "ms" << std::endl;
+  LOGD("Shaders updated in %lldms\n", buildTime);
 
   return (m_shaders.valid = true);
 }

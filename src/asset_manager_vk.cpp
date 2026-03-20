@@ -51,7 +51,7 @@ void AssetManagerVk::init(nvapp::Application*                                 ap
   NVVK_CHECK(m_alloc->createBuffer(assetsBuffer, sizeof(shaderio::SceneAssets), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT));
   NVVK_DBG_NAME(assetsBuffer.buffer);
 
-  LOGI("AssetManagerVk::init: Created assets buffer (handle=%p, size=%zu bytes)\n", (void*)assetsBuffer.buffer,
+  LOGD("AssetManagerVk::init: Created assets buffer (handle=%p, size=%zu bytes)\n", (void*)assetsBuffer.buffer,
        sizeof(shaderio::SceneAssets));
 }
 
@@ -94,7 +94,7 @@ void AssetManagerVk::reset()
   // NOTE: We pass processRtx=false since RTX structures were already destroyed in reset()
   processVramUpdates(false);
 
-  std::cout << "AssetManagerVk::reset: Complete (VRAM updates processed)" << std::endl;
+  LOGD("AssetManagerVk::reset: Complete (VRAM updates processed)\n");
 }
 
 void AssetManagerVk::processVramUpdates(bool processRtx)

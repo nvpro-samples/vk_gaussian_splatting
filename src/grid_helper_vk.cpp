@@ -48,7 +48,6 @@ void GridHelperVk::init(const Resources& res)
   createPipeline();
 
   m_initialized = true;
-  std::cout << "GridHelperVk initialized" << std::endl;
 }
 
 void GridHelperVk::deinit()
@@ -146,13 +145,13 @@ void GridHelperVk::createPipeline()
   // Compile unified visual helpers shaders
   if(!compileSlangShader("visual_helpers.slang", m_vertexShader))
   {
-    std::cerr << "GridHelperVk: Failed to compile vertex shader" << std::endl;
+    LOGE("GridHelperVk: Failed to compile vertex shader\n");
     return;
   }
 
   if(!compileSlangShader("visual_helpers.slang", m_fragmentShader))
   {
-    std::cerr << "GridHelperVk: Failed to compile fragment shader" << std::endl;
+    LOGE("GridHelperVk: Failed to compile fragment shader\n");
     return;
   }
 
@@ -376,8 +375,6 @@ void GridHelperVk::generateGridGeometry()
 
   m_indexCount        = static_cast<uint32_t>(m_indices.size());
   m_geometryGenerated = true;
-
-  std::cout << "GridHelperVk: Generated " << m_vertices.size() << " vertices, " << m_indexCount << " indices (lines)" << std::endl;
 }
 
 //-----------------------------------------------------------------------------

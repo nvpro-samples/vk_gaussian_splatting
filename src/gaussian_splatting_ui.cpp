@@ -1029,7 +1029,7 @@ void GaussianSplattingUI::onUIMenu()
     if(!m_loadedSceneFilename.empty())
       m_requestUpdateShaders = true;
     else
-      std::cout << "No scene loaded, skipping shader rebuild" << std::endl;
+      LOGW("No scene loaded, skipping shader rebuild\n");
   }
   if(close_app)
   {
@@ -1100,7 +1100,7 @@ void GaussianSplattingUI::onFileDrop(const std::filesystem::path& filename)
     prmScene.meshToImportFilename = filename;
   }
   else
-    std::cout << "Error: unsupported file extension " << extension << std::endl;
+    LOGE("Error: unsupported file extension %s\n", extension.c_str());
 }
 
 void GaussianSplattingUI::updateTitleIfNeeded()
@@ -1235,18 +1235,17 @@ void GaussianSplattingUI::guiLoadSceneAndDrawProgressIfNeeded(void)
       m_loadedSceneFilename = request.path;
       vkDeviceWaitIdle(m_device);
 
-      std::cout << "Start loading file " << request.path;
       if(prmScene.sceneLoadQueue.size() > 1)
       {
-        std::cout << " (" << (prmScene.sceneLoadQueue.size() - 1) << " more in queue)";
+        LOGI("Start loading file %s (%zu more in queue)\n", request.path.string().c_str(), prmScene.sceneLoadQueue.size() - 1);
       }
       else
       {
-        // We process last request of teh queue
+        LOGI("Start loading file %s\n", request.path.string().c_str());
+        // We process last request of the queue
         // reset flag for next batch
         firstBatchRequest = true;
       }
-      std::cout << std::endl;
 
       // Use pre-configured splat set if provided (project loading)
       // Otherwise create a new one
@@ -1254,7 +1253,7 @@ void GaussianSplattingUI::guiLoadSceneAndDrawProgressIfNeeded(void)
 
       if(!m_plyLoader.loadScene(request.path, splatSetToLoad))
       {
-        std::cout << "Error: cannot start scene load while loader is not ready status=" << m_plyLoader.getStatus() << std::endl;
+        LOGE("Error: cannot start scene load while loader is not ready status=%d\n", m_plyLoader.getStatus());
         // Remove failed request
         prmScene.sceneLoadQueue.pop_front();
       }
@@ -1332,14 +1331,14 @@ void GaussianSplattingUI::guiLoadSceneAndDrawProgressIfNeeded(void)
           // Register the pre-configured instance
           m_selectedSplatInstance = m_assets.splatSets.registerInstance(loadedSplatSet, m_currentLoadRequest.instance);
 
-          std::cout << "Loaded with pre-configured instance (project mode)" << std::endl;
+          LOGD("Loaded with pre-configured instance (project mode)\n");
 
           // Handle additional instances sharing the same splat set (Version 1+ project files)
           for(auto& additionalInstance : m_currentLoadRequest.additionalInstances)
           {
             additionalInstance->splatSet = loadedSplatSet;
             m_assets.splatSets.registerInstance(loadedSplatSet, additionalInstance);
-            std::cout << "  Created additional instance sharing same splat set" << std::endl;
+            LOGD("  Created additional instance sharing same splat set\n");
           }
         }
         else
@@ -1347,7 +1346,7 @@ void GaussianSplattingUI::guiLoadSceneAndDrawProgressIfNeeded(void)
           // Standard path: create new instance with identity transform
           m_selectedSplatInstance = m_assets.splatSets.createInstance(loadedSplatSet);
 
-          std::cout << "Loaded with new default instance" << std::endl;
+          LOGD("Loaded with new default instance\n");
         }
 
         // createSplatSet and createInstance/registerInstance already set appropriate manager requests
@@ -3915,12 +3914,12 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
 
     if(doReset)
     {
-      std::cout << "Opening project file " << path << std::endl;
+      LOGI("Opening project file %s\n", path.c_str());
 
       std::ifstream i(path);
       if(!i.is_open())
       {
-        std::cout << "Error : unable to open project file " << path << std::endl;
+        LOGE("Error: unable to open project file %s\n", path.c_str());
         prmScene.projectToLoadFilename  = "";
         prmScene.projectLoadPorcelain = false;
         return false;
@@ -3932,7 +3931,7 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
       }
       catch(...)
       {
-        std::cout << "Error : invalid project file " << path << std::endl;
+        LOGE("Error: invalid project file %s\n", path.c_str());
         prmScene.projectToLoadFilename  = "";
         prmScene.projectLoadPorcelain = false;
         return false;
@@ -3991,8 +3990,7 @@ void GaussianSplattingUI::dumpSplat()
 
   if(splatSetIndex < 0 || localSplatIndex < 0)
   {
-    std::cout << "Error: no valid splat to dump (splatSetIndex=" << splatSetIndex
-              << ", localSplatIndex=" << localSplatIndex << ")" << std::endl;
+    LOGE("Error: no valid splat to dump (splatSetIndex=%d, localSplatIndex=%d)\n", splatSetIndex, localSplatIndex);
     return;
   }
 
@@ -4000,7 +3998,7 @@ void GaussianSplattingUI::dumpSplat()
   const auto& instances = m_assets.splatSets.getInstances();
   if(splatSetIndex >= static_cast<int32_t>(instances.size()) || !instances[splatSetIndex])
   {
-    std::cout << "Error: invalid splat set index " << splatSetIndex << std::endl;
+    LOGE("Error: invalid splat set index %d\n", splatSetIndex);
     return;
   }
 
@@ -4008,8 +4006,7 @@ void GaussianSplattingUI::dumpSplat()
   auto currentSplatSet = instance->splatSet;
   if(!currentSplatSet || localSplatIndex >= static_cast<int32_t>(currentSplatSet->size()))
   {
-    std::cout << "Error: invalid local splat index " << localSplatIndex << " for splat set size "
-              << currentSplatSet->size() << std::endl;
+    LOGE("Error: invalid local splat index %d for splat set size %zu\n", localSplatIndex, currentSplatSet->size());
     return;
   }
 
@@ -4018,7 +4015,7 @@ void GaussianSplattingUI::dumpSplat()
   std::ofstream out("c:\\Temp\\debug_splat.ply");
   if(!out)
   {
-    std::cout << "Error: coud not open file c:\\Temp\\debug_splat.ply" << std::endl;
+    LOGE("Error: could not open file c:\\Temp\\debug_splat.ply\n");
     return;
   }
 
@@ -4062,8 +4059,8 @@ void GaussianSplattingUI::dumpSplat()
   out.close();
 
   //
-  std::cout << "Splat dumped: Global ID=" << globalSplatId << ", SplatSet Index=" << splatSetIndex
-            << ", Local Splat Index=" << splatIdx << " -> c:\\Temp\\debug_splat.ply" << std::endl;
+  LOGI("Splat dumped: Global ID=%d, SplatSet Index=%d, Local Splat Index=%d -> c:\\Temp\\debug_splat.ply\n",
+       globalSplatId, splatSetIndex, splatIdx);
 }
 
 }  // namespace vk_gaussian_splatting

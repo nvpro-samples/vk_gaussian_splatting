@@ -78,8 +78,6 @@ void VisualHelpers::init(const Resources& res)
       .imageSampler   = res.sampler,
       .descriptorPool = res.app->getTextureDescriptorPool(),
   });
-
-  std::cout << "VisualHelpers initialized" << std::endl;
 }
 
 void VisualHelpers::deinit()
@@ -103,8 +101,6 @@ void VisualHelpers::deinit()
   m_alloc   = nullptr;
   m_device  = VK_NULL_HANDLE;
   m_sampler = VK_NULL_HANDLE;
-
-  std::cout << "VisualHelpers deinitialized" << std::endl;
 }
 
 void VisualHelpers::onResize(VkCommandBuffer cmd, const VkExtent2D& size, VkImage sceneDepth, VkImageView sceneDepthView, VkSampler sampler)

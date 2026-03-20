@@ -46,7 +46,7 @@ void SplatSetInstanceVk::rebuildDescriptor(const SplatSetVk* splatSet, shaderio:
 {
   if(!splatSet)
   {
-    std::cerr << "ERROR: Cannot rebuild descriptor: splatSet is null" << std::endl;
+    LOGE("ERROR: Cannot rebuild descriptor: splatSet is null\n");
     return;
   }
 
@@ -117,7 +117,7 @@ void SplatSetManagerVk::init(nvapp::Application*                                
   // Initialize CPU async sorter (application lifetime)
   m_cpuSorter.initialize(m_profilerTimeline);
 
-  std::cout << "SplatSetManagerVk initialized" << std::endl;
+  LOGD("SplatSetManagerVk initialized\n");
 }
 
 // Deinitialize manager (app exit only)
@@ -193,7 +193,7 @@ void SplatSetManagerVk::deinit()
   m_particleAsPipelineLayout  = VK_NULL_HANDLE;
   m_particleAsDescriptorSet   = VK_NULL_HANDLE;
 
-  std::cout << "SplatSetManagerVk deinitialized" << std::endl;
+  LOGD("SplatSetManagerVk deinitialized\n");
 }
 
 // Reset all splat sets and instances (scene reset, not app exit)
@@ -228,7 +228,7 @@ void SplatSetManagerVk::reset()
   // Reset RTX state (no error, just nothing initialized yet)
   m_rtxState = RtxState::eRtxNone;
 
-  std::cout << "SplatSetManagerVk reset: Marked all assets for deletion" << std::endl;
+  LOGD("SplatSetManagerVk reset: Marked all assets for deletion\n");
 }
 
 //-----------------------------------------------------------------------------
@@ -268,8 +268,7 @@ std::shared_ptr<SplatSetVk> SplatSetManagerVk::createSplatSet(const std::string&
   pendingRequests |= Request::eUpdateDescriptors;
   pendingRequests |= Request::eRebuildBLAS;
 
-  std::cout << "Created splat set '" << path << "' (index=" << splatSetVk->index
-            << ", splats=" << splatSetVk->splatCount << ") - deferred upload" << std::endl;
+  LOGD("Created splat set '%s' (index=%d, splats=%u) - deferred upload\n", path.c_str(), splatSetVk->index, splatSetVk->splatCount);
 
   return splatSetVk;
 }
@@ -278,7 +277,7 @@ void SplatSetManagerVk::deleteSplatSet(std::shared_ptr<SplatSetVk> splatSet)
 {
   if(!splatSet)
   {
-    std::cerr << "Warning: deleteSplatSet called with null pointer" << std::endl;
+    LOGW("Warning: deleteSplatSet called with null pointer\n");
     return;
   }
 
@@ -296,7 +295,7 @@ void SplatSetManagerVk::deleteSplatSet(std::shared_ptr<SplatSetVk> splatSet)
 
   pendingRequests |= Request::eProcessDeletions;
 
-  std::cout << "Marked splat set (index=" << splatSet->index << ") for deletion" << std::endl;
+  LOGD("Marked splat set (index=%d) for deletion\n", splatSet->index);
 }
 
 // Note: getSplatSet() now inline in header (direct vector access)
@@ -309,7 +308,7 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::createInstance(std::share
 {
   if(!splatSet)
   {
-    std::cerr << "Warning: createInstance called with null splatSet" << std::endl;
+    LOGW("Warning: createInstance called with null splatSet\n");
     return nullptr;
   }
 
@@ -359,7 +358,7 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::createInstance(std::share
   pendingRequests |= Request::eRebuildBLAS;
   pendingRequests |= Request::eUpdateGlobalIndexTable;
 
-  std::cout << "Created instance '" << instance->displayName << "' (index=" << instance->index << ")" << std::endl;
+  LOGD("Created instance '%s' (index=%d)\n", instance->displayName.c_str(), instance->index);
 
   return instance;
 }
@@ -369,7 +368,7 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::registerInstance(std::sha
 {
   if(!splatSet || !instance)
   {
-    std::cerr << "Warning: registerInstance called with null pointer" << std::endl;
+    LOGW("Warning: registerInstance called with null pointer\n");
     return nullptr;
   }
 
@@ -405,7 +404,7 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::registerInstance(std::sha
   pendingRequests |= Request::eRebuildBLAS;
   pendingRequests |= Request::eUpdateGlobalIndexTable;
 
-  std::cout << "Registered instance '" << instance->displayName << "' (index=" << instance->index << ")" << std::endl;
+  LOGD("Registered instance '%s' (index=%d)\n", instance->displayName.c_str(), instance->index);
 
   return instance;
 }
@@ -414,7 +413,7 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::duplicateInstance(std::sh
 {
   if(!sourceInstance || !sourceInstance->splatSet)
   {
-    std::cerr << "Warning: duplicateInstance called with invalid source instance" << std::endl;
+    LOGW("Warning: duplicateInstance called with invalid source instance\n");
     return nullptr;
   }
 
@@ -433,12 +432,11 @@ std::shared_ptr<SplatSetInstanceVk> SplatSetManagerVk::duplicateInstance(std::sh
 
   if(!newInstance)
   {
-    std::cerr << "Warning: duplicateInstance failed to register new instance" << std::endl;
+    LOGW("Warning: duplicateInstance failed to register new instance\n");
     return nullptr;
   }
 
-  std::cout << "Duplicated instance: source='" << sourceInstance->displayName << "' -> new='"
-            << newInstance->displayName << "'" << std::endl;
+  LOGD("Duplicated instance: source='%s' -> new='%s'\n", sourceInstance->displayName.c_str(), newInstance->displayName.c_str());
 
   return newInstance;
 }
@@ -449,7 +447,7 @@ void SplatSetManagerVk::deleteInstance(std::shared_ptr<SplatSetInstanceVk> insta
 {
   if(!instance)
   {
-    std::cerr << "Warning: deleteInstance called with null pointer" << std::endl;
+    LOGW("Warning: deleteInstance called with null pointer\n");
     return;
   }
 
@@ -457,7 +455,7 @@ void SplatSetManagerVk::deleteInstance(std::shared_ptr<SplatSetInstanceVk> insta
   instance->flags |= SplatSetInstanceVk::Flags::eDelete;
   pendingRequests |= Request::eProcessDeletions;
 
-  std::cout << "Marked instance (index=" << instance->index << ") for deletion" << std::endl;
+  LOGD("Marked instance (index=%d) for deletion\n", instance->index);
 }
 
 // Note: getInstance() now inline in header (direct vector access)
@@ -466,7 +464,7 @@ void SplatSetManagerVk::updateInstanceTransform(std::shared_ptr<SplatSetInstance
 {
   if(!instance)
   {
-    std::cerr << "Warning: updateInstanceTransform called with null pointer" << std::endl;
+    LOGW("Warning: updateInstanceTransform called with null pointer\n");
     return;
   }
 
@@ -481,7 +479,7 @@ void SplatSetManagerVk::updateInstanceMaterial(std::shared_ptr<SplatSetInstanceV
 {
   if(!instance)
   {
-    std::cerr << "Warning: updateInstanceMaterial called with null pointer" << std::endl;
+    LOGW("Warning: updateInstanceMaterial called with null pointer\n");
     return;
   }
 
@@ -549,7 +547,7 @@ void SplatSetManagerVk::processRamVramDeletionsIfNeeded(bool& instanceCountChang
     {
       if(m_instances[i]->isMarkedForDeletion())
       {
-        std::cout << "processVramUpdates: Deleting instance (index=" << i << ")" << std::endl;
+        LOGD("processVramUpdates: Deleting instance (index=%zu)\n", i);
 
         // Decrement reference count for this splat set
         auto splatSet = m_instances[i]->splatSet;
@@ -561,7 +559,7 @@ void SplatSetManagerVk::processRamVramDeletionsIfNeeded(bool& instanceCountChang
           // Check if this was the last instance referencing the splat set
           if(splatSet->instanceRefCount == 0)
           {
-            std::cout << "  Last instance deleted, marking splat set for deletion (index=" << splatSet->index << ")" << std::endl;
+            LOGD("  Last instance deleted, marking splat set for deletion (index=%d)\n", splatSet->index);
             splatSet->flags |= SplatSetVk::Flags::eDelete;
           }
         }
@@ -581,7 +579,7 @@ void SplatSetManagerVk::processRamVramDeletionsIfNeeded(bool& instanceCountChang
     m_instances.resize(originalSize - shiftLeft);
 
     if(shiftLeft > 0)
-      std::cout << "Deleted " << shiftLeft << " splat set instances" << std::endl;
+      LOGD("Deleted %zu splat set instances\n", shiftLeft);
   }
 
   // 1b. Delete splat sets (shift-left compaction)
@@ -615,7 +613,7 @@ void SplatSetManagerVk::processRamVramDeletionsIfNeeded(bool& instanceCountChang
         else
         {
           // Safe to delete
-          std::cout << "processVramUpdates: Deleting splat set (index=" << i << ")" << std::endl;
+          LOGD("processVramUpdates: Deleting splat set (index=%zu)\n", i);
 
           // Deinitialize GPU resources (vkDeviceWaitIdle already called by GaussianSplatting::processUpdateRequests)
           m_splatSets[i]->rtxDeinitAccelerationStructures();  // Deinit BLAS + any TLAS
@@ -635,7 +633,7 @@ void SplatSetManagerVk::processRamVramDeletionsIfNeeded(bool& instanceCountChang
     m_splatSets.resize(originalSize - shiftLeft);
 
     if(shiftLeft > 0)
-      std::cout << "Deleted " << shiftLeft << " splat sets" << std::endl;
+      LOGD("Deleted %zu splat sets\n", shiftLeft);
   }
 
   if(instanceCountChanged)
@@ -671,8 +669,8 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
       continue;
     if(static_cast<uint32_t>(splatSet->flags & SplatSetVk::Flags::eNew))
     {
-      std::cout << "processVramUpdates: Uploading new splat set to GPU (index=" << splatSet->index
-                << ", storage=" << splatSet->dataStorage << ", format=" << prmData.shFormat << ")" << std::endl;
+      LOGD("processVramUpdates: Uploading new splat set to GPU (index=%d, storage=%d, format=%d)\n",
+           splatSet->index, splatSet->dataStorage, prmData.shFormat);
 
       // Upload data to GPU
       splatSet->initDataStorage(prmData.shFormat, prmData.rgbaFormat);
@@ -698,7 +696,7 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
       continue;
     if(static_cast<uint32_t>(instance->flags & SplatSetInstanceVk::Flags::eNew))
     {
-      std::cout << "processVramUpdates: Adding new instance to descriptors (index=" << instance->index << ")" << std::endl;
+      LOGD("processVramUpdates: Adding new instance to descriptors (index=%d)\n", instance->index);
 
       instanceCountChanged   = true;
       descriptorsNeedRebuild = true;
@@ -724,7 +722,7 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
 
   if(hasTransformChanges)
   {
-    std::cout << "processVramUpdates: Transform changes detected" << std::endl;
+    LOGD("processVramUpdates: Transform changes detected\n");
     descriptorsNeedRebuild = true;  // Transform embedded in descriptor
   }
 
@@ -743,7 +741,7 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
 
   if(hasMaterialChanges)
   {
-    std::cout << "processVramUpdates: Material changes detected" << std::endl;
+    LOGD("processVramUpdates: Material changes detected\n");
     descriptorsNeedRebuild = true;  // Material embedded in descriptor
   }
 
@@ -755,8 +753,8 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
       continue;
     if(static_cast<uint32_t>(splatSet->flags & SplatSetVk::Flags::eDataChanged))
     {
-      std::cout << "processVramUpdates: Regenerating data storage (index=" << splatSet->index
-                << ", storage=" << splatSet->dataStorage << ", format=" << prmData.shFormat << ")" << std::endl;
+      LOGD("processVramUpdates: Regenerating data storage (index=%d, storage=%d, format=%d)\n",
+           splatSet->index, splatSet->dataStorage, prmData.shFormat);
 
       // Deinitialize old data
       splatSet->deinitDataStorage();
@@ -796,7 +794,7 @@ void SplatSetManagerVk::processDescriptorsAndIndexTables(bool descriptorsNeedReb
   // 4a. Rebuild global index tables if needed
   if(static_cast<uint32_t>(pendingRequests & Request::eUpdateGlobalIndexTable) || m_globalIndexTableDirty)
   {
-    std::cout << "processVramUpdates: Rebuilding global index tables" << std::endl;
+    LOGD("processVramUpdates: Rebuilding global index tables\n");
 
     rebuildGlobalIndexTables();
     uploadGlobalIndexTablesToGPU();
@@ -807,7 +805,7 @@ void SplatSetManagerVk::processDescriptorsAndIndexTables(bool descriptorsNeedReb
   // 4b. Rebuild descriptors if needed
   if(descriptorsNeedRebuild || static_cast<uint32_t>(pendingRequests & Request::eUpdateDescriptors) || m_gpuDescriptorsDirty)
   {
-    std::cout << "processVramUpdates: Rebuilding GPU descriptor array" << std::endl;
+    LOGD("processVramUpdates: Rebuilding GPU descriptor array\n");
 
     updateGpuDescriptorArray();
     uploadGpuDescriptorArray();
@@ -927,7 +925,7 @@ void SplatSetManagerVk::clearRtxDescriptorArray()
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxRebuildBlasAndTlas()
 {
-  std::cout << "processVramUpdates: Rebuilding BLAS for all splat sets" << std::endl;
+  LOGD("processVramUpdates: Rebuilding BLAS for all splat sets\n");
 
   // Clean up any prior GPU particle AS helpers before rebuilding
   for(auto& tlasHelper : m_particleAsTlasHelpers)
@@ -980,7 +978,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlas()
     // Rebuild global index tables BEFORE building TLAS (needed for shader-side splat ID resolution)
     if(static_cast<uint32_t>(pendingRequests & Request::eUpdateGlobalIndexTable) || m_globalIndexTableDirty)
     {
-      std::cout << "processVramUpdates: Rebuilding global index tables (pre-TLAS)" << std::endl;
+      LOGD("processVramUpdates: Rebuilding global index tables (pre-TLAS)\n");
       rebuildGlobalIndexTables();
       uploadGlobalIndexTablesToGPU();
       m_globalIndexTableDirty = false;
@@ -1027,9 +1025,9 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlas()
     {
       // CRITICAL: Wait for device idle after complete RTX rebuild
       // Ensures all GPU work is complete before returning control to main loop
-      std::cout << "processVramUpdates: Waiting for device idle after RTX rebuild..." << std::endl;
+      LOGD("processVramUpdates: Waiting for device idle after RTX rebuild...\n");
       vkDeviceWaitIdle(m_app->getDevice());
-      std::cout << "processVramUpdates: Device idle confirmed, RTX rebuild complete" << std::endl;
+      LOGD("processVramUpdates: Device idle confirmed, RTX rebuild complete\n");
     }
   }
 
@@ -1081,7 +1079,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerSplat()
     return false;
   }
 
-  LOGI("GPU particle AS build path enabled (mode=%s, totalSplats=%u, maxInstanceCount=%u)\n",
+  LOGD("GPU particle AS build path enabled (mode=%s, totalSplats=%u, maxInstanceCount=%u)\n",
        prmRtxData.useAABBs ? "AABB" : "Icosahedron", static_cast<uint32_t>(totalSplats), maxInstances);
 
   // Deinitialize old acceleration structures (both BLAS and TLAS)
@@ -1158,7 +1156,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerSplat()
 
   // Build TLAS array (multi-TLAS if needed)
   const uint64_t tlasCount = (totalSplats + maxInstances - 1) / maxInstances;
-  LOGI("GPU particle AS TLAS build (count=%llu)\n", static_cast<unsigned long long>(tlasCount));
+  LOGD("GPU particle AS TLAS build (count=%llu)\n", static_cast<unsigned long long>(tlasCount));
   m_particleAsTlasHelpers.clear();
   m_particleAsTlasHelpers.resize(tlasCount);
 
@@ -1296,7 +1294,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceSingleBlas(VkBuildAccele
 
     ParticleAccelerationStructureHelperGpu::BlasCreateInfo blasInfo{};
     const uint32_t                                         splatCount = splatSet->splatCount;
-    LOGI("GPU particle BLAS build (per-splat-set, splatSet=%zu, splats=%u, mode=%s)\n", splatSetIdx, splatCount,
+    LOGD("GPU particle BLAS build (per-splat-set, splatSet=%zu, splats=%u, mode=%s)\n", splatSetIdx, splatCount,
          prmRtxData.useAABBs ? "AABB" : "Icosahedron");
     if(prmRtxData.useAABBs)
     {
@@ -1380,7 +1378,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceSingleBlas(VkBuildAccele
     return false;
   }
 
-  LOGI("GPU particle AS TLAS build (per-instance, count=%llu)\n", static_cast<unsigned long long>(tlasCount));
+  LOGD("GPU particle AS TLAS build (per-instance, count=%llu)\n", static_cast<unsigned long long>(tlasCount));
   for(auto& tlasHelper : m_particleAsTlasHelpers)
   {
     tlasHelper.deinitAccelerationStructures();
@@ -1492,7 +1490,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceSingleBlas(VkBuildAccele
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceMultiBlas(VkBuildAccelerationStructureFlagsKHR blasFlags)
 {
-  LOGI("GPU particle BLAS build (multi-BLAS per splat set)\n");
+  LOGD("GPU particle BLAS build (multi-BLAS per splat set)\n");
 
   const uint32_t maxInstances = static_cast<uint32_t>(m_accelStructProps->maxInstanceCount);
 
@@ -1524,7 +1522,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceMultiBlas(VkBuildAcceler
     const uint32_t maxSplatsPerBlas = computeMaxSplatsPerGpuBlas(prmRtxData.useAABBs, blasFlags, splatCount);
     const uint32_t chunkCount       = (splatCount + maxSplatsPerBlas - 1) / maxSplatsPerBlas;
 
-    LOGI("GPU particle BLAS split (splatSet=%zu, splats=%u, maxSplatsPerBLAS=%u, chunks=%u)\n", splatSetIdx, splatCount,
+    LOGD("GPU particle BLAS split (splatSet=%zu, splats=%u, maxSplatsPerBLAS=%u, chunks=%u)\n", splatSetIdx, splatCount,
          maxSplatsPerBlas, chunkCount);
 
     ParticleAsBlasChunkRange range{};
@@ -1656,7 +1654,7 @@ bool SplatSetManagerVk::rtxRebuildBlasAndTlasPerInstanceMultiBlas(VkBuildAcceler
     return false;
   }
 
-  LOGI("GPU particle AS TLAS build (multi-BLAS, instances=%u, tlasCount=%llu)\n", totalInstances,
+  LOGD("GPU particle AS TLAS build (multi-BLAS, instances=%u, tlasCount=%llu)\n", totalInstances,
        static_cast<unsigned long long>(tlasCount));
 
   for(auto& tlasHelper : m_particleAsTlasHelpers)
@@ -1794,7 +1792,7 @@ bool SplatSetManagerVk::rtxRebuildTlas()
   if(m_instances.empty())
   {
     // No instances left - deinit RTX structures instead of rebuilding
-    std::cout << "processVramUpdates: No instances, deinitializing RTX structures" << std::endl;
+    LOGD("processVramUpdates: No instances, deinitializing RTX structures\n");
     rtxDeinitAccelerationStructures();
     m_rtxState = RtxState::eRtxNone;  // Not an error, just intentional cleanup
     pendingRequests &= ~Request::eRebuildTLAS;
@@ -1825,7 +1823,7 @@ bool SplatSetManagerVk::rtxRebuildTlas()
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxRebuildTlasPerSplat()
 {
-  LOGI("GPU AS TLAS rebuild (per-splat)\n");
+  LOGD("GPU AS TLAS rebuild (per-splat)\n");
 
   const uint32_t totalSplats  = getTotalGlobalSplatCount();
   const uint32_t maxInstances = static_cast<uint32_t>(m_accelStructProps->maxInstanceCount);
@@ -1964,7 +1962,7 @@ bool SplatSetManagerVk::rtxRebuildTlasPerInstance()
       useSplitBlas ? static_cast<uint32_t>(m_gpuRtxDescriptorArray.size()) : static_cast<uint32_t>(m_instances.size());
   const uint32_t maxInstances = static_cast<uint32_t>(m_accelStructProps->maxInstanceCount);
 
-  LOGI("GPU AS TLAS rebuild (per-instance, splitBlas=%d, instances=%u)\n", useSplitBlas ? 1 : 0, totalInstances);
+  LOGD("GPU AS TLAS rebuild (per-instance, splitBlas=%d, instances=%u)\n", useSplitBlas ? 1 : 0, totalInstances);
 
   for(size_t tlasIdx = 0; tlasIdx < m_particleAsTlasHelpers.size(); ++tlasIdx)
   {
@@ -2004,12 +2002,12 @@ bool SplatSetManagerVk::rtxRebuildTlasPerInstance()
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxRebuildTlasFallbackCleanup()
 {
-  std::cout << "processVramUpdates: Rebuilding unified TLAS (instance count changed)" << std::endl;
+  LOGD("processVramUpdates: Rebuilding unified TLAS (instance count changed)\n");
 
   // Rebuild global index tables BEFORE building TLAS (needed for shader-side splat ID resolution)
   if(static_cast<uint32_t>(pendingRequests & Request::eUpdateGlobalIndexTable) || m_globalIndexTableDirty)
   {
-    std::cout << "processVramUpdates: Rebuilding global index tables (pre-TLAS)" << std::endl;
+    LOGD("processVramUpdates: Rebuilding global index tables (pre-TLAS)\n");
     rebuildGlobalIndexTables();
     uploadGlobalIndexTablesToGPU();
     m_globalIndexTableDirty = false;
@@ -2049,7 +2047,7 @@ bool SplatSetManagerVk::rtxRebuildTlasFallbackCleanup()
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxUpdateTlasTransforms(bool& descriptorsNeedRebuild)
 {
-  LOGI("[TRACE] Section 3c entered: instances=%zu useTlasInstances=%d tlasHelpers=%zu\n", m_instances.size(),
+  LOGD("rtxUpdateTlasTransforms: instances=%zu useTlasInstances=%d tlasHelpers=%zu\n", m_instances.size(),
        prmRtxData.useTlasInstances, m_particleAsTlasHelpers.size());
 
   if(m_instances.empty())
@@ -2068,7 +2066,7 @@ bool SplatSetManagerVk::rtxUpdateTlasTransforms(bool& descriptorsNeedRebuild)
   // Refresh descriptor array (transforms) if needed — common to all paths
   if(descriptorsNeedRebuild || static_cast<uint32_t>(pendingRequests & Request::eUpdateDescriptors) || m_gpuDescriptorsDirty)
   {
-    LOGI("GPU AS TLAS update: refreshing descriptor array\n");
+    LOGD("GPU AS TLAS update: refreshing descriptor array\n");
     updateGpuDescriptorArray();
     uploadGpuDescriptorArray();
     m_gpuDescriptorsDirty = false;
@@ -2111,7 +2109,7 @@ bool SplatSetManagerVk::rtxUpdateTlasPerSplat()
   // clears m_gpuRtxDescriptorArray, destroys m_rtxDescriptorBuffer if it exists, and sets
   // m_useSplitBlasRtxDescriptors = false.
   rebuildRtxDescriptorArrayFromChunks();
-  LOGI("GPU AS TLAS update (per-splat, count=%zu)\n", m_particleAsTlasHelpers.size());
+  LOGD("GPU AS TLAS update (per-splat, count=%zu)\n", m_particleAsTlasHelpers.size());
 
   // Note: Global index tables and TLAS address/offset buffers are not updated here because:
   // - A rebuild always happens before any update (copy/import triggers eRebuildBLAS)
@@ -2182,7 +2180,7 @@ bool SplatSetManagerVk::rtxUpdateTlasPerInstanceMultiBlas()
 
   const uint32_t totalInstances = static_cast<uint32_t>(m_gpuRtxDescriptorArray.size());
   const uint32_t maxInstances   = static_cast<uint32_t>(m_accelStructProps->maxInstanceCount);
-  LOGI("GPU AS TLAS update (per-instance, multi-BLAS, instances=%u)\n", totalInstances);
+  LOGD("GPU AS TLAS update (per-instance, multi-BLAS, instances=%u)\n", totalInstances);
 
   if(totalInstances == 0)
     return true;
@@ -2223,7 +2221,7 @@ bool SplatSetManagerVk::rtxUpdateTlasPerInstanceMultiBlas()
 //-----------------------------------------------------------------------------
 bool SplatSetManagerVk::rtxUpdateTlasPerInstanceSingleBlas()
 {
-  LOGI("GPU AS TLAS update (per-instance, single-BLAS, count=%zu)\n", m_particleAsTlasHelpers.size());
+  LOGD("GPU AS TLAS update (per-instance, single-BLAS, count=%zu)\n", m_particleAsTlasHelpers.size());
 
   // Validate BLAS addresses in standard descriptor array
   for(const auto& desc : m_gpuDescriptorArray)
@@ -2314,7 +2312,7 @@ void SplatSetManagerVk::rebuildGlobalIndexTables()
     m_instanceInfos.resize(0);
     m_globalIndexTable.clear();
     m_splatSetGlobalIndexTable.clear();
-    std::cout << "Global Index Tables: 0 instances, 0 total splats" << std::endl;
+    LOGD("Global Index Tables: 0 instances, 0 total splats\n");
     return;
   }
 
@@ -2358,8 +2356,7 @@ void SplatSetManagerVk::rebuildGlobalIndexTables()
     END_PAR_LOOP();
   }
 
-  std::cout << "Global Index Tables rebuilt: " << m_instances.size() << " instances, " << m_totalGlobalSplatCount
-            << " total splats" << std::endl;
+  LOGD("Global Index Tables rebuilt: %zu instances, %u total splats\n", m_instances.size(), m_totalGlobalSplatCount);
 }
 
 void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
@@ -2428,8 +2425,7 @@ void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
   // Check if we need to resize sorting buffers
   if(m_totalGlobalSplatCount != m_sortingBuffersAllocatedCount)
   {
-    std::cout << "Updating sorting buffers (" << m_sortingBuffersAllocatedCount << " -> " << m_totalGlobalSplatCount
-              << " splats)" << std::endl;
+    LOGD("Updating sorting buffers (%u -> %u splats)\n", m_sortingBuffersAllocatedCount, m_totalGlobalSplatCount);
 
     // Destroy old VRDX sorter first (must be destroyed before buffers)
     if(m_splatSortingVrdxSorter != VK_NULL_HANDLE)
@@ -2495,8 +2491,8 @@ void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
       NVVK_CHECK(m_alloc->createBuffer(m_splatSortingVrdxStorageBuffer, requirements.size, requirements.usage,
                                        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
 
-      std::cout << "Created sorting buffers: " << bufferSize << " bytes each, VRDX storage: " << requirements.size
-                << " bytes" << std::endl;
+      LOGD("Created sorting buffers: %llu bytes each, VRDX storage: %llu bytes\n",
+           static_cast<unsigned long long>(bufferSize), static_cast<unsigned long long>(requirements.size));
 
       // Update sorting memory statistics (allocation sizes)
       memRasterization.hostAllocIndices        = bufferSize;
@@ -2555,7 +2551,7 @@ void SplatSetManagerVk::updateGpuDescriptorArray()
 
   if(m_instances.empty())
   {
-    std::cout << "GPU Descriptor Array: 0 instances" << std::endl;
+    LOGD("GPU Descriptor Array: 0 instances\n");
     return;
   }
 
@@ -2600,10 +2596,6 @@ void SplatSetManagerVk::updateGpuDescriptorArray()
       continue;
     const auto& splatSet = instance->splatSet;
 
-    //std::cout << "  Building descriptor[" << idx << "] for instance index=" << instance->index
-    //          << ", splatSet index=" << splatSet->index << ", splatCount=" << splatSet->splatCount
-    //          << ", textureBaseIndex=" << splatSet->textureIndexCenters / 6 << std::endl;
-
     auto& descriptor = m_gpuDescriptorArray[idx];
 
     instance->rebuildDescriptor(splatSet.get(), descriptor);
@@ -2613,10 +2605,6 @@ void SplatSetManagerVk::updateGpuDescriptorArray()
     {
       descriptor.globalSplatBase = m_splatSetGlobalIndexTable[idx];
     }
-
-    //std::cout << "    Descriptor: centersAddress=0x" << std::hex << (uint64_t)descriptor.centersAddress
-    //          << ", colorsAddress=0x" << (uint64_t)descriptor.colorsAddress << ", storage=" << std::dec
-    //          << descriptor.storage << ", format=" << descriptor.format << std::endl;
 
     // Fill per-splat-set BLAS address for non-instance TLAS mode
     descriptor.blasAddress = 0;
@@ -2638,7 +2626,7 @@ void SplatSetManagerVk::updateGpuDescriptorArray()
     ++idx;  // Increment index for next iteration
   }
 
-  std::cout << "GPU Descriptor Array rebuilt: " << m_gpuDescriptorArray.size() << " descriptors" << std::endl;
+  LOGD("GPU Descriptor Array rebuilt: %zu descriptors\n", m_gpuDescriptorArray.size());
 }
 
 void SplatSetManagerVk::updateGpuSplatSetDescriptorArray()
@@ -2647,7 +2635,7 @@ void SplatSetManagerVk::updateGpuSplatSetDescriptorArray()
 
   if(m_splatSets.empty())
   {
-    std::cout << "GPU SplatSet Descriptor Array: 0 splat sets" << std::endl;
+    LOGD("GPU SplatSet Descriptor Array: 0 splat sets\n");
     return;
   }
 
@@ -2714,24 +2702,24 @@ void SplatSetManagerVk::updateGpuSplatSetDescriptorArray()
     m_gpuSplatSetDescriptorArray[idx] = desc;
   }
 
-  std::cout << "GPU SplatSet Descriptor Array rebuilt: " << m_gpuSplatSetDescriptorArray.size() << " descriptors" << std::endl;
+  LOGD("GPU SplatSet Descriptor Array rebuilt: %zu descriptors\n", m_gpuSplatSetDescriptorArray.size());
 }
 
 void SplatSetManagerVk::uploadGpuDescriptorArray()
 {
-  std::cout << "uploadGPUDescriptorArray: Starting (array size=" << m_gpuDescriptorArray.size() << ")" << std::endl;
+  LOGD("uploadGPUDescriptorArray: Starting (array size=%zu)\n", m_gpuDescriptorArray.size());
 
   if(!m_gpuDescriptorArray.empty())
   {
     VkDeviceSize requiredSize = m_gpuDescriptorArray.size() * sizeof(shaderio::SplatSetDesc);
-    std::cout << "  Required buffer size: " << requiredSize << " bytes" << std::endl;
+    LOGD("  Required buffer size: %llu bytes\n", static_cast<unsigned long long>(requiredSize));
 
     // Check if we can reuse the existing buffer (same size or larger)
     bool canReuseBuffer = (m_descriptorBuffer.buffer != VK_NULL_HANDLE) && (m_descriptorBuffer.bufferSize >= requiredSize);
 
     if(canReuseBuffer)
     {
-      std::cout << "  Reusing existing buffer (size=" << m_descriptorBuffer.bufferSize << " bytes)" << std::endl;
+      LOGD("  Reusing existing buffer (size=%llu bytes)\n", static_cast<unsigned long long>(m_descriptorBuffer.bufferSize));
     }
     else
     {
@@ -2743,11 +2731,11 @@ void SplatSetManagerVk::uploadGpuDescriptorArray()
 
       m_descriptorBuffer = {};
 
-      std::cout << "  Creating new descriptor buffer" << std::endl;
+      LOGD("  Creating new descriptor buffer\n");
       NVVK_CHECK(m_alloc->createBuffer(m_descriptorBuffer, requiredSize,
                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT));
       NVVK_DBG_NAME(m_descriptorBuffer.buffer);
-      std::cout << "  Buffer created: address=0x" << std::hex << m_descriptorBuffer.address << std::dec << std::endl;
+      LOGD("  Buffer created: address=0x%llx\n", static_cast<unsigned long long>(m_descriptorBuffer.address));
     }
 
     // Track memory (always update, whether buffer is new or reused)
@@ -2755,27 +2743,27 @@ void SplatSetManagerVk::uploadGpuDescriptorArray()
 
     // Upload data to buffer (new or reused)
     VkCommandBuffer cmdBuf = m_app->createTempCmdBuffer();
-    std::cout << "  Uploading data to GPU..." << std::endl;
+    LOGD("  Uploading data to GPU...\n");
     NVVK_CHECK(m_uploader->appendBuffer(m_descriptorBuffer, 0, std::span(m_gpuDescriptorArray)));
     m_uploader->cmdUploadAppended(cmdBuf);
     m_app->submitAndWaitTempCmdBuffer(cmdBuf);
     m_uploader->releaseStaging();
-    std::cout << "  Upload complete" << std::endl;
+    LOGD("  Upload complete\n");
   }
   else
   {
-    std::cout << "  Array empty" << std::endl;
+    LOGD("  Array empty\n");
     memModels.descriptorBuffer = 0;
     // No data needed, destroy buffer if it exists
     if(m_descriptorBuffer.buffer != VK_NULL_HANDLE)
     {
-      std::cout << "  Destroying descriptor buffer (no longer needed)" << std::endl;
+      LOGD("  Destroying descriptor buffer (no longer needed)\n");
       m_alloc->destroyBuffer(m_descriptorBuffer);
       m_descriptorBuffer = {};
     }
   }
 
-  std::cout << "uploadGPUDescriptorArray: Complete" << std::endl;
+  LOGD("uploadGPUDescriptorArray: Complete\n");
 }
 
 void SplatSetManagerVk::rebuildRtxDescriptorArrayFromChunks()
@@ -2854,8 +2842,7 @@ void SplatSetManagerVk::rebuildRtxDescriptorArrayFromChunks()
 
 void SplatSetManagerVk::uploadGpuSplatSetDescriptorArray()
 {
-  std::cout << "uploadGPU SplatSet Descriptor Array: Starting (array size=" << m_gpuSplatSetDescriptorArray.size()
-            << ")" << std::endl;
+  LOGD("uploadGPU SplatSet Descriptor Array: Starting (array size=%zu)\n", m_gpuSplatSetDescriptorArray.size());
 
   if(!m_gpuSplatSetDescriptorArray.empty())
   {
@@ -2887,12 +2874,12 @@ void SplatSetManagerVk::uploadGpuSplatSetDescriptorArray()
     m_splatSetDescriptorBuffer = {};
   }
 
-  std::cout << "uploadGPU SplatSet Descriptor Array: Complete" << std::endl;
+  LOGD("uploadGPU SplatSet Descriptor Array: Complete\n");
 }
 
 void SplatSetManagerVk::clearSceneGpuBuffers()
 {
-  std::cout << "clearSceneGpuBuffers: releasing scene-scoped GPU buffers" << std::endl;
+  LOGD("clearSceneGpuBuffers: releasing scene-scoped GPU buffers\n");
   if(m_descriptorBuffer.buffer != VK_NULL_HANDLE)
   {
     m_alloc->destroyBuffer(m_descriptorBuffer);
@@ -2981,7 +2968,7 @@ void SplatSetManagerVk::markSplatSetsForRegeneration(std::shared_ptr<SplatSetVk>
   if(!splatSet)
     return;
 
-  std::cout << "markSplatSetForRegeneration: Marking one splat sets for regeneration" << std::endl;
+  LOGD("markSplatSetForRegeneration: Marking one splat sets for regeneration\n");
 
   // Mark ALL splat sets for data regeneration
   splatSet->flags |= SplatSetVk::Flags::eDataChanged;
@@ -2997,7 +2984,7 @@ void SplatSetManagerVk::markAllSplatSetsForRegeneration()
   if(m_splatSets.empty())
     return;
 
-  std::cout << "markAllSplatSetsForRegeneration: Marking " << m_splatSets.size() << " splat sets for regeneration" << std::endl;
+  LOGD("markAllSplatSetsForRegeneration: Marking %zu splat sets for regeneration\n", m_splatSets.size());
 
   // Mark ALL splat sets for data regeneration
   for(auto& splatSet : m_splatSets)
@@ -3711,7 +3698,7 @@ void SplatSetManagerVk::dumpDebugState(const std::string& label) const
   ofs << "=== END ===" << std::endl;
   ofs.close();
 
-  std::cout << "Debug state dumped to: " << filename << std::endl;
+  LOGD("Debug state dumped to: %s\n", filename.c_str());
 }
 
 }  // namespace vk_gaussian_splatting
