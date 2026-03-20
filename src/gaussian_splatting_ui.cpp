@@ -859,6 +859,53 @@ void GaussianSplattingUI::onUIMenu()
       ImGui::SetTooltip("Toggle light proxy visibility");
     }
 
+    // Vertical separator before navigation mode
+    ImGui::SameLine();
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+
+    // Navigation mode buttons (exclusive: Examine / Fly / Walk)
+    {
+      auto navMode = cameraManip->getMode();
+
+      pushIconStyle(navMode == nvutils::CameraManipulator::Examine);
+      if(ImGui::Button(ICON_MS_3D_ROTATION))
+      {
+        cameraManip->setMode(nvutils::CameraManipulator::Examine);
+      }
+      popIconStyle();
+      if(ImGui::IsItemHovered())
+      {
+        ImGui::SetTooltip("Examine - orbit around point of interest");
+      }
+
+      ImGui::SameLine();
+
+      pushIconStyle(navMode == nvutils::CameraManipulator::Fly);
+      if(ImGui::Button(ICON_MS_FLIGHT))
+      {
+        cameraManip->setMode(nvutils::CameraManipulator::Fly);
+      }
+      popIconStyle();
+      if(ImGui::IsItemHovered())
+      {
+        ImGui::SetTooltip("Fly - free camera movement - WASD keys plus mouse");
+      }
+
+      ImGui::SameLine();
+
+      pushIconStyle(navMode == nvutils::CameraManipulator::Walk);
+      if(ImGui::Button(ICON_MS_DIRECTIONS_WALK))
+      {
+        cameraManip->setMode(nvutils::CameraManipulator::Walk);
+      }
+      popIconStyle();
+      if(ImGui::IsItemHovered())
+      {
+        ImGui::SetTooltip("Walk - move on XZ plane - WASD keys plus mouse");
+      }
+    }
+
     // Vertical separator before sorting/RTX settings
     ImGui::SameLine();
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -3313,10 +3360,10 @@ void GaussianSplattingUI::guiDrawNavigationProperties()
         },
         "Camera Navigation Mode");
 
-    changed |= PE::SliderFloat("Speed", &speed, 0.01F, 10.0F, "%.3f", 0, "Changing the default movement speed");
-    changed |= PE::SliderFloat("Transition", &duration, 0.0F, 2.0F, "%.3f", 0,
-                               "Nb seconds to move to new position when loading a camera preset");
-
+    changed |= PE::DragFloat("Speed", &speed, 0.01F, 0.0F, 1000.0F, "%.3f", 0, "Changing the default movement speed");
+    changed |= PE::DragFloat("Transition", &duration, 0.01F, 0.0F, 10.0F, "%.3f", 0,
+                             "Nb seconds to move to new position when loading a camera preset");
+    duration = std::min(duration, 10.0f);
     cameraManip->setSpeed(speed);
     cameraManip->setAnimationDuration(duration);
 

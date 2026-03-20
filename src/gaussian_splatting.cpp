@@ -48,6 +48,7 @@ GaussianSplatting::GaussianSplatting(nvutils::ProfilerManager* profilerManager, 
     , m_parameterRegistry(parameterRegistry)
     , cameraManip(std::make_shared<nvutils::CameraManipulator>())
 {
+  cameraManip->setAnimationDuration(1.0);
 
 #if defined(USE_DLSS)
   // Register DLSS parameters
