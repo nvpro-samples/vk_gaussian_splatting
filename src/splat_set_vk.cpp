@@ -300,7 +300,8 @@ void SplatSetVk::initDataBuffers()
   {
     const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * 4 * formatSize(rgbaFormat);
 
-    LOGD("Allocating color buffers: %llu B (%u splats, format=%d)\n", static_cast<unsigned long long>(bufferSize), splatCount, rgbaFormat);
+    LOGD("Allocating color buffers: %llu B (%u splats, format=%d)\n", static_cast<unsigned long long>(bufferSize),
+         splatCount, rgbaFormat);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(colorsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(colorsBuffer.buffer);
@@ -380,7 +381,8 @@ void SplatSetVk::initDataBuffers()
 
     const VkDeviceSize bufferSize = VkDeviceSize(splatCount) * splatStride * formatSize(shFormat);
 
-    LOGD("Allocating SH buffers: %llu B (%u splats, stride=%zu)\n", static_cast<unsigned long long>(bufferSize), splatCount, splatStride);
+    LOGD("Allocating SH buffers: %llu B (%u splats, stride=%zu)\n", static_cast<unsigned long long>(bufferSize),
+         splatCount, splatStride);
 
     NVVK_CHECK(m_alloc->createLargeBuffer(sphericalHarmonicsBuffer, bufferSize, deviceBufferUsageFlags, queue));
     NVVK_DBG_NAME(sphericalHarmonicsBuffer.buffer);

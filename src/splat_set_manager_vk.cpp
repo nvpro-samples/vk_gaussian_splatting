@@ -669,8 +669,8 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
       continue;
     if(static_cast<uint32_t>(splatSet->flags & SplatSetVk::Flags::eNew))
     {
-      LOGD("processVramUpdates: Uploading new splat set to GPU (index=%d, storage=%d, format=%d)\n",
-           splatSet->index, splatSet->dataStorage, prmData.shFormat);
+      LOGD("processVramUpdates: Uploading new splat set to GPU (index=%d, storage=%d, format=%d)\n", splatSet->index,
+           splatSet->dataStorage, prmData.shFormat);
 
       // Upload data to GPU
       splatSet->initDataStorage(prmData.shFormat, prmData.rgbaFormat);
@@ -753,8 +753,8 @@ void SplatSetManagerVk::processRamToVramDataUploads(bool& instanceCountChanged, 
       continue;
     if(static_cast<uint32_t>(splatSet->flags & SplatSetVk::Flags::eDataChanged))
     {
-      LOGD("processVramUpdates: Regenerating data storage (index=%d, storage=%d, format=%d)\n",
-           splatSet->index, splatSet->dataStorage, prmData.shFormat);
+      LOGD("processVramUpdates: Regenerating data storage (index=%d, storage=%d, format=%d)\n", splatSet->index,
+           splatSet->dataStorage, prmData.shFormat);
 
       // Deinitialize old data
       splatSet->deinitDataStorage();

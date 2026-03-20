@@ -105,9 +105,9 @@ void GaussianSplattingUI::onAttach(nvapp::Application* app)
   m_ui.enumAdd(GUI_STORAGE, STORAGE_BUFFERS, "Buffers");
   m_ui.enumAdd(GUI_STORAGE, STORAGE_TEXTURES, "Textures");
 
-  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Raster vertex shader 3DGS");
-  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Raster mesh shader 3DGS");
-  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH_3DGUT, "Raster mesh shader 3DGUT");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_VERT, "Raster 3DGS vertex shader");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH, "Raster 3DGS mesh shader");
+  m_ui.enumAdd(GUI_PIPELINE, PIPELINE_MESH_3DGUT, "Raster 3DGUT mesh shader");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_RTX, "Ray tracing 3DGRT");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_HYBRID, "Hybrid 3DGS+3DGRT");
   m_ui.enumAdd(GUI_PIPELINE, PIPELINE_HYBRID_3DGUT, "Hybrid 3DGUT+3DGRT");
@@ -906,9 +906,22 @@ void GaussianSplattingUI::onUIMenu()
       }
     }
 
-    // Vertical separator before sorting/RTX settings
+    // Vertical separator before pipeline/sorting/RTX settings
     ImGui::SameLine();
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+
+    // Pipeline selector
+    {
+      ImGui::SetNextItemWidth(200.0f);
+      if(m_ui.enumCombobox(GUI_PIPELINE, "##PipelineBar", &prmSelectedPipeline))
+      {
+        m_requestUpdateShaders = true;
+      }
+      if(ImGui::IsItemHovered())
+        ImGui::SetTooltip("Rendering pipeline");
+    }
+
     ImGui::SameLine();
 
     // Sorting method selector (disabled only for pure RTX - hybrid modes still use rasterization)
