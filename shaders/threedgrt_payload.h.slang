@@ -23,8 +23,8 @@ static const int   PAYLOAD_INVALID_ID   = -1;
 static const float PAYLOAD_INF_DISTANCE = asfloat(0x7F7FFFFF);
 
 static const bool kStochasticSort = (RTX_TRACE_STRATEGY == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT);
-static const bool kWireframe      = WIREFRAME;
-static const bool kPayloadSize    = PAYLOAD_ARRAY_SIZE;
+static const bool kWireframe   = (WIREFRAME != 0);
+static const int  kPayloadSize = PAYLOAD_ARRAY_SIZE;
 
 typedef HitPayloadGeneric<kStochasticSort, kWireframe, kPayloadSize> HitPayload;
 
