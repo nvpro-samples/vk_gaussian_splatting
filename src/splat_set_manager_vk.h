@@ -536,10 +536,10 @@ private:
   uint32_t                           m_maxShDegree           = 0;  // Maximum SH degree across all splat sets
 
   // Sorting Buffers (same lifetime as global index tables)
-  nvvk::Buffer      m_splatSortingIndicesHost;                   // Host buffer for CPU sorting upload
-  nvvk::LargeBuffer m_splatSortingIndicesDevice;                 // Sorted indices buffer (GPU device)
-  nvvk::LargeBuffer m_splatSortingDistancesDevice;               // Distance buffer for depth sorting (GPU)
-  nvvk::LargeBuffer m_splatSortingVrdxStorageBuffer;             // VRDX internal storage (GPU)
+  nvvk::Buffer      m_splatSortingIndicesHost;                        // Host buffer for CPU sorting upload
+  nvvk::LargeBuffer m_splatSortingIndicesDevice;                      // Sorted indices buffer (GPU device)
+  nvvk::LargeBuffer m_splatSortingDistancesDevice;                    // Distance buffer for depth sorting (GPU)
+  nvvk::LargeBuffer m_splatSortingVrdxStorageBuffer;                  // VRDX internal storage (GPU)
   VrdxSorter   m_splatSortingVrdxSorter       = VK_NULL_HANDLE;  // GPU radix sorter
   uint32_t     m_sortingBuffersAllocatedCount = 0;               // Track buffer size for resize detection
 

@@ -945,11 +945,12 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
   // Only accumulate for final image visualization; debug modes (depth, normals, clock, etc.)
   // display the current frame directly from AUX1 without accumulation.
   // Note: When DLSS is enabled, it handles temporal accumulation internally
+  // Note: frameSampleId check moved inside postProcess() to keep profiler section count stable
   bool shouldAccumulate = (prmRender.visualize == VISUALIZE_FINAL);
 #if defined(USE_DLSS)
-  if(shouldAccumulate && !m_dlss.isEnabled() && prmRtx.temporalSampling && prmFrame.frameSampleId > 0)
+  if(shouldAccumulate && !m_dlss.isEnabled() && prmRtx.temporalSampling)
 #else
-  if(shouldAccumulate && prmRtx.temporalSampling && prmFrame.frameSampleId > 0)
+  if(shouldAccumulate && prmRtx.temporalSampling)
 #endif
   {
     postProcess(cmd);
@@ -3174,11 +3175,17 @@ void GaussianSplatting::postProcess(VkCommandBuffer cmd)
 {
   NVVK_DBG_SCOPE(cmd);
 
-  // Early exit if pipeline not initialized (can happen during async loading)
   if(m_computePipelinePostProcess == VK_NULL_HANDLE)
     return;
 
+  // Always create the profiler section to keep section count stable across frames.
+  // Without this, the section appears/disappears as frameSampleId oscillates between
+  // 0 and 1 during camera drag (mouse events don't arrive every frame), which
+  // continuously triggers the profiler's 8-frame reset delay.
   auto timerSection = m_profilerGpuTimer.cmdFrameSection(cmd, "Post process");
+
+  if(prmFrame.frameSampleId <= 0)
+    return;
 
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipelinePostProcess);
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayoutPostProcess, 0, 1,
