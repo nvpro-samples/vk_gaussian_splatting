@@ -285,9 +285,9 @@ public:
   VkDeviceAddress getSplatSortingIndicesAddress() const { return m_splatSortingIndicesDevice.address; }
   VrdxSorter      getSplatSortingVrdxSorter() const { return m_splatSortingVrdxSorter; }
 
-  const nvvk::Buffer& getSplatSortingIndicesDevice() const { return m_splatSortingIndicesDevice; }
-  const nvvk::Buffer& getSplatSortingDistancesDevice() const { return m_splatSortingDistancesDevice; }
-  const nvvk::Buffer& getSplatSortingVrdxStorageBuffer() const { return m_splatSortingVrdxStorageBuffer; }
+  const nvvk::LargeBuffer& getSplatSortingIndicesDevice() const { return m_splatSortingIndicesDevice; }
+  const nvvk::LargeBuffer& getSplatSortingDistancesDevice() const { return m_splatSortingDistancesDevice; }
+  const nvvk::LargeBuffer& getSplatSortingVrdxStorageBuffer() const { return m_splatSortingVrdxStorageBuffer; }
 
   // Try to consume CPU sorting result and upload to GPU
   // Called every frame for CPU async sorting
@@ -536,10 +536,10 @@ private:
   uint32_t                           m_maxShDegree           = 0;  // Maximum SH degree across all splat sets
 
   // Sorting Buffers (same lifetime as global index tables)
-  nvvk::Buffer m_splatSortingIndicesHost;                        // Host buffer for CPU sorting upload
-  nvvk::Buffer m_splatSortingIndicesDevice;                      // Sorted indices buffer (GPU device)
-  nvvk::Buffer m_splatSortingDistancesDevice;                    // Distance buffer for depth sorting (GPU)
-  nvvk::Buffer m_splatSortingVrdxStorageBuffer;                  // VRDX internal storage (GPU)
+  nvvk::Buffer      m_splatSortingIndicesHost;                   // Host buffer for CPU sorting upload
+  nvvk::LargeBuffer m_splatSortingIndicesDevice;                 // Sorted indices buffer (GPU device)
+  nvvk::LargeBuffer m_splatSortingDistancesDevice;               // Distance buffer for depth sorting (GPU)
+  nvvk::LargeBuffer m_splatSortingVrdxStorageBuffer;             // VRDX internal storage (GPU)
   VrdxSorter   m_splatSortingVrdxSorter       = VK_NULL_HANDLE;  // GPU radix sorter
   uint32_t     m_sortingBuffersAllocatedCount = 0;               // Track buffer size for resize detection
 

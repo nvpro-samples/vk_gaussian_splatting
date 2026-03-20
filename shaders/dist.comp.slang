@@ -139,8 +139,12 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
   const uint instanceIndex = original;
 
   // stores the global splat ID (used by raster shaders to resolve descriptor + local index)
-  uint32_t *indices = assets.splatSortingIndicesAddress;
-  indices[instanceIndex] = globalSplatID;
+  // Explicit 64-bit byte offset to avoid 32-bit overflow when instanceIndex * sizeof(uint32_t) >= 4 GB (~1G visible splats)
+  {
+    uint64_t  byteOffset = uint64_t(instanceIndex) * uint64_t(sizeof(uint32_t));
+    uint32_t* indexPtr    = (uint32_t*)(uint64_t(assets.splatSortingIndicesAddress) + byteOffset);
+    *indexPtr             = globalSplatID;
+  }
 
   // set the workgroup count for the mesh shading pipeline
   if (instanceIndex % RASTER_MESH_WORKGROUP_SIZE == 0)
@@ -150,14 +154,18 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
 #if !STOCHASTIC_SPLAT
   // stores the distance
-  uint32_t *distances = assets.splatSortingDistancesAddress;
-  // For back-to-front (default): negate depth so ascending radix sort yields farthest-first
-  // For front-to-back: use positive depth so ascending radix sort yields nearest-first
+  // Explicit 64-bit byte offset to avoid 32-bit overflow when instanceIndex * sizeof(uint32_t) >= 4 GB (~1G visible splats)
+  {
+    uint64_t  byteOffset = uint64_t(instanceIndex) * uint64_t(sizeof(uint32_t));
+    uint32_t* distPtr     = (uint32_t*)(uint64_t(assets.splatSortingDistancesAddress) + byteOffset);
+    // For back-to-front (default): negate depth so ascending radix sort yields farthest-first
+    // For front-to-back: use positive depth so ascending radix sort yields nearest-first
 #if FRONT_TO_BACK
-  distances[instanceIndex] = encodeMinMaxFp32(depth);
+    *distPtr = encodeMinMaxFp32(depth);
 #else
-  distances[instanceIndex] = encodeMinMaxFp32(-depth);
+    *distPtr = encodeMinMaxFp32(-depth);
 #endif
+  }
 #endif
 
 }

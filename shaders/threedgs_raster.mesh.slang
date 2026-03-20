@@ -139,9 +139,10 @@ void main(uint3                                             groupThreadID: SV_Gr
   if(baseIndex < splatCount)
   {
     // Access sorted indices via bindless device address
-    uint32_t*  indices       = assets.splatSortingIndicesAddress;
-    const uint globalSplatID = indices[baseIndex];
-
+    // Explicit 64-bit byte offset to avoid 32-bit overflow at ~1G visible splats
+    uint64_t       byteOffset   = uint64_t(baseIndex) * uint64_t(sizeof(uint32_t));
+    const uint32_t globalSplatID = *(uint32_t*)(uint64_t(assets.splatSortingIndicesAddress) + byteOffset);
+   
 #if STOCHASTIC_SPLAT || NEED_SURFACE_INFO
     // emit the splat ID for stochastic rendering or surface reconstruction
     prims[localIndex * 2 + 0].outSplatId = globalSplatID;

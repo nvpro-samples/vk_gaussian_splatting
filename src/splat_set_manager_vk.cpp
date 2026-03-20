@@ -2440,15 +2440,15 @@ void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
     }
     if(m_splatSortingIndicesDevice.buffer != VK_NULL_HANDLE)
     {
-      m_alloc->destroyBuffer(m_splatSortingIndicesDevice);
+      m_alloc->destroyLargeBuffer(m_splatSortingIndicesDevice);
     }
     if(m_splatSortingDistancesDevice.buffer != VK_NULL_HANDLE)
     {
-      m_alloc->destroyBuffer(m_splatSortingDistancesDevice);
+      m_alloc->destroyLargeBuffer(m_splatSortingDistancesDevice);
     }
     if(m_splatSortingVrdxStorageBuffer.buffer != VK_NULL_HANDLE)
     {
-      m_alloc->destroyBuffer(m_splatSortingVrdxStorageBuffer);
+      m_alloc->destroyLargeBuffer(m_splatSortingVrdxStorageBuffer);
     }
 
     m_splatSortingIndicesHost       = {};
@@ -2468,16 +2468,17 @@ void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
                                        VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT));
 
       // Device indices buffer (used by shaders and CPU/GPU sorting)
-      NVVK_CHECK(m_alloc->createBuffer(m_splatSortingIndicesDevice, bufferSize,
-                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                           | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                       VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
+      VkQueue sparseQueue = m_app->getQueue(0).queue;
+      NVVK_CHECK(m_alloc->createLargeBuffer(m_splatSortingIndicesDevice, bufferSize,
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                                | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                            sparseQueue));
 
       // Device distances buffer (written by dist.comp.slang)
-      NVVK_CHECK(m_alloc->createBuffer(m_splatSortingDistancesDevice, bufferSize,
-                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                           | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                       VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
+      NVVK_CHECK(m_alloc->createLargeBuffer(m_splatSortingDistancesDevice, bufferSize,
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                                | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                            sparseQueue));
 
       // Create VRDX sorter
       VrdxSorterCreateInfo gpuSorterInfo{.physicalDevice = m_app->getPhysicalDevice(), .device = m_app->getDevice()};
@@ -2488,8 +2489,7 @@ void SplatSetManagerVk::uploadGlobalIndexTablesToGPU()
       VrdxSorterStorageRequirements requirements;
       vrdxGetSorterKeyValueStorageRequirements(m_splatSortingVrdxSorter, vrdxSplatCount, &requirements);
 
-      NVVK_CHECK(m_alloc->createBuffer(m_splatSortingVrdxStorageBuffer, requirements.size, requirements.usage,
-                                       VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
+      NVVK_CHECK(m_alloc->createLargeBuffer(m_splatSortingVrdxStorageBuffer, requirements.size, requirements.usage, sparseQueue));
 
       LOGD("Created sorting buffers: %llu bytes each, VRDX storage: %llu bytes\n",
            static_cast<unsigned long long>(bufferSize), static_cast<unsigned long long>(requirements.size));
@@ -2925,17 +2925,17 @@ void SplatSetManagerVk::clearSceneGpuBuffers()
   }
   if(m_splatSortingIndicesDevice.buffer != VK_NULL_HANDLE)
   {
-    m_alloc->destroyBuffer(m_splatSortingIndicesDevice);
+    m_alloc->destroyLargeBuffer(m_splatSortingIndicesDevice);
     m_splatSortingIndicesDevice = {};
   }
   if(m_splatSortingDistancesDevice.buffer != VK_NULL_HANDLE)
   {
-    m_alloc->destroyBuffer(m_splatSortingDistancesDevice);
+    m_alloc->destroyLargeBuffer(m_splatSortingDistancesDevice);
     m_splatSortingDistancesDevice = {};
   }
   if(m_splatSortingVrdxStorageBuffer.buffer != VK_NULL_HANDLE)
   {
-    m_alloc->destroyBuffer(m_splatSortingVrdxStorageBuffer);
+    m_alloc->destroyLargeBuffer(m_splatSortingVrdxStorageBuffer);
     m_splatSortingVrdxStorageBuffer = {};
   }
   m_sortingBuffersAllocatedCount = 0;
@@ -3581,15 +3581,19 @@ void SplatSetManagerVk::dumpDebugState(const std::string& label) const
     ofs << "  " << name << ": buffer=" << (buf.buffer ? "VALID" : "NULL") << " address=0x" << std::hex << buf.address
         << std::dec << " size=" << buf.bufferSize << std::endl;
   };
+  auto dumpLargeBuf = [&](const char* name, const nvvk::LargeBuffer& buf) {
+    ofs << "  " << name << ": buffer=" << (buf.buffer ? "VALID" : "NULL") << " address=0x" << std::hex << buf.address
+        << std::dec << " size=" << buf.bufferSize << " chunks=" << buf.allocations.size() << std::endl;
+  };
   dumpBuf("m_descriptorBuffer", m_descriptorBuffer);
   dumpBuf("m_rtxDescriptorBuffer", m_rtxDescriptorBuffer);
   dumpBuf("m_splatSetDescriptorBuffer", m_splatSetDescriptorBuffer);
   dumpBuf("m_globalIndexTableBuffer", m_globalIndexTableBuffer);
   dumpBuf("m_splatSetGlobalIndexTableBuffer", m_splatSetGlobalIndexTableBuffer);
   dumpBuf("m_splatSortingIndicesHost", m_splatSortingIndicesHost);
-  dumpBuf("m_splatSortingIndicesDevice", m_splatSortingIndicesDevice);
-  dumpBuf("m_splatSortingDistancesDevice", m_splatSortingDistancesDevice);
-  dumpBuf("m_splatSortingVrdxStorageBuffer", m_splatSortingVrdxStorageBuffer);
+  dumpLargeBuf("m_splatSortingIndicesDevice", m_splatSortingIndicesDevice);
+  dumpLargeBuf("m_splatSortingDistancesDevice", m_splatSortingDistancesDevice);
+  dumpLargeBuf("m_splatSortingVrdxStorageBuffer", m_splatSortingVrdxStorageBuffer);
   ofs << "  m_sortingBuffersAllocatedCount: " << m_sortingBuffersAllocatedCount << std::endl;
   ofs << std::endl;
 
