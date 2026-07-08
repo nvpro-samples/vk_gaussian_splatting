@@ -3480,11 +3480,16 @@ void GaussianSplattingUI::guiDrawRendererProperties()
       ImGui::EndDisabled();
 
       {
-        const bool wireframeSupported = isSupported.shaderFloat64 && isSupported.fragmentShaderBarycentric;
-        ImGui::BeginDisabled(!wireframeSupported);
+        const bool wireframeHwSupported = isSupported.shaderFloat64 && isSupported.fragmentShaderBarycentric;
+        // Mirrors the WIREFRAME macro coercion in updateSlangMacros(): wireframe is
+        // unsupported with the stochastic trace strategies in the pure RTX pipeline.
+        const bool wireframeStrategyOk =
+            !(prmSelectedPipeline == PIPELINE_RTX && prmRtx.rtxTraceStrategy != RTX_TRACE_STRATEGY_FULL_ANYHIT);
+        ImGui::BeginDisabled(!wireframeHwSupported || !wireframeStrategyOk);
         if(PE::Checkbox("Wireframe", &prmRender.wireframe,
-                        wireframeSupported ? "Show particle bounds in wireframe." :
-                                             "Wireframe requires VK_KHR_fragment_shader_barycentric and shaderFloat64, neither of which are supported by this device."))
+                        !wireframeHwSupported ? "Wireframe requires VK_KHR_fragment_shader_barycentric and shaderFloat64, neither of which are supported by this device." :
+                        !wireframeStrategyOk ? "Wireframe is not supported with the stochastic trace strategies in the RTX pipeline." :
+                                               "Show particle bounds in wireframe."))
           m_requestUpdateShaders = true;
         ImGui::EndDisabled();
       }
@@ -4958,7 +4963,7 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
 
         bool stochastic = prmRtx.rtxTraceStrategy == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT;
         bool hasMeshes  = !m_assets.meshes.instances.empty();
-        bool singleSet  = getRtxParticleSetMode() == 1;      // RTX_HAS_PARTICLES == 1
+        bool singleSet  = getRtxParticleSetMode() == 1;  // RTX_HAS_PARTICLES == 1
         int  spp        = stochastic ? 1 : prmRtx.particleSamplesPerPass;
         int  distSize   = getPayloadArraySize();             // max(spp, meshSlots)
         int  idSize     = (hasMeshes && spp < 2) ? 2 : spp;  // mesh needs id[0]=objId, id[1]=matId

@@ -2321,7 +2321,12 @@ void GaussianSplatting::updateSlangMacros()
           // fragment shader to declare unsupported SPIR-V capabilities. Coerce
           // the macro to 0 in that case; the user's prmRender.wireframe value
           // is preserved so loading a project on capable hardware restores it.
-          {"WIREFRAME", std::to_string((int)(prmRender.wireframe && isSupported.shaderFloat64 && isSupported.fragmentShaderBarycentric))},
+          // Wireframe is also unsupported with the stochastic trace strategies in the
+          // pure RTX pipeline; coerce it off there too (again preserving the setting,
+          // so it reapplies when the strategy or pipeline changes).
+          {"WIREFRAME", std::to_string((int)(prmRender.wireframe && isSupported.shaderFloat64 && isSupported.fragmentShaderBarycentric
+                                             && !(prmSelectedPipeline == PIPELINE_RTX
+                                                  && prmRtx.rtxTraceStrategy != RTX_TRACE_STRATEGY_FULL_ANYHIT)))},
           {"DISTANCE_COMPUTE_WORKGROUP_SIZE", std::to_string((int)prmRaster.distShaderWorkgroupSize)},
           {"RASTER_MESH_WORKGROUP_SIZE", std::to_string((int)prmRaster.meshShaderWorkgroupSize)},
           // Mesh-task 2D grid width = device maxMeshWorkGroupCount[0]; shaders linearize the grid id
