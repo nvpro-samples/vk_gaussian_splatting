@@ -759,9 +759,9 @@ void traceRayParticlesInsertionSort<let kStochasticPass : bool>(in int          
     [[unroll]]
     for(int i = 0; i < PARTICLES_SPP; ++i)
     {
-      payload.id[i]          = PAYLOAD_INVALID_ID;
-      payload.splatSetIdx[i] = PAYLOAD_INVALID_ID;
-      payload.dist[i]        = PAYLOAD_INF_DISTANCE;
+      payload.id[i] = PAYLOAD_INVALID_ID;
+      payload.setSplatSetIdx(i, PAYLOAD_INVALID_ID);
+      payload.dist[i] = PAYLOAD_INF_DISTANCE;
     }
 
 #if WIREFRAME
@@ -818,7 +818,7 @@ void traceRayParticlesInsertionSort<let kStochasticPass : bool>(in int          
     for(int i = 0; i < PARTICLES_SPP; ++i)
     {
       const int   localSplatID = payload.id[i];
-      const int   descIdx      = payload.splatSetIdx[i];
+      const int   descIdx      = payload.getSplatSetIdx(i);
       const float dist         = payload.dist[i];
 
       if((localSplatID != PAYLOAD_INVALID_ID) && (maxComponent(pixel.transmittance) > double(frameInfo.minTransmittance)))
@@ -936,7 +936,7 @@ void traceRayParticlesInsertionSort<let kStochasticPass : bool>(in int          
         // if iso density surface not found we use farthest point
         if(pixel.isoSurfDepth == 0.0)
         {
-          const int   lastDescIdx = payload.splatSetIdx[lastValidHitIdx];
+          const int   lastDescIdx = payload.getSplatSetIdx(lastValidHitIdx);
           const int   lastSplatId = payload.id[lastValidHitIdx];
           const float dist        = payload.dist[lastValidHitIdx];
           pixel.isoSurfSplatSetId = lastDescIdx;
@@ -1001,9 +1001,9 @@ void traceRayParticlesStochasticSort(in int           bounce,
   [[unroll]]
   for(int i = 0; i < PARTICLES_SPP; ++i)
   {
-    payload.id[i]          = PAYLOAD_INVALID_ID;
-    payload.splatSetIdx[i] = PAYLOAD_INVALID_ID;
-    payload.dist[i]        = PAYLOAD_INF_DISTANCE;
+    payload.id[i] = PAYLOAD_INVALID_ID;
+    payload.setSplatSetIdx(i, PAYLOAD_INVALID_ID);
+    payload.dist[i] = PAYLOAD_INF_DISTANCE;
     payload.color[i].set(float4(0.0f));
     payload.normal[i].set(float3(0.0f));
   }
@@ -1069,7 +1069,7 @@ void traceRayParticlesStochasticSort(in int           bounce,
     if(dist < closestDist)
     {
       closestDist    = dist;
-      closestDescIdx = payload.splatSetIdx[i];
+      closestDescIdx = payload.getSplatSetIdx(i);
       closestLocalId = localSplatID;
       closestNormal  = sampleNormal;
       closestPos     = rayOrigin + dist * rayDirection;
@@ -1167,7 +1167,7 @@ void traceRayAllSplatTlas(in RayDesc ray, in uint rayFlags, inout HitPayload pay
     localRay.TMin      = ray.TMin;
     localRay.TMax      = ray.TMax;
 
-    payload.currentSplatSetInstance = instIdx;
+    payload.setCurrentSplatSetInstance(instIdx);
 
     RaytracingAccelerationStructure tlas = (RaytracingAccelerationStructure)desc.blasAddress;
     TraceRay(tlas, rayFlags, 0xFF, sbtRecordOffset, 0, 0, localRay, payload);
@@ -1776,9 +1776,9 @@ ShadowInfo traceShadowRayParticle(in FrameInfo     frameInfo,
   [[unroll]]
   for(int j = 0; j < PARTICLES_SPP; ++j)
   {
-    payload.id[j]          = PAYLOAD_INVALID_ID;
-    payload.splatSetIdx[j] = PAYLOAD_INVALID_ID;
-    payload.dist[j]        = PAYLOAD_INF_DISTANCE;
+    payload.id[j] = PAYLOAD_INVALID_ID;
+    payload.setSplatSetIdx(j, PAYLOAD_INVALID_ID);
+    payload.dist[j] = PAYLOAD_INF_DISTANCE;
 #if RTX_TRACE_STRATEGY == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT
     payload.color[j].set(float4(0.0f));
     payload.normal[j].set(float3(0.0f));
@@ -1838,7 +1838,7 @@ ShadowInfo traceShadowRayParticle(in FrameInfo     frameInfo,
   for(int j = 0; j < PARTICLES_SPP; ++j)
   {
     const int   localSplatID = payload.id[j];
-    const int   descIdx      = payload.splatSetIdx[j];
+    const int   descIdx      = payload.getSplatSetIdx(j);
     const float dist         = payload.dist[j];
 
     if(localSplatID == PAYLOAD_INVALID_ID || dist >= lightDist)

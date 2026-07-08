@@ -42,16 +42,63 @@ typedef HitPayloadGeneric<kStochasticSort, kWireframe, kDistSize, kIdSize, kSppS
 // Payload structure shared by Particle and Mesh tracing.
 // Array sizes are decoupled so that mesh hit packing (which needs many dist[] slots)
 // does not inflate particle-only arrays (splatSetIdx[], stochastic color/normal).
+//
+// RTX_HAS_PARTICLES encodes the RTX splat descriptor count (clamped): 0 = no particle
+// code, 1 = single splat set (descriptor index 0 implied, splatSetIdx[] and
+// currentSplatSetInstance removed from the payload), 2 = multi-set code path.
+// Access the descriptor index only through the accessors below so the single-set
+// specialization stays confined to this struct.
 struct HitPayloadGeneric<let kStochasticSplat : bool = false, let kWireframe : bool = false,
                          let kDistSize : int, let kIdSize : int = kDistSize, let kSppSize : int = kDistSize>
 {
   // Particle tracing: indexed by [0..SPP-1] in all three arrays.
   // Mesh closest-hit: packs hit data into dist[0..meshSlots-1], id[0]=objId, id[1]=matId.
   int   id[kIdSize];            // Particle: local splat ID | Mesh: objId + matId (2 entries)
+#if RTX_HAS_PARTICLES >= 2
   int   splatSetIdx[kSppSize];  // Particle-only: splat set descriptor index (meshes never use this)
+#endif
   float dist[kDistSize];        // Particle: hit distances | Mesh: packed hit data (11 or 15 slots)
+#if RTX_HAS_PARTICLES >= 2
   uint  currentSplatSetInstance;  // Current splat-set-instance descriptor index (RTX_USE_INSTANCES mode)
+#endif
   uint  rayBounce;                // Bounce index: 0 = primary camera ray, >0 = secondary (reflection/refraction/shadow)
+
+  // Per-sample splat set descriptor index. Single-set mode: constant 0, no storage.
+  int getSplatSetIdx(int i)
+  {
+#if RTX_HAS_PARTICLES >= 2
+    return splatSetIdx[i];
+#else
+    return 0;
+#endif
+  }
+
+  [mutating]
+  void setSplatSetIdx(int i, int value)
+  {
+#if RTX_HAS_PARTICLES >= 2
+    splatSetIdx[i] = value;
+#endif
+  }
+
+  // Splat-set-instance descriptor index for RTX_USE_INSTANCES mode.
+  // Single-set mode: constant 0, no storage.
+  uint getCurrentSplatSetInstance()
+  {
+#if RTX_HAS_PARTICLES >= 2
+    return currentSplatSetInstance;
+#else
+    return 0;
+#endif
+  }
+
+  [mutating]
+  void setCurrentSplatSetInstance(uint value)
+  {
+#if RTX_HAS_PARTICLES >= 2
+    currentSplatSetInstance = value;
+#endif
+  }
 
   // Stochastic any-hit: color and normal are computed in the any-hit shader and stored per sample.
   // Sized by kSppSize (not kDistSize) since mesh hit packing does not use these.

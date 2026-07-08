@@ -1331,13 +1331,15 @@ void GaussianSplatting::processUpdateRequests(bool forceAll)
   // Detect scene composition changes that affect RTX_HAS_MESHES / RTX_HAS_PARTICLES macros.
   // Use getEffectiveGlobalSplatCount(): m_totalGlobalSplatCount is still 0 on the load frame
   // until rebuildGlobalIndexTables runs inside processVramUpdates (after this check).
-  bool hasMeshesNow    = !m_assets.meshes.instances.empty();
-  bool hasParticlesNow = m_assets.splatSets.getEffectiveGlobalSplatCount() > 0;
-  if(hasMeshesNow != m_lastHadMeshes || hasParticlesNow != m_lastHadParticles)
+  // RTX_HAS_PARTICLES is a mode (0 = none, 1 = single set, 2 = multi), so the 1<->2
+  // transitions (second set added/removed, BLAS chunk split appearing) also recompile.
+  bool     hasMeshesNow       = !m_assets.meshes.instances.empty();
+  uint32_t particleSetModeNow = getRtxParticleSetMode();
+  if(hasMeshesNow != m_lastHadMeshes || particleSetModeNow != m_lastParticleSetMode)
   {
     m_requestUpdateShaders = true;
     m_lastHadMeshes        = hasMeshesNow;
-    m_lastHadParticles     = hasParticlesNow;
+    m_lastParticleSetMode  = particleSetModeNow;
   }
 
   const bool createVrdxSorter = usesGpuDistSort() && (prmRaster.sortingMethod == SORTING_GPU_SYNC_RADIX);
@@ -2237,6 +2239,20 @@ void GaussianSplatting::deinitScene()
   m_currentLoadingSplatSetFilename = "";
 }
 
+uint32_t GaussianSplatting::getRtxParticleSetMode() const
+{
+  // See declaration for semantics (0 / 1 / 2). The single-set mode requires a single
+  // RTX descriptor: one instance AND no BLAS chunk splitting. The RTX descriptor array
+  // is built later than this check on load frames (and not at all in raster-only use),
+  // so a conservative fallback to the instance count applies until it exists; the
+  // per-frame composition check in the render loop picks up any change and recompiles.
+  if(m_assets.splatSets.getEffectiveGlobalSplatCount() == 0)
+    return 0;
+  if(m_assets.splatSets.getInstanceCount() > 1)
+    return 2;
+  return (m_assets.splatSets.getRtxDescriptorCount() > 1) ? 2 : 1;
+}
+
 int GaussianSplatting::getPayloadArraySize() const
 {
   bool hasMeshes = !m_assets.meshes.instances.empty();
@@ -2336,7 +2352,10 @@ void GaussianSplatting::updateSlangMacros()
           {"PAYLOAD_ARRAY_SIZE", std::to_string(getPayloadArraySize())},
           {"RTX_QUANTIZE_MESH_PAYLOAD", std::to_string((int)prmRtx.quantizeMeshPayload)},
           {"RTX_HAS_MESHES", std::to_string((int)(!m_assets.meshes.instances.empty()))},
-          {"RTX_HAS_PARTICLES", std::to_string((int)(m_assets.splatSets.getEffectiveGlobalSplatCount() > 0))},
+          // Clamped RTX splat descriptor count: 0 = no particle code, 1 = single splat
+          // set (payload splatSetIdx[] removed, descriptor 0 implied), 2 = multi-set.
+          // All boolean-style #if RTX_HAS_PARTICLES guards keep working (non-zero = true).
+          {"RTX_HAS_PARTICLES", std::to_string(getRtxParticleSetMode())},
           {"RTX_TRACE_STRATEGY", std::to_string(prmRtx.rtxTraceStrategy)},
           {"TRACE_PROFILE", std::to_string((int)prmRtx.traceProfile)},
           {"RTX_USE_INSTANCES", std::to_string((int)prmRtxData.useTlasInstances)},

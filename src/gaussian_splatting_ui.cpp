@@ -4958,14 +4958,16 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
 
         bool stochastic = prmRtx.rtxTraceStrategy == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT;
         bool hasMeshes  = !m_assets.meshes.instances.empty();
+        bool singleSet  = getRtxParticleSetMode() == 1;      // RTX_HAS_PARTICLES == 1
         int  spp        = stochastic ? 1 : prmRtx.particleSamplesPerPass;
         int  distSize   = getPayloadArraySize();             // max(spp, meshSlots)
         int  idSize     = (hasMeshes && spp < 2) ? 2 : spp;  // mesh needs id[0]=objId, id[1]=matId
-        // id[idSize] + splatSetIdx[spp] + dist[distSize] + currentSplatSetInstance + rayBounce
-        int totalDwords = idSize + spp + distSize + 2;
+        int  setIdxSize = singleSet ? 0 : spp;               // single set: splatSetIdx[] removed from payload
+        // id[idSize] + splatSetIdx[setIdxSize] + dist[distSize] + currentSplatSetInstance (multi-set) + rayBounce
+        int totalDwords = idSize + setIdxSize + distSize + (singleSet ? 1 : 2);
         if(stochastic)
           totalDwords += 1 + 7 * spp;  // rngSeed + color[spp](4) + normal[spp](3)
-        PE::Text("Payload array sizes", fmt::format("dist={}, id={}, splatSetIdx={}", distSize, distSize, idSize, spp));
+        PE::Text("Payload array sizes", fmt::format("dist={}, id={}, splatSetIdx={}", distSize, idSize, setIdxSize));
         PE::Text("Payload total size", fmt::format("{} dwords ({} bytes)", totalDwords, totalDwords * 4));
 
         PE::end();

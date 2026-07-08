@@ -350,6 +350,13 @@ private:
 protected:
   int getPayloadArraySize() const;
 
+  // Value of the RTX_HAS_PARTICLES shader macro (clamped RTX splat descriptor count):
+  // 0 = no splat sets (no particle code generated), 1 = single splat set (payload
+  // splatSetIdx[]/currentSplatSetInstance removed, descriptor index 0 implied),
+  // 2 = two or more descriptors (multi-set code path). Clamped at 2 so growing beyond
+  // two sets does not trigger a shader recompile.
+  uint32_t getRtxParticleSetMode() const;
+
   // Number of mesh-task workgroups needed to rasterize splatCount splats (one workgroup per
   // RASTER_MESH_WORKGROUP_SIZE = prmRaster.meshShaderWorkgroupSize splats).
   uint32_t getMeshTaskWorkgroupCount(uint32_t splatCount) const;
@@ -403,8 +410,8 @@ protected:
   // Defer shader rebuild until camera animation completes
   bool m_requestUpdateShadersAfterCameraAnim = false;
   // Track scene composition for RTX_HAS_MESHES / RTX_HAS_PARTICLES macro changes
-  bool m_lastHadMeshes    = false;
-  bool m_lastHadParticles = false;
+  bool     m_lastHadMeshes       = false;
+  uint32_t m_lastParticleSetMode = 0;  // last getRtxParticleSetMode() value (0/1/2)
   // Pipeline-specific optimization: defer RTX AS rebuild when in raster mode
   // When transforms are modified in raster mode, we don't rebuild RTX structures immediately.
   // This flag tracks that RTX needs rebuilding, and will trigger rebuild when switching to RTX pipeline.

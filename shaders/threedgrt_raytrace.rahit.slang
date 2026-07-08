@@ -51,8 +51,8 @@ void main(inout HitPayload payload
   // Per-particle instanced mode: InstanceIndex() is the chunk-local index (0..chunkSize-1).
   // splatBase carries the chunk's base offset within the asset.
   SplatSetDesc* instanceDescs = (assets.splatSetDescriptorsRtx != nullptr) ? assets.splatSetDescriptorsRtx : assets.splatSetDescriptors;
-  const SplatSetDesc splatSetDesc = instanceDescs[payload.currentSplatSetInstance];  // here we use splatSetDesc to dereference an instanceDesc
-  const int descriptorIdx = int(payload.currentSplatSetInstance);
+  const SplatSetDesc splatSetDesc = instanceDescs[payload.getCurrentSplatSetInstance()];  // here we use splatSetDesc to dereference an instanceDesc
+  const int descriptorIdx = int(payload.getCurrentSplatSetInstance());
   const int localSplatId  = int(splatSetDesc.splatBase) + int(InstanceIndex());
 #elif RTX_USE_AABBS || RTX_USE_SPHERES
   // AABB / Sphere mode: PrimitiveIndex() is local to the chunk's BLAS.
@@ -185,9 +185,9 @@ void processHitStochastic(inout HitPayload payload,
           const float randomVal = rand(seed);
           if(randomVal < alpha)
           {
-            payload.id[i]          = localSplatId;
-            payload.splatSetIdx[i] = descriptorIdx;
-            payload.dist[i]        = splatDist;
+            payload.id[i] = localSplatId;
+            payload.setSplatSetIdx(i, descriptorIdx);
+            payload.dist[i] = splatDist;
             payload.color[i].set(float4(particleRad, 1.0));
             payload.normal[i].set(normalWorld);
           }
@@ -217,12 +217,12 @@ void processHitInsertionSort(inout HitPayload payload, float splatDist, int loca
       payload.dist[i] = splatDist;
       splatDist       = distance;
 
-      const int id           = payload.id[i];
-      const int setIdx       = payload.splatSetIdx[i];
-      payload.id[i]          = localSplatId;
-      payload.splatSetIdx[i] = descriptorIdx;
-      localSplatId           = id;
-      descriptorIdx          = setIdx;
+      const int id     = payload.id[i];
+      const int setIdx = payload.getSplatSetIdx(i);
+      payload.id[i]    = localSplatId;
+      payload.setSplatSetIdx(i, descriptorIdx);
+      localSplatId  = id;
+      descriptorIdx = setIdx;
     }
   }
 
