@@ -848,18 +848,18 @@ void traceRayParticlesInsertionSort<let kStochasticPass : bool>(in int          
 #if RTX_PARTICLE_DEPTH == PARTICLE_DEPTH_BILLBOARD
         if(bounce == 0)
         {
-          acceptedHit = threedgsProcessHit<(NEED_SURFACE_INFO != 0)>(frameInfo, hitSplatSetDesc, hitSplatSetModelRayOrigin,
-                                                                     hitSplatSetModelRayDirection,
-                                                                     hitSplatSetDesc.transformRotScaleInverse, splatId,
-                                                                     dist, alpha, particleRadiance, normalWorld);
+          acceptedHit = threedgsProcessHit<(NEED_SURFACE_INFO != 0), true>(frameInfo, hitSplatSetDesc, hitSplatSetModelRayOrigin,
+                                                                           hitSplatSetModelRayDirection,
+                                                                           hitSplatSetDesc.transformRotScaleInverse,
+                                                                           splatId, dist, alpha, particleRadiance, normalWorld);
         }
         else
 #endif
         {
-          acceptedHit = threedgrtProcessHit<(NEED_SURFACE_INFO != 0)>(frameInfo, hitSplatSetDesc, hitSplatSetModelRayOrigin,
-                                                                      hitSplatSetModelRayDirection,
-                                                                      hitSplatSetDesc.transformRotScaleInverse, splatId,
-                                                                      alpha, particleRadiance, normalWorld);
+          acceptedHit = threedgrtProcessHit<(NEED_SURFACE_INFO != 0), true>(frameInfo, hitSplatSetDesc, hitSplatSetModelRayOrigin,
+                                                                            hitSplatSetModelRayDirection,
+                                                                            hitSplatSetDesc.transformRotScaleInverse,
+                                                                            splatId, alpha, particleRadiance, normalWorld);
         }
 
         if(acceptedHit)
@@ -1004,8 +1004,6 @@ void traceRayParticlesStochasticSort(in int           bounce,
     payload.id[i] = PAYLOAD_INVALID_ID;
     payload.setSplatSetIdx(i, PAYLOAD_INVALID_ID);
     payload.dist[i] = PAYLOAD_INF_DISTANCE;
-    payload.color[i].set(float4(0.0f));
-    payload.normal[i].set(float3(0.0f));
   }
 
   const uint2 launchId = DispatchRaysIndex().xy;
@@ -1039,6 +1037,11 @@ void traceRayParticlesStochasticSort(in int           bounce,
   float3 closestPos     = float3(0.0);
   float3 closestUnlit   = float3(0.0);
 
+  // Evaluate the accepted samples: radiance (and normal when surface info is needed)
+  // are re-evaluated here from the sample IDs — same deterministic evaluation the
+  // any-hit ran for the acceptance test — instead of being carried through the payload.
+  SplatSetDesc* rtxDescs = (assets.splatSetDescriptorsRtx != nullptr) ? assets.splatSetDescriptorsRtx : assets.splatSetDescriptors;
+
   [[unroll]]
   for(int i = 0; i < PARTICLES_SPP; ++i)
   {
@@ -1056,13 +1059,41 @@ void traceRayParticlesStochasticSort(in int           bounce,
       continue;
     }
 
-    float4 sampleColor    = payload.color[i].get().value;
-    float3 sampleRadiance = sampleColor.rgb;
-    float3 sampleNormal   = payload.normal[i].get().value;
+    const SplatSetDesc hitSplatSetDesc = rtxDescs[payload.getSplatSetIdx(i)];
+
+    // Same model-space transform convention as the insertion-sort path and the any-hit:
+    // direction intentionally NOT normalized so parametric t equals world distance.
+    const float3 modelRayOrigin = mul(float4(rayOrigin, 1.0), hitSplatSetDesc.transformInverse).xyz;
+    const float3 modelRayDir    = mul(rayDirection, hitSplatSetDesc.transformRotScaleInverse);
+
+    float  sampleAlpha    = 0.0;
+    float3 sampleRadiance = float3(0.0);
+    float3 sampleNormal   = float3(0.0);
+    bool   acceptedHit;
+#if RTX_PARTICLE_DEPTH == PARTICLE_DEPTH_BILLBOARD
+    if(bounce == 0)
+    {
+      acceptedHit = threedgsProcessHit<(NEED_SURFACE_INFO != 0), true>(frameInfo, hitSplatSetDesc, modelRayOrigin, modelRayDir,
+                                                                       hitSplatSetDesc.transformRotScaleInverse, localSplatID,
+                                                                       dist, sampleAlpha, sampleRadiance, sampleNormal);
+    }
+    else
+#endif
+    {
+      acceptedHit = threedgrtProcessHit<(NEED_SURFACE_INFO != 0), true>(frameInfo, hitSplatSetDesc, modelRayOrigin, modelRayDir,
+                                                                        hitSplatSetDesc.transformRotScaleInverse,
+                                                                        localSplatID, sampleAlpha, sampleRadiance, sampleNormal);
+    }
+    // The any-hit accepted this sample through the same deterministic evaluation,
+    // so this should always hold; guard against numeric edge cases anyway.
+    if(!acceptedHit)
+    {
+      continue;
+    }
 
     passRadianceSum += sampleRadiance;
     passNormalSum += sampleNormal;
-    passAlphaSum += sampleColor.a;
+    passAlphaSum += 1.0f;  // accepted samples integrate as opaque (stochastic acceptance already applied alpha)
     passSampleCount++;
     pixel.hitCount++;
 
@@ -1087,8 +1118,6 @@ void traceRayParticlesStochasticSort(in int           bounce,
 
   if(closestDescIdx != PAYLOAD_INVALID_ID)
   {
-    SplatSetDesc* rtxDescs = (assets.splatSetDescriptorsRtx != nullptr) ? assets.splatSetDescriptorsRtx : assets.splatSetDescriptors;
-
     pixel.isoSurfSplatSetId = closestDescIdx;
     pixel.isoSurfSplatId    = closestLocalId;
     pixel.isoSurfDepth      = closestDist;
@@ -1779,10 +1808,6 @@ ShadowInfo traceShadowRayParticle(in FrameInfo     frameInfo,
     payload.id[j] = PAYLOAD_INVALID_ID;
     payload.setSplatSetIdx(j, PAYLOAD_INVALID_ID);
     payload.dist[j] = PAYLOAD_INF_DISTANCE;
-#if RTX_TRACE_STRATEGY == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT
-    payload.color[j].set(float4(0.0f));
-    payload.normal[j].set(float3(0.0f));
-#endif
   }
 
   RayDesc splatShadowRay;
@@ -1799,30 +1824,20 @@ ShadowInfo traceShadowRayParticle(in FrameInfo     frameInfo,
   traceRayAllSplatTlas(splatShadowRay, splatShadowRayFlags, payload);
 
 #if RTX_TRACE_STRATEGY == RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT
-  // Stochastic path: alpha and radiance were already computed in the anyhit shader
-  // and stored in payload.color[]. Use averaging (not integration), consistent with
-  // the stochastic primary ray approach in traceRayParticlesStochasticSort.
-  float shadowAlphaSum    = 0.0f;
-  int   shadowSampleCount = 0;
-
+  // Stochastic path: acceptance already happened in the any-hit with probability
+  // alpha, so every stored sample stands for an opaque occluder — the same semantics
+  // as the primary path where accepted samples integrate as opaque. Any accepted
+  // sample within the light range therefore fully occludes; no re-evaluation needed.
+  // (The previous per-sample alpha averaging read back a constant 1.0 per sample,
+  // which reduces to exactly this.)
   [[unroll]]
   for(int j = 0; j < PARTICLES_SPP; ++j)
   {
-    const int   localSplatID = payload.id[j];
-    const float dist         = payload.dist[j];
-
-    if(localSplatID == PAYLOAD_INVALID_ID || dist >= lightDist)
-      continue;
-
-    float4 precomputed = payload.color[j].get().value;
-    shadowAlphaSum += precomputed.a;
-    shadowSampleCount++;
-  }
-
-  if(shadowSampleCount > 0)
-  {
-    const float avgAlpha = shadowAlphaSum / float(shadowSampleCount);
-    result.transmittance = float3(saturate(1.0 - avgAlpha));
+    if(payload.id[j] != PAYLOAD_INVALID_ID && payload.dist[j] < lightDist)
+    {
+      result.transmittance = float3(0.0);
+      break;
+    }
   }
 #else
   double3 shadowTransmittance = double3(1.0, 1.0, 1.0);
@@ -1853,8 +1868,8 @@ ShadowInfo traceShadowRayParticle(in FrameInfo     frameInfo,
     float3 weight, particleRad;
     float  alpha;
 
-    bool hit = threedgrtProcessHit<false>(frameInfo, shadowHitDesc, splatModelShadowOrigin, splatModelShadowDir,
-                                          shadowHitDesc.transformRotScaleInverse, splatId, alpha, particleRad, dummyNormal);
+    bool hit = threedgrtProcessHit<false, true>(frameInfo, shadowHitDesc, splatModelShadowOrigin, splatModelShadowDir,
+                                                shadowHitDesc.transformRotScaleInverse, splatId, alpha, particleRad, dummyNormal);
     if(hit)
     {
       threedgrtIntegrate(alpha, particleRad, shadowTransmittance, shadowRadiance, weight);

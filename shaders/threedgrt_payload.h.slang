@@ -28,7 +28,7 @@ static const bool kWireframe     = (WIREFRAME != 0);
 // Each payload array is independently sized to minimize register pressure:
 //   kDistSize: max(SPP, meshPayloadSlots) — dist[] holds mesh packed hit data (11 or 15 slots) or particle distances
 //   kIdSize:   max(SPP, 2 if meshes)      — id[] holds SPP particle IDs + mesh needs id[0]=objId, id[1]=matId
-//   kSppSize:  PARTICLES_SPP              — splatSetIdx[] is particle-only; stochastic color/normal are per-sample
+//   kSppSize:  PARTICLES_SPP              — splatSetIdx[] is particle-only (multi-set mode)
 static const int kDistSize = PAYLOAD_ARRAY_SIZE;
 static const int kSppSize  = PARTICLES_SPP;
 #if RTX_HAS_MESHES && PARTICLES_SPP < 2
@@ -41,7 +41,7 @@ typedef HitPayloadGeneric<kStochasticSort, kWireframe, kDistSize, kIdSize, kSppS
 
 // Payload structure shared by Particle and Mesh tracing.
 // Array sizes are decoupled so that mesh hit packing (which needs many dist[] slots)
-// does not inflate particle-only arrays (splatSetIdx[], stochastic color/normal).
+// does not inflate the particle-only splatSetIdx[] array.
 //
 // RTX_HAS_PARTICLES encodes the RTX splat descriptor count (clamped): 0 = no particle
 // code, 1 = single splat set (descriptor index 0 implied, splatSetIdx[] and
@@ -100,11 +100,9 @@ struct HitPayloadGeneric<let kStochasticSplat : bool = false, let kWireframe : b
 #endif
   }
 
-  // Stochastic any-hit: color and normal are computed in the any-hit shader and stored per sample.
-  // Sized by kSppSize (not kDistSize) since mesh hit packing does not use these.
-  Conditional<uint, kStochasticSplat>   rngSeed;
-  Conditional<float4, kStochasticSplat> color[kSppSize];
-  Conditional<float3, kStochasticSplat> normal[kSppSize];
+  // Stochastic any-hit: per-ray RNG seed for the acceptance test. Radiance and normal
+  // of accepted samples are re-evaluated in the raygen (not carried in the payload).
+  Conditional<uint, kStochasticSplat> rngSeed;
 
   Conditional<float3, kWireframe> differentialX;
   Conditional<float3, kWireframe> differentialY;

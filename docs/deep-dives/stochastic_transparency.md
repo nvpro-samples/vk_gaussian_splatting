@@ -64,17 +64,17 @@ The ray tracing or a hybrid pipeline must be active (in the second case it only 
 
 This strategy (`RTX_TRACE_STRATEGY_STOCHASTIC_ANYHIT`, defined in [shaders/shaderio.h]({{ source_base }}/shaders/shaderio.h){:target="_blank"}) adapts the stochastic transparency concept from [Section 1](#1-rasterization-stochastic-splat-kheradmand2025) directly into the any-hit shader, replacing the bubble-sort hit insertion with Monte Carlo sample picking. The key difference from the baseline any-hit pipeline ([Section 2](#2-ray-tracing-deterministic-termination-baseline)) is that **sorting is entirely eliminated**: instead of collecting and sorting multiple candidate hits per pass, each hit is immediately evaluated and stochastically accepted or rejected in the any-hit stage. This reduces the ray generation shader to a **single `traceRay` call per pixel per frame** (with `PARTICLES_SPP = 1`), producing one opaque sample whose noisy results are converged by temporal accumulation — exactly as for stochastic rasterization.
 
-**Any-hit shader** ([shaders/threedgrt_raytrace.rahit.slang]({{ source_base }}/shaders/threedgrt_raytrace.rahit.slang){:target="_blank"}): Unlike the baseline path where the any-hit shader only performs insertion sort and defers particle evaluation to the ray generation shader, the stochastic any-hit shader must evaluate the full particle response (radiance and opacity) on the spot via `threedgrtProcessHit`. For each candidate intersection closer than the current payload slot, a per-hit random number is drawn and compared against the evaluated opacity `alpha`. If accepted (`randomVal < alpha`), the hit replaces the payload entry with its precomputed color and normal; otherwise the hit is discarded. The explicit depth comparison (`splatDist < payload.dist[i]`) serves as the analog of the hardware depth test used in the rasterization path, ensuring only the closest accepted sample survives.
+**Any-hit shader** ([shaders/threedgrt_raytrace.rahit.slang]({{ source_base }}/shaders/threedgrt_raytrace.rahit.slang){:target="_blank"}): Unlike the baseline path where the any-hit shader only performs insertion sort and defers particle evaluation to the ray generation shader, the stochastic any-hit shader must evaluate the particle **opacity** on the spot via `threedgrtProcessHit<false, false>` (alpha only — the radiance SH fetch and the normal are skipped). For each candidate intersection closer than the current payload slot, a per-hit random number is drawn and compared against the evaluated opacity `alpha`. If accepted (`randomVal < alpha`), the hit replaces the payload entry (splat id, splat set index, distance); otherwise the hit is discarded. The explicit depth comparison (`splatDist < payload.dist[i]`) serves as the analog of the hardware depth test used in the rasterization path, ensuring only the closest accepted sample survives.
 
 The following excerpt from [threedgrt_raytrace.rahit.slang]({{ source_base }}/shaders/threedgrt_raytrace.rahit.slang){:target="_blank"} shows the Monte Carlo sample picking (simplified):
 
 ``` c
-// Evaluate particle opacity and radiance directly in the any-hit shader
+// Evaluate particle opacity (alpha only) directly in the any-hit shader
 float      alpha = 0.0;
-float3     particleRad;
-float3     normalWorld;
-const bool acceptedHit = threedgrtProcessHit<true>(..., splatId, splatDist,
-                                                  alpha, particleRad, normalWorld);
+float3     particleRad;   // unused: kRadiance = false
+float3     normalWorld;   // unused: kNormals = false
+const bool acceptedHit = threedgrtProcessHit<false, false>(..., splatId, splatDist,
+                                                           alpha, particleRad, normalWorld);
 if(acceptedHit)
 {
   [unroll]
@@ -83,23 +83,22 @@ if(acceptedHit)
     if(splatDist < payload.dist[i])
     {
       uint seed       = payload.rngSeed.get().value;
-      seed            = xxhash32(uint3(seed, uint(globalSplatId) ^ asuint(splatDist), uint(i)));
+      seed            = xxhash32(uint3(seed, uint(descriptorIdx) ^ uint(localSplatId) ^ asuint(splatDist), uint(i)));
       const float randomVal = rand(seed);
       if(randomVal < alpha)
       {
-        payload.id[i]   = globalSplatId;
+        payload.id[i]   = localSplatId;
+        payload.setSplatSetIdx(i, descriptorIdx);
         payload.dist[i] = splatDist;
-        payload.color[i].set(float4(particleRad, 1.0));
-        payload.normal[i].set(normalWorld);
       }
     }
   }
 }
 ```
 
-Because the particle response is now computed in the any-hit shader, the payload is extended with `color`, `normal`, and an `rngSeed` field (see [shaders/threedgrt_payload.h.slang]({{ source_base }}/shaders/threedgrt_payload.h.slang){:target="_blank"}).
+The payload only carries the sample identity (id, splat set index, distance) plus an `rngSeed` field for the acceptance test (see [shaders/threedgrt_payload.h.slang]({{ source_base }}/shaders/threedgrt_payload.h.slang){:target="_blank"}). The radiance and normal of the surviving sample are **re-evaluated in the ray generation shader** — the same deterministic evaluation the any-hit ran for the acceptance test — so they are computed once per ray instead of once per candidate hit, and the payload stays small.
 
-**Ray generation shader** ([shaders/threedgrt_raytrace.rgen.slang]({{ source_base }}/shaders/threedgrt_raytrace.rgen.slang){:target="_blank"}): The `traceRayParticlesStochasticSort` function initializes the payload with a per-pixel, per-frame RNG seed and issues a **single** `traceRayAllSplatTlas` call per bounce — no multi-pass loop is needed. After the trace, it reads back the (at most one) accepted opaque sample from the payload, and updates the pixel's radiance and transmittance:
+**Ray generation shader** ([shaders/threedgrt_raytrace.rgen.slang]({{ source_base }}/shaders/threedgrt_raytrace.rgen.slang){:target="_blank"}): The `traceRayParticlesStochasticSort` function initializes the payload with a per-pixel, per-frame RNG seed and issues a **single** `traceRayAllSplatTlas` call per bounce — no multi-pass loop is needed. After the trace, it re-evaluates the (at most one) accepted sample with `threedgrtProcessHit` / `threedgsProcessHit` (normal only when surface info is needed for lighting, DLSS or DoF), integrates it as opaque, and updates the pixel's radiance and transmittance:
 
 Since the method produces a single sample per pixel per frame, samples are accumulated **over time** by the post-processing accumulation shader, using the same temporal accumulation path as stochastic rasterization ([Section 1](#1-rasterization-stochastic-splat-kheradmand2025)). Accumulating enough frames converges to results identical to the full sorting approach.
 

@@ -124,8 +124,10 @@ float particleRayDistance(in float3 particleRayOrigin, in float3 particleRayDire
 
 #define USE_MAX_DENSITY_PLANE_NORMAL (NORMAL_METHOD == NORMAL_METHOD_MAX_DENSITY_PLANE)
 
-// compute alpha + radiance, and optionally normal, for the particle
-bool threedgrtProcessHit<let kNormals : bool>(in FrameInfo    frameInfo,
+// compute alpha, and optionally radiance (SH fetch) and normal, for the particle.
+// kRadiance = false skips the SH radiance fetch: used by the stochastic any-hit
+// acceptance test and shadow rays, where only alpha is needed.
+bool threedgrtProcessHit<let kNormals : bool, let kRadiance : bool>(in FrameInfo    frameInfo,
                                              in SplatSetDesc splatSetDesc,
                                              in float3       modelRayOrigin,
                                              in float3       modelRayDirection,
@@ -167,16 +169,19 @@ bool threedgrtProcessHit<let kNormals : bool>(in FrameInfo    frameInfo,
 #if DISABLE_OPACITY_GAUSSIAN
     alpha = 1.0;
 #endif
-    // fetch radiance from SH coefs > degree 0
-    const float3 vectorToParticleCenter = normalize(particle.position - modelRayOrigin);
+    if(kRadiance)
+    {
+      // fetch radiance from SH coefs > degree 0
+      const float3 vectorToParticleCenter = normalize(particle.position - modelRayOrigin);
 #if SHOW_SH_ONLY == 1
-    const float3 grad = float3(0.5) + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
+      const float3 grad = float3(0.5) + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
 #else
-    const float3 grad =
-        particle.color.xyz + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
+      const float3 grad =
+          particle.color.xyz + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
 #endif
 
-    particleRad = grad;
+      particleRad = grad;
+    }
 
     if(kNormals)
     {
@@ -205,7 +210,7 @@ bool threedgrtProcessHit<let kNormals : bool>(in FrameInfo    frameInfo,
 // This replicates the raster pipeline's alpha model: project the 3D covariance to 2D
 // screen space via the Jacobian approximation, then evaluate the Gaussian at the
 // ray-billboard intersection point using the conic (inverse 2D covariance).
-bool threedgsProcessHit<let kNormals : bool>(in FrameInfo    frameInfo,
+bool threedgsProcessHit<let kNormals : bool, let kRadiance : bool>(in FrameInfo    frameInfo,
                                              in SplatSetDesc splatSetDesc,
                                              in float3       modelRayOrigin,
                                              in float3       modelRayDirection,
@@ -292,15 +297,18 @@ bool threedgsProcessHit<let kNormals : bool>(in FrameInfo    frameInfo,
 #if DISABLE_OPACITY_GAUSSIAN
     alpha = 1.0;
 #endif
-    const float3 vectorToParticleCenter = normalize(particle.position - modelRayOrigin);
+    if(kRadiance)
+    {
+      const float3 vectorToParticleCenter = normalize(particle.position - modelRayOrigin);
 #if SHOW_SH_ONLY == 1
-    const float3 grad = float3(0.5) + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
+      const float3 grad = float3(0.5) + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
 #else
-    const float3 grad =
-        particle.color.xyz + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
+      const float3 grad =
+          particle.color.xyz + fetchViewDependentRadiance(splatSetDesc, frameInfo.shDegree, splatId, vectorToParticleCenter);
 #endif
 
-    particleRad = grad;
+      particleRad = grad;
+    }
 
     if(kNormals)
     {

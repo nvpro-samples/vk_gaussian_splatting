@@ -153,6 +153,10 @@ void processHitStochastic(inout HitPayload payload,
   if(needFetch)
 #endif  // if single sample we already did test in the caller
   {
+    // Alpha-only evaluation (kRadiance = false): the acceptance test below only needs
+    // alpha. Radiance and normal are re-evaluated in the raygen for the (at most SPP)
+    // samples that survive, instead of being computed per candidate hit and carried
+    // through the payload.
     float  alpha = 0.0;
     float3 particleRad;
     float3 normalWorld;
@@ -160,14 +164,14 @@ void processHitStochastic(inout HitPayload payload,
 #if RTX_PARTICLE_DEPTH == PARTICLE_DEPTH_BILLBOARD
     if(payload.rayBounce == 0)
     {
-      acceptedHit = threedgsProcessHit<true>(frameInfo, splatSetDesc, modelRayOrigin, modelRayDir, splatSetDesc.transformRotScaleInverse,
-                                             localSplatId, splatDist, alpha, particleRad, normalWorld);
+      acceptedHit = threedgsProcessHit<false, false>(frameInfo, splatSetDesc, modelRayOrigin, modelRayDir, splatSetDesc.transformRotScaleInverse,
+                                                     localSplatId, splatDist, alpha, particleRad, normalWorld);
     }
     else
 #endif
     {
-      acceptedHit = threedgrtProcessHit<true>(frameInfo, splatSetDesc, modelRayOrigin, modelRayDir,
-                                              splatSetDesc.transformRotScaleInverse, localSplatId, alpha, particleRad, normalWorld);
+      acceptedHit = threedgrtProcessHit<false, false>(frameInfo, splatSetDesc, modelRayOrigin, modelRayDir,
+                                                      splatSetDesc.transformRotScaleInverse, localSplatId, alpha, particleRad, normalWorld);
     }
 
     if(acceptedHit)
@@ -188,8 +192,6 @@ void processHitStochastic(inout HitPayload payload,
             payload.id[i] = localSplatId;
             payload.setSplatSetIdx(i, descriptorIdx);
             payload.dist[i] = splatDist;
-            payload.color[i].set(float4(particleRad, 1.0));
-            payload.normal[i].set(normalWorld);
           }
         }
       }

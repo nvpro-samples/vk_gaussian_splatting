@@ -5,6 +5,7 @@
 ### Ray tracing — particles & acceleration
 
 - **Single-splat-set payload reduction**: `RTX_HAS_PARTICLES` now encodes the clamped RTX splat descriptor count (0 = no particle code, 1 = single set, 2 = multi-set). With a single splat set (one instance, no BLAS chunk split), the per-sample `splatSetIdx[]` array and `currentSplatSetInstance` are removed from the ray payload (descriptor index 0 implied), reducing payload size by `PARTICLES_SPP + 1` dwords and lowering register pressure across `TraceRay()`. Shader recompilation triggers automatically when the mode changes (e.g. a second set is added).
+- **Stochastic any-hit payload/ALU reduction**: the any-hit now evaluates opacity only (`threedgrtProcessHit` gained a `kRadiance` template flag); the SH radiance fetch and the normal (surface-info gated, previously always computed) run once per ray in the raygen for the surviving sample instead of once per candidate hit. The per-sample `color[]`/`normal[]` payload fields are removed (7 dwords), and the stochastic shadow path simplifies to binary occlusion (semantically identical to the previous constant-alpha averaging).
 
 ## Version 2026.2
 

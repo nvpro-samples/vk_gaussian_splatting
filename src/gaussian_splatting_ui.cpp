@@ -4971,7 +4971,7 @@ void GaussianSplattingUI::guiDrawRendererStatisticsWindow()
         // id[idSize] + splatSetIdx[setIdxSize] + dist[distSize] + currentSplatSetInstance (multi-set) + rayBounce
         int totalDwords = idSize + setIdxSize + distSize + (singleSet ? 1 : 2);
         if(stochastic)
-          totalDwords += 1 + 7 * spp;  // rngSeed + color[spp](4) + normal[spp](3)
+          totalDwords += 1;  // rngSeed (accepted-sample radiance/normal are re-evaluated in raygen)
         PE::Text("Payload array sizes", fmt::format("dist={}, id={}, splatSetIdx={}", distSize, idSize, setIdxSize));
         PE::Text("Payload total size", fmt::format("{} dwords ({} bytes)", totalDwords, totalDwords * 4));
 
