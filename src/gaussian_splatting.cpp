@@ -4097,6 +4097,14 @@ std::vector<BufferDumpInfo> GaussianSplatting::getAllDumpableBuffers() const
   std::vector<BufferDumpInfo> buffers;
   const VkExtent2D            gBufSize = m_gBuffers.getSize();
 
+  // G-buffers are created lazily on the first onResize(). If --saveImage is
+  // issued before any frame is rendered (e.g. as a bare command-line argument
+  // rather than inside a benchmark SEQUENCE), the color images do not exist yet
+  // and getColorImage() would dereference an empty backing store. Bail out with
+  // an empty list so callers no-op instead of crashing.
+  if(gBufSize.width == 0 || gBufSize.height == 0)
+    return buffers;
+
   // Main color buffer (always)
   buffers.push_back({m_gBuffers.getColorImage(COLOR_MAIN), prmRender.colorFormat, gBufSize, "_main"});
 
