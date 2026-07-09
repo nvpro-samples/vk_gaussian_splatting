@@ -571,7 +571,7 @@ void GaussianSplattingUI::guiDrawSummaryOverlay(ImVec2 imagePos, ImVec2 imageSiz
   {
     float       progress = 0.0f;
     std::string buf      = "1/1";
-    if(!m_dlss.isEnabled() && prmRtx.temporalSampling)
+    if(!isDlssEnabled() && prmRtx.temporalSampling)
     {
       int displayFrame = std::max(1, prmFrame.frameSampleId + 1);
       progress         = (float)displayFrame / (float)prmFrame.frameSampleMax;
@@ -1383,7 +1383,7 @@ void GaussianSplattingUI::onUIMenu()
     ImGui::BeginDisabled(!isRtxPipelineActive());
     // visualization mode selector
     auto visuMenu = GUI_VISUALIZE;
-    if(m_dlss.isEnabled())
+    if(isDlssEnabled())
       visuMenu = GUI_VISUALIZE_DLSS_ON;
 
     static constexpr const char* visualizeTooltip =
@@ -3418,7 +3418,7 @@ void GaussianSplattingUI::guiDrawRendererProperties()
       PE::begin("## Visualization", ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchSame);
 
       auto visuMenu = GUI_VISUALIZE;
-      if(m_dlss.isEnabled())
+      if(isDlssEnabled())
         visuMenu = GUI_VISUALIZE_DLSS_ON;
 
       ImGui::BeginDisabled(!isRtxPipelineActive());
@@ -5013,7 +5013,7 @@ void GaussianSplattingUI::guiDrawFooterBar()
       {
         float       progress = 0.0f;
         std::string buf      = "1/1";
-        if(!m_dlss.isEnabled() && prmRtx.temporalSampling)
+        if(!isDlssEnabled() && prmRtx.temporalSampling)
         {
           int displayFrame = std::max(1, prmFrame.frameSampleId + 1);  // 1-based for display
           progress         = (float)displayFrame / (float)prmFrame.frameSampleMax;

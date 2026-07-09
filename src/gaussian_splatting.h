@@ -207,6 +207,17 @@ protected:
     return (prmSelectedPipeline == PIPELINE_RTX || prmSelectedPipeline == PIPELINE_HYBRID || prmSelectedPipeline == PIPELINE_HYBRID_3DGUT);
   }
 
+  // DLSS enable state that is safe to query even when built without USE_DLSS
+  // (m_dlss only exists under USE_DLSS). Lets non-guarded call sites stay simple.
+  inline bool isDlssEnabled() const
+  {
+#if defined(USE_DLSS)
+    return m_dlss.isEnabled();
+#else
+    return false;
+#endif
+  }
+
   // Check if auto-focus is supported in current pipeline
   // Requires ray tracing for distance feedback (pure 3DGRT or hybrid 3DGUT+3DGRT)
   inline bool supportsAutoFocus() const
