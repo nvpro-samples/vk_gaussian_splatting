@@ -49,6 +49,10 @@ set_property(TARGET spz PROPERTY FOLDER "ThirdParty")
 # Source files for this project
 #
 file(GLOB SOURCE_FILES src/*.*)
+# DLSS sources (src/dlss_*.cpp/.hpp) require the NVIDIA NGX SDK and are added
+# explicitly in the USE_DLSS block below. Exclude them from the glob so the
+# project builds with -DUSE_DLSS=OFF on platforms without NGX (e.g. AMD/RADV).
+list(FILTER SOURCE_FILES EXCLUDE REGEX "/dlss_")
 file(GLOB SHADER_FILES shaders/*.slang shaders/*.h)
 file(GLOB EXTERN_FILES 3rdparty/miniply/*.*)
 
