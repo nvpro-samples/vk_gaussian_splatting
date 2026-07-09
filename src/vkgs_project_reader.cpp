@@ -122,9 +122,16 @@ static void loadMaterialFromJson(Material& mat, const json& matItem, int fileVer
 //--------------------------------------------------------------------------------------------------
 // Helper function to convert relative path to absolute
 //
+// Projects authored on Windows store asset paths with backslash separators
+// (e.g. "data\\scene\\cloud.ply"). On POSIX, std::filesystem treats '\\' as a
+// regular filename character, so such a path fails to resolve and the asset
+// loads empty. Normalize to '/' first; '/' is accepted on Windows too, so this
+// keeps .vkgs projects portable across platforms.
 static std::filesystem::path makeAbsolutePath(const std::filesystem::path& base, const std::string& relativePath)
 {
-  return std::filesystem::absolute(base / relativePath);
+  std::string normalized = relativePath;
+  std::replace(normalized.begin(), normalized.end(), '\\', '/');
+  return std::filesystem::absolute(base / normalized);
 }
 
 //--------------------------------------------------------------------------------------------------
