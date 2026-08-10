@@ -5686,6 +5686,9 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
         LOGE("Error: unable to open project file %s\n", path.c_str());
         prmScene.projectToLoadFilename = "";
         prmScene.projectLoadPorcelain  = false;
+        // onAttach may have skipped the initial compile because a project was queued; arm it
+        // now so a failed load still renders the (empty) scene instead of a black viewport.
+        m_requestUpdateShaders = true;
         return false;
       }
 
@@ -5698,6 +5701,8 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
         LOGE("Error: invalid project file %s\n", path.c_str());
         prmScene.projectToLoadFilename = "";
         prmScene.projectLoadPorcelain  = false;
+        // See note above: arm the compile so a failed load isn't a black viewport.
+        m_requestUpdateShaders = true;
         return false;
       }
       i.close();
@@ -5729,6 +5734,9 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
   {
     prmScene.projectToLoadFilename = "";
     prmScene.projectLoadPorcelain  = false;
+    // reset() (pass 1) already armed the compile; keep it armed defensively so any
+    // project-load failure guarantees a shader build (never a black viewport).
+    m_requestUpdateShaders = true;
     return false;
   }
 
