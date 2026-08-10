@@ -418,6 +418,10 @@ protected:
 
   // Trigger a rebuild of the shaders and pipelines at next frame
   bool m_requestUpdateShaders = false;
+  // Teardown-only guard (set in onDetach): skips the reset() shader recompile of the
+  // emptied scene right before deinitShaders() destroys the modules. Must stay false during
+  // runtime reset()/project-switch so those still recompile.
+  bool m_isShuttingDown = false;
   // Defer shader rebuild until camera animation completes
   bool m_requestUpdateShadersAfterCameraAnim = false;
   // Track scene composition for RTX_HAS_MESHES / RTX_HAS_PARTICLES macro changes
