@@ -243,7 +243,7 @@
     "splatSets": [
         {
             "id": 0,
-            "path": "data\\teleportour\\20K-Photo-103Mspats-4x2KM-Andrii_Shramko_Poland-JG.ply",
+            "path": "data/teleportour/20K-Photo-103Mspats-4x2KM-Andrii_Shramko_Poland-JG.ply",
             "rgbaFormat": 2,
             "shFormat": 2,
             "storage": 0

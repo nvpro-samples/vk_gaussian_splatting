@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Projects & assets
+
+- **Portable asset paths in project files** (project file version 8): splat set, mesh, and HDR environment paths are now stored UTF-8 encoded with forward slashes, relative to the project file when possible and absolute when the resource lives on a different drive or network share. Projects saved on Windows previously stored backslashes, which made them fail to load on Linux — including the shipped sample projects as soon as they were re-saved. Projects up to version 7 are still read, with their native separators converted on load. Also fixes relative paths being emitted as a nonsensical `..` chain when the asset was on a different drive than the project.
+
 ### Ray tracing — particles & acceleration
 
 - **Single-splat-set payload reduction**: `RTX_HAS_PARTICLES` now encodes the clamped RTX splat descriptor count (0 = no particle code, 1 = single set, 2 = multi-set). With a single splat set (one instance, no BLAS chunk split), the per-sample `splatSetIdx[]` array and `currentSplatSetInstance` are removed from the ray payload (descriptor index 0 implied), reducing payload size by `PARTICLES_SPP + 1` dwords and lowering register pressure across `TraceRay()`. Shader recompilation triggers automatically when the mode changes (e.g. a second set is added).

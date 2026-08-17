@@ -119,12 +119,16 @@ static void loadMaterialFromJson(Material& mat, const json& matItem, int fileVer
   }
 }
 
+// First project file version storing asset paths as UTF-8 with forward slashes.
+// Older files may use native Windows separators, which must be converted on read.
+constexpr int PORTABLE_PATHS_FILE_VERSION = 8;
+
 //--------------------------------------------------------------------------------------------------
-// Helper function to convert relative path to absolute
+// Helper function to resolve a stored asset path (relative to the project file, or absolute)
 //
-static std::filesystem::path makeAbsolutePath(const std::filesystem::path& base, const std::string& relativePath)
+static std::filesystem::path makeAbsolutePath(const std::filesystem::path& base, const std::string& storedPath, int fileVersion)
 {
-  return std::filesystem::absolute(base / relativePath);
+  return fromPortablePath(base, storedPath, fileVersion < PORTABLE_PATHS_FILE_VERSION);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -149,7 +153,7 @@ bool VkgsProjectReader::loadProject(const json& data, const std::string& path, G
     loadMeshes(data, fileVersion, path, ui);
     loadCameras(data, ui);
     loadLights(data, fileVersion, ui);
-    loadEnvironment(data, path, ui);
+    loadEnvironment(data, fileVersion, path, ui);
     loadSettings(data, ui);
     loadTonemapping(data, ui);
 
@@ -318,7 +322,7 @@ void VkgsProjectReader::loadSplatAssets(const json& data, int fileVersion, std::
 
     // Create pre-configured splat set
     auto splatSet  = std::make_shared<SplatSetVk>();
-    splatSet->path = makeAbsolutePath(prmScene.projectToLoadFilename.parent_path(), relPath).string();
+    splatSet->path = makeAbsolutePath(prmScene.projectToLoadFilename.parent_path(), relPath, fileVersion).string();
 
     // Version 5+: per-splat-set storage, format, and name
     if(fileVersion >= 5)
@@ -480,7 +484,7 @@ void VkgsProjectReader::loadSplatSetsAndInstances(const json& data, int fileVers
 
       // Create request with pre-configured instance
       SceneLoadRequest request;
-      request.path      = makeAbsolutePath(prmScene.projectToLoadFilename.parent_path(), item["path"]);
+      request.path = makeAbsolutePath(prmScene.projectToLoadFilename.parent_path(), item["path"].get<std::string>(), fileVersion);
       request.porcelain = true;      // We do not want UI questions
       request.instance  = instance;  // Pass pre-configured instance
 
@@ -493,6 +497,7 @@ void VkgsProjectReader::loadSplatSetsAndInstances(const json& data, int fileVers
 // Load mesh assets (mesh files)
 //
 void VkgsProjectReader::loadMeshAssets(const json&                             data,
+                                       int                                     fileVersion,
                                        const std::string&                      projectPath,
                                        std::map<int, std::shared_ptr<MeshVk>>& assetIdToMesh,
                                        GaussianSplattingUI*                    ui)
@@ -505,7 +510,7 @@ void VkgsProjectReader::loadMeshAssets(const json&                             d
     int         id      = assetItem["id"].get<int>();
     std::string relPath = assetItem["path"].get<std::string>();
 
-    auto meshPath = makeAbsolutePath(std::filesystem::path(projectPath).parent_path(), relPath);
+    auto meshPath = makeAbsolutePath(std::filesystem::path(projectPath).parent_path(), relPath, fileVersion);
     auto mesh     = ui->m_assets.meshes.loadModel(meshPath.string());
 
     if(mesh)
@@ -606,7 +611,7 @@ void VkgsProjectReader::loadMeshes(const json& data, int fileVersion, const std:
 
     // Load assets and instances using helper functions
     std::map<int, std::shared_ptr<MeshVk>> assetIdToMesh;
-    loadMeshAssets(data, projectPath, assetIdToMesh, ui);
+    loadMeshAssets(data, fileVersion, projectPath, assetIdToMesh, ui);
     loadMeshInstances(data, fileVersion, assetIdToMesh, ui);
 
     ui->m_requestUpdateShaders = true;
@@ -630,7 +635,7 @@ void VkgsProjectReader::loadMeshes(const json& data, int fileVersion, const std:
       if(relPath.empty())
         continue;
 
-      auto meshPath = makeAbsolutePath(std::filesystem::path(projectPath).parent_path(), relPath);
+      auto meshPath = makeAbsolutePath(std::filesystem::path(projectPath).parent_path(), relPath, fileVersion);
       if(!ui->m_assets.meshes.loadModel(meshPath.string()))
       {
         meshId++;
@@ -907,7 +912,7 @@ void VkgsProjectReader::loadLights(const json& data, int fileVersion, GaussianSp
 }
 
 
-void VkgsProjectReader::loadEnvironment(const json& data, const std::string& projectPath, GaussianSplattingUI* ui)
+void VkgsProjectReader::loadEnvironment(const json& data, int fileVersion, const std::string& projectPath, GaussianSplattingUI* ui)
 {
   if(!data.contains("environment"))
     return;
@@ -968,7 +973,7 @@ void VkgsProjectReader::loadEnvironment(const json& data, const std::string& pro
     if(ibl.contains("file") && !ibl["file"].get<std::string>().empty())
     {
       std::filesystem::path projDir = std::filesystem::path(projectPath).parent_path();
-      std::filesystem::path hdrPath = makeAbsolutePath(projDir, ibl["file"].get<std::string>());
+      std::filesystem::path hdrPath = makeAbsolutePath(projDir, ibl["file"].get<std::string>(), fileVersion);
 
       if(std::filesystem::exists(hdrPath) && sky.mode() == shaderio::EnvironmentMode::eHDR)
       {

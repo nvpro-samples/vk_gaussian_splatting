@@ -329,11 +329,11 @@
     "meshAssets": [
         {
             "id": 0,
-            "path": "data\\horse.obj"
+            "path": "data/horse.obj"
         },
         {
             "id": 1,
-            "path": "data\\teapot.obj"
+            "path": "data/teapot.obj"
         }
     ],
     "meshInstances": {
@@ -511,7 +511,7 @@
     "splatSets": [
         {
             "id": 0,
-            "path": "data\\teleportour\\Winter-Garden-view2.ply",
+            "path": "data/teleportour/Winter-Garden-view2.ply",
             "rgbaFormat": 2,
             "shFormat": 2,
             "storage": 0

@@ -18,6 +18,7 @@
 #include "vkgs_project_writer.h"
 #include "gaussian_splatting_ui.h"
 #include "parameters.h"
+#include "utilities.h"
 
 #include <nvutils/file_operations.hpp>
 #include <filesystem>
@@ -33,39 +34,9 @@ namespace vk_gaussian_splatting {
 // Project file format version
 // Version 6: PBR metallic-roughness material (baseColor, metallic, roughness, emissive, transmission, opacity)
 // Version 7: Replace per-material illum with maxBounces; merge lighting modes (direct+indirect -> enabled)
-constexpr int PROJECT_FILE_VERSION = 7;
-
-//--------------------------------------------------------------------------------------------------
-// Helper function to compute relative path from one directory to another
-//
-static fs::path getRelativePath(const fs::path& from, const fs::path& to)
-{
-  fs::path relativePath;
-
-  auto fromIter = from.begin();
-  auto toIter   = to.begin();
-
-  // Find common point
-  while(fromIter != from.end() && toIter != to.end() && (*fromIter) == (*toIter))
-  {
-    ++fromIter;
-    ++toIter;
-  }
-
-  // Add ".." for each remaining part in `from` path
-  for(; fromIter != from.end(); ++fromIter)
-  {
-    relativePath /= "..";
-  }
-
-  // Add remaining part of `to` path
-  for(; toIter != to.end(); ++toIter)
-  {
-    relativePath /= *toIter;
-  }
-
-  return relativePath;
-}
+// Version 8: Asset paths stored UTF-8 with forward slashes (see toPortablePath in utilities.h).
+//            Files up to version 7 may contain native Windows separators and are converted on read.
+constexpr int PROJECT_FILE_VERSION = 8;
 
 //--------------------------------------------------------------------------------------------------
 // Save project to file
@@ -313,8 +284,8 @@ void VkgsProjectWriter::saveSplatSets(json& data, const GaussianSplattingUI* ui,
       continue;
 
     json item;
-    item["id"] = static_cast<int>(splatSet->index);
-    item["path"] = getRelativePath(std::filesystem::path(projectPath).parent_path(), std::filesystem::path(splatSet->path));
+    item["id"]   = static_cast<int>(splatSet->index);
+    item["path"] = toPortablePath(fs::path(projectPath).parent_path(), fs::path(splatSet->path));
     // Note: 'name' removed from SplatSet - now only stored in instances
     item["storage"]    = splatSet->getStorage();
     item["shFormat"]   = splatSet->getShFormat();
@@ -399,7 +370,7 @@ void VkgsProjectWriter::saveMeshes(json& data, const GaussianSplattingUI* ui, co
     const auto& mesh = *uniqueMeshes[i];
     json        item;
     item["id"]   = static_cast<int>(i);
-    item["path"] = getRelativePath(std::filesystem::path(projectPath).parent_path(), mesh.path);
+    item["path"] = toPortablePath(fs::path(projectPath).parent_path(), fs::path(mesh.path));
 
     data["meshAssets"].push_back(item);
   }
@@ -487,7 +458,7 @@ void VkgsProjectWriter::saveEnvironment(json& data, const GaussianSplattingUI* u
   if(!sky.iblFilePath().empty())
   {
     fs::path projDir = fs::path(projectPath).parent_path();
-    ibl["file"]      = getRelativePath(projDir, sky.iblFilePath()).string();
+    ibl["file"]      = toPortablePath(projDir, sky.iblFilePath());
   }
   else
   {

@@ -20,7 +20,9 @@
 #ifndef _UTILITIES_H_
 #define _UTILITIES_H_
 
+#include <algorithm>
 #include <filesystem>
+#include <string>
 #include <fmt/format.h>
 #include <glm/vec3.hpp>
 #include <glm/gtx/transform.hpp>
@@ -67,6 +69,69 @@ inline bool hasExtension(const std::filesystem::path& filePath, std::string ext)
   auto fileExt = filePath.extension().string();
   std::transform(fileExt.begin(), fileExt.end(), fileExt.begin(), ::tolower);
   return fileExt == ext;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Portable path serialization
+//
+// Rules for every path written to a file that may be moved between machines or operating
+// systems (i.e. project files):
+//  - UTF-8 encoded. Never use path::string(), which narrows through the ANSI codepage on
+//    Windows and is lossy for non-ASCII paths.
+//  - forward slashes only. Windows accepts '/' natively, whereas '\' is a legal filename
+//    character on POSIX and can therefore not be recovered as a separator there.
+//  - relative to the project file when both live on the same root, absolute otherwise.
+//    A relative path cannot cross Windows drive letters or UNC shares.
+//
+// Shell-specific spellings (~, $HOME, %VAR%, git-bash /c/Users/...) must be resolved before
+// reaching these helpers; they are never stored.
+//
+
+// UTF-8 string using generic (forward slash) separators. Equivalent to generic_u8string()
+// without the char8_t casts. On POSIX the native format is already the generic one.
+inline std::string pathToPortableUtf8(const std::filesystem::path& path)
+{
+  std::string utf8 = nvutils::utf8FromPath(path);
+#ifdef _WIN32
+  std::replace(utf8.begin(), utf8.end(), '\\', '/');
+#endif
+  return utf8;
+}
+
+// Serializes target relative to base when possible, absolute otherwise.
+inline std::string toPortablePath(const std::filesystem::path& base, const std::filesystem::path& target)
+{
+  if(target.empty())
+    return {};
+
+  const std::filesystem::path absBase   = std::filesystem::absolute(base).lexically_normal();
+  const std::filesystem::path absTarget = std::filesystem::absolute(target).lexically_normal();
+
+  // lexically_relative() emits a nonsensical ".." chain across differing roots (C: vs D:,
+  // UNC shares), so only relativize within a single root and fall back to absolute.
+  if(absBase.root_name() == absTarget.root_name())
+  {
+    const std::filesystem::path relative = absTarget.lexically_relative(absBase);
+    if(!relative.empty())
+      return pathToPortableUtf8(relative);
+  }
+  return pathToPortableUtf8(absTarget);
+}
+
+// Resolves a path read back from a project file; relative entries are resolved against base.
+// legacyNativeSeparators must be set for files written before the portable-path convention
+// (project file version < 8), which may contain Windows backslash separators.
+inline std::filesystem::path fromPortablePath(const std::filesystem::path& base, const std::string& stored, bool legacyNativeSeparators)
+{
+  std::string utf8 = stored;
+  if(legacyNativeSeparators)
+    std::replace(utf8.begin(), utf8.end(), '\\', '/');
+
+  const std::filesystem::path path = nvutils::pathFromUtf8(utf8);
+  if(path.is_absolute())
+    return path.lexically_normal();
+
+  return (std::filesystem::absolute(base) / path).lexically_normal();
 }
 
 inline static std::vector<std::filesystem::path> getResourcesDirs()

@@ -5122,7 +5122,8 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       buf->appendf("[%s][Data]\n", handler->TypeName);
       for(const auto& file : self->m_recentFiles)
       {
-        buf->appendf("File=%s\n", file.string().c_str());
+        // UTF-8, native separators: the .ini is machine-local and never shared across systems
+        buf->appendf("File=%s\n", nvutils::utf8FromPath(file).c_str());
       }
       buf->append("\n");
     };
@@ -5133,7 +5134,7 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       if(strncmp(line, "File=", 5) == 0)
       {
         const char* filePath = line + 5;
-        self->m_recentFiles.push_back(filePath);
+        self->m_recentFiles.push_back(nvutils::pathFromUtf8(filePath));
       }
     };
 
@@ -5153,7 +5154,8 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       buf->appendf("[%s][Data]\n", handler->TypeName);
       for(const auto& file : self->m_recentMeshes)
       {
-        buf->appendf("File=%s\n", file.string().c_str());
+        // UTF-8, native separators: the .ini is machine-local and never shared across systems
+        buf->appendf("File=%s\n", nvutils::utf8FromPath(file).c_str());
       }
       buf->append("\n");
     };
@@ -5163,7 +5165,7 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       if(strncmp(line, "File=", 5) == 0)
       {
         const char* filePath = line + 5;
-        self->m_recentMeshes.push_back(filePath);
+        self->m_recentMeshes.push_back(nvutils::pathFromUtf8(filePath));
       }
     };
 
@@ -5183,7 +5185,8 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       buf->appendf("[%s][Data]\n", handler->TypeName);
       for(const auto& file : self->m_recentProjects)
       {
-        buf->appendf("File=%s\n", file.string().c_str());
+        // UTF-8, native separators: the .ini is machine-local and never shared across systems
+        buf->appendf("File=%s\n", nvutils::utf8FromPath(file).c_str());
       }
       buf->append("\n");
     };
@@ -5194,7 +5197,7 @@ void GaussianSplattingUI::guiRegisterIniFileHandlers()
       if(strncmp(line, "File=", 5) == 0)
       {
         const char* filePath = line + 5;
-        self->m_recentProjects.push_back(filePath);
+        self->m_recentProjects.push_back(nvutils::pathFromUtf8(filePath));
       }
     };
 
@@ -5603,40 +5606,6 @@ void GaussianSplattingUI::guiImportMeshIfNeeded()
 
 namespace fs = std::filesystem;
 
-fs::path getRelativePath(const fs::path& from, const fs::path& to)
-{
-  fs::path relativePath;
-
-  auto fromIter = from.begin();
-  auto toIter   = to.begin();
-
-  // Find common point
-  while(fromIter != from.end() && toIter != to.end() && (*fromIter) == (*toIter))
-  {
-    ++fromIter;
-    ++toIter;
-  }
-
-  // Add ".." for each remaining part in `from` path
-  for(; fromIter != from.end(); ++fromIter)
-  {
-    relativePath /= "..";
-  }
-
-  // Add remaining part of `to` path
-  for(; toIter != to.end(); ++toIter)
-  {
-    relativePath /= *toIter;
-  }
-
-  return relativePath;
-}
-
-std::filesystem::path makeAbsolutePath(const std::filesystem::path& base, const std::string& relativePath)
-{
-  return std::filesystem::absolute(base / relativePath);
-}
-
 // This method is multi pass
 bool GaussianSplattingUI::loadProjectIfNeeded()
 {
@@ -5744,9 +5713,6 @@ bool GaussianSplattingUI::loadProjectIfNeeded()
   prmScene.projectLoadPorcelain  = false;
   return true;
 }
-
-// Note: PROJECT_FILE_VERSION moved to vkgs_project_writer.cpp
-// Note: Helper functions (getRelativePath, makeAbsolutePath, LOAD macros) moved to vkgs_project_reader.cpp
 
 bool GaussianSplattingUI::saveProject(std::string path)
 {

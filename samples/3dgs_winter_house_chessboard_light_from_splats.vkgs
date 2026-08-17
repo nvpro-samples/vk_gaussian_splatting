@@ -181,15 +181,15 @@
     "meshAssets": [
         {
             "id": 0,
-            "path": "data\\glTF-Sample-Assets\\Models\\Corset\\glTF\\Corset.gltf"
+            "path": "data/glTF-Sample-Assets/Models/Corset/glTF/Corset.gltf"
         },
         {
             "id": 1,
-            "path": "data\\glTF-Sample-Assets\\Models\\DiffuseTransmissionTeacup\\glTF\\DiffuseTransmissionTeacup.gltf"
+            "path": "data/glTF-Sample-Assets/Models/DiffuseTransmissionTeacup/glTF/DiffuseTransmissionTeacup.gltf"
         },
         {
             "id": 2,
-            "path": "data\\glTF-Sample-Assets\\Models\\ABeautifulGame\\glTF\\ABeautifulGame.gltf"
+            "path": "data/glTF-Sample-Assets/Models/ABeautifulGame/glTF/ABeautifulGame.gltf"
         }
     ],
     "meshInstances": {
@@ -771,7 +771,7 @@
     "splatSets": [
         {
             "id": 0,
-            "path": "data\\teleportour\\Winter-Garden-view2.ply",
+            "path": "data/teleportour/Winter-Garden-view2.ply",
             "rgbaFormat": 2,
             "shFormat": 2,
             "storage": 0
