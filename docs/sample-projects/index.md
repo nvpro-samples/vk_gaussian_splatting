@@ -56,24 +56,24 @@ Once the assets are downloaded, open any `.vkgs` file using one of these methods
 
     [Learn more](sample-project-city-sky-env.md)
 
--   ![Winter House Chess](../images/winterhouse-splats-as-env-lights.jpg)
+-   ![Winter Garden Chess](../images/wintergarden-splats-as-env-lights.jpg)
 
-    __Winter House - Splat Set as Light Source__
+    __Winter Garden - Splat Set as Light Source__
 
     ---
 
-    Hybrid rendering with glTF mesh models (Corset, Teacup, Chess set) lit by the splat radiance field.
+    Hybrid rendering with glTF mesh models (Teacup, Chess set) lit by the splat radiance field.
 
-    [Learn more](sample-project-winter-house-chess-splats-as-env.md)
+    [Learn more](sample-project-winter-garden-chess-splats-as-env.md)
 
--   ![Winter House Stove](../images/winterhouse-point-lights.jpg)
+-   ![Winter Garden Stove](../images/wintergarden-point-lights.jpg)
 
-    __Winter House - Point Lights and Shadows__
+    __Winter Garden - Point Lights and Shadows__
 
     ---
 
     RTX ray-traced lighting and shadows on mesh objects (horse, teapot) placed in a winter garden.
 
-    [Learn more](sample-project-winter-house-stove-point-lights.md)
+    [Learn more](sample-project-winter-garden-stove-point-lights.md)
 
 </div>

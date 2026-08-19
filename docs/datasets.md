@@ -25,19 +25,19 @@ Both models by [3ds-scan (Christian Rochner)](https://3ds-scan.de/) and licensed
 
 ### Models from [teleportour.com](https://teleportour.com/)
 
-Thanks to [Andrii Schramko](https://www.linkedin.com/in/andrii-shramko), you can download:
+Thanks to [Andrii Shramko](https://www.linkedin.com/in/andrii-shramko), you can download:
 
 * the [106M Particles City](https://drive.google.com/file/d/1_Gvh6eRjUY1RU4-GCzROFHUeoAj7G-xT/view?usp=drive_link) ([license](https://drive.google.com/file/d/12TLqEsp-LZBkg8YwddpwpC3i5e5mFChB/view)) 
-* and the [15.3M Green House](https://drive.google.com/file/d/1UN79ygHHIsM8AHG1FkzI88gnkAG78tNt/view?usp=sharing) ([license](https://drive.google.com/file/d/18dcOb2bqVIwQvod7zXtQ2ZcvtJBrcgeD/view))
+* and the [15.3M Winter Garden](https://drive.google.com/file/d/1UN79ygHHIsM8AHG1FkzI88gnkAG78tNt/view?usp=sharing) ([license](https://drive.google.com/file/d/18dcOb2bqVIwQvod7zXtQ2ZcvtJBrcgeD/view))
 
-Both models by [Andrii Schramko](https://www.linkedin.com/in/andrii-shramko).
+Both models by [Andrii Shramko](https://www.linkedin.com/in/andrii-shramko).
 
 **106M Particles City**:
 
 * **Rasterization** – Recommended pipeline: Mesh shader 3DGS. Requires ~10 GB of VRAM. Activate screen size culling for best render performance.
 * **Ray tracing / Hybrid** – Requires ~42 GB of VRAM (using TLAS instances, AABB+parametric for best quality, and stochastic modes for best performance).
 
-**15.3M Particles Green House**:
+**15.3M Particles Winter Garden**:
 
 * **Rasterization** – Recommended pipeline: Mesh shader 3DGS.
 * **Ray tracing / Hybrid** – Requires ~8 GB of VRAM (using TLAS instances, AABB+parametric for best quality, stochastic modes for best performance).

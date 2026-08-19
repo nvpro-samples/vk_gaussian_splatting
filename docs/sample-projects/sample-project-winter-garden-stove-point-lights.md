@@ -2,16 +2,16 @@
 
 <div><img-comparison-slider>
   <figure slot="first" class="before">
-    <img src="../../images/winterhouse-point-lights-off.jpg" />
+    <img src="../../images/wintergarden-point-lights-off.jpg" />
     <figcaption>Lights Off</figcaption>
   </figure>
   <figure slot="second" class="after">
-    <img src="../../images/winterhouse-point-lights.jpg" />
+    <img src="../../images/wintergarden-point-lights.jpg" />
     <figcaption>Point Lights</figcaption>
   </figure>
 </img-comparison-slider></div>
 
-**File:** `3dgs_winter_house_objects_on_stove_lighting.vkgs`
+**File:** `3dgs_winter_garden_objects_on_stove_lighting.vkgs`
 
 This project places mesh objects on a stove inside a winter garden captured as a Gaussian Splatting radiance field. Point lights with ray-traced shadows illuminate the scene. It demonstrates:
 

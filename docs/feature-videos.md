@@ -1,5 +1,11 @@
 # Feature Videos
 
+## Hybrid Rendering Splat Set as Light Source
+
+<video controls width="100%">
+  <source src="https://developer.download.nvidia.com/ProGraphics/nvpro-samples/vkgs/vkgs_v2026_2_lighting_from_radiance_field.mp4" type="video/mp4">
+</video>
+
 ## Hybrid Rendering Lighting and Shadows
 
 <video controls width="100%">

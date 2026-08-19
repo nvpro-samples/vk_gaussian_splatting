@@ -1,8 +1,8 @@
 # glTF Meshes with PBR Materials Lit by Splat Set Radiance Field
 
-![Winter House — Splat Set as Light Source](../images/winterhouse-splats-as-env-lights.jpg)
+![Winter Garden — Splat Set as Light Source](../images/wintergarden-splats-as-env-lights.jpg)
 
-**File:** `3dgs_winter_house_chessboard_light_from_splats.vkgs`
+**File:** `3dgs_winter_garden_chessboard_light_from_splats.vkgs`
 
 This project places PBR glTF mesh models inside a winter garden captured as a Gaussian Splatting radiance field. The splat set acts as an environment light source, illuminating the mesh objects with the radiance stored in the trained splats. It demonstrates:
 
@@ -27,5 +27,6 @@ This project places PBR glTF mesh models inside a winter garden captured as a Ga
 
 | Type | Source |
 |------|--------|
-| Splat model | Winter-Garden-view2 (teleportour.com, by Andrii Shramko) |
-| Mesh models | Corset, DiffuseTransmissionTeacup, ABeautifulGame (Khronos glTF-Sample-Assets) |
+| Splat model | Winter-Garden-view2 - [Andrii Shramko](https://teleportour.com) |
+| Mesh models | DiffuseTransmissionTeacup, ABeautifulGame - [Khronos glTF-Sample-Assets](https://www.github.com/KhronosGroup/glTF-Sample-Assets) |
+| Mesh models | Astronomical Quintant - [Virtual Museums of Małopolska](https://skfb.ly/oFrVO) |

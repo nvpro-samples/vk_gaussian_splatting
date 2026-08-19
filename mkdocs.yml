@@ -81,8 +81,8 @@ nav:
   - Feature Videos: feature-videos.md
   - Sample Projects:
     - sample-projects/index.md
-    - Winter House - Splats as Env: sample-projects/sample-project-winter-house-chess-splats-as-env.md
-    - Winter House - Point Lights: sample-projects/sample-project-winter-house-stove-point-lights.md
+    - Winter Garden - Splats as Env: sample-projects/sample-project-winter-garden-chess-splats-as-env.md
+    - Winter Garden - Point Lights: sample-projects/sample-project-winter-garden-stove-point-lights.md
     - Large City — Sky Environment: sample-projects/sample-project-city-sky-env.md
   - Download Datasets: datasets.md
   - User Guides:

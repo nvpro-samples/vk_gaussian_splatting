@@ -59,15 +59,15 @@
                 2000.0
             ],
             "ctr": [
-                0.9070472717285156,
-                1.08086359500885,
-                3.8014774322509766
+                3.3799870014190674,
+                0.6747955679893494,
+                6.537588119506836
             ],
             "dofMode": 0,
             "eye": [
-                0.9052770137786865,
-                1.1098464727401733,
-                3.8843834400177
+                3.31811261177063,
+                0.7948882579803467,
+                6.963316440582275
             ],
             "focusDist": 1.2999999523162842,
             "fov": 60.0,
@@ -85,15 +85,15 @@
                 2000.0
             ],
             "ctr": [
-                0.8772869110107422,
-                1.121142029762268,
-                3.142831563949585
+                3.4082255363464355,
+                0.7970013618469238,
+                6.616543292999268
             ],
             "dofMode": 0,
             "eye": [
-                0.8670796751976013,
-                1.1511367559432983,
-                3.291714668273926
+                3.305814504623413,
+                0.8415659070014954,
+                6.646822452545166
             ],
             "focusDist": 1.2999999523162842,
             "fov": 60.0,
@@ -111,15 +111,145 @@
                 2000.0
             ],
             "ctr": [
-                0.8110762238502502,
-                0.8480685353279114,
-                2.8404715061187744
+                3.263188600540161,
+                0.7182546854019165,
+                6.607723236083984
             ],
             "dofMode": 0,
             "eye": [
-                0.10173552483320236,
-                1.004824161529541,
-                2.98714280128479
+                3.154081344604492,
+                1.0675153732299805,
+                7.650809288024902
+            ],
+            "focusDist": 1.2999999523162842,
+            "fov": 60.0,
+            "model": 0,
+            "up": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "aperture": 0.0010000000474974513,
+            "clip": [
+                0.009999999776482582,
+                2000.0
+            ],
+            "ctr": [
+                1.1788041591644287,
+                0.7946342825889587,
+                4.114957332611084
+            ],
+            "dofMode": 0,
+            "eye": [
+                1.2031384706497192,
+                0.9779972434043884,
+                4.5930681228637695
+            ],
+            "focusDist": 1.2999999523162842,
+            "fov": 60.0,
+            "model": 0,
+            "up": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "aperture": 0.0010000000474974513,
+            "clip": [
+                0.009999999776482582,
+                2000.0
+            ],
+            "ctr": [
+                1.0094650983810425,
+                0.8482109904289246,
+                3.870011329650879
+            ],
+            "dofMode": 0,
+            "eye": [
+                0.9900438189506531,
+                0.8774862885475159,
+                3.934720277786255
+            ],
+            "focusDist": 1.2999999523162842,
+            "fov": 60.0,
+            "model": 0,
+            "up": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "aperture": 0.0010000000474974513,
+            "clip": [
+                0.009999999776482582,
+                2000.0
+            ],
+            "ctr": [
+                1.2233810424804688,
+                0.8635430335998535,
+                3.730069398880005
+            ],
+            "dofMode": 0,
+            "eye": [
+                1.203089952468872,
+                0.8941644430160522,
+                3.7420527935028076
+            ],
+            "focusDist": 1.2999999523162842,
+            "fov": 60.0,
+            "model": 0,
+            "up": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "aperture": 0.0010000000474974513,
+            "clip": [
+                0.009999999776482582,
+                2000.0
+            ],
+            "ctr": [
+                1.0965827703475952,
+                0.8079851865768433,
+                3.7500154972076416
+            ],
+            "dofMode": 0,
+            "eye": [
+                1.2930042743682861,
+                0.8931939005851746,
+                3.913102626800537
+            ],
+            "focusDist": 1.2999999523162842,
+            "fov": 60.0,
+            "model": 0,
+            "up": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "aperture": 0.0010000000474974513,
+            "clip": [
+                0.009999999776482582,
+                2000.0
+            ],
+            "ctr": [
+                0.9677889943122864,
+                0.7944514155387878,
+                3.278897285461426
+            ],
+            "dofMode": 0,
+            "eye": [
+                0.55876225233078,
+                0.8743941783905029,
+                3.1651110649108887
             ],
             "focusDist": 1.2999999523162842,
             "fov": 60.0,
@@ -181,61 +311,23 @@
     "meshAssets": [
         {
             "id": 0,
-            "path": "data/glTF-Sample-Assets/Models/Corset/glTF/Corset.gltf"
-        },
-        {
-            "id": 1,
             "path": "data/glTF-Sample-Assets/Models/DiffuseTransmissionTeacup/glTF/DiffuseTransmissionTeacup.gltf"
         },
         {
-            "id": 2,
+            "id": 1,
             "path": "data/glTF-Sample-Assets/Models/ABeautifulGame/glTF/ABeautifulGame.gltf"
+        },
+        {
+            "id": 2,
+            "path": "data/glTF-Sample-Assets/Models/FlightHelmet/glTF/FlightHelmet.gltf"
+        },
+        {
+            "id": 3,
+            "path": "data/astronomical_quintant/scene.gltf"
         }
     ],
     "meshInstances": {
         "items": [
-            {
-                "materials": [
-                    {
-                        "baseColor": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ],
-                        "emissive": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ],
-                        "emissiveStrength": 1.0,
-                        "ior": 1.5,
-                        "maxBounces": 3,
-                        "metallic": 1.0,
-                        "name": "Corset_O",
-                        "opacity": 1.0,
-                        "roughness": 1.0,
-                        "transmission": 0.0
-                    }
-                ],
-                "meshAssetId": 0,
-                "name": "Model 1 - Corset.gltf",
-                "position": [
-                    0.8289541602134705,
-                    0.541475772857666,
-                    3.145087242126465
-                ],
-                "rotation": [
-                    0.0,
-                    -309.7931823730469,
-                    0.0
-                ],
-                "scale": [
-                    11.073199272155762,
-                    11.073199272155762,
-                    11.073199272155762
-                ],
-                "show": true
-            },
             {
                 "materials": [
                     {
@@ -279,7 +371,7 @@
                         "transmission": 0.0
                     }
                 ],
-                "meshAssetId": 1,
+                "meshAssetId": 0,
                 "name": "Model 2 - seTransmissionTeacup.gltf",
                 "position": [
                     3.0878331661224365,
@@ -601,7 +693,7 @@
                         "transmission": 0.0
                     }
                 ],
-                "meshAssetId": 2,
+                "meshAssetId": 1,
                 "name": "Model 7 - ABeautifulGame.gltf",
                 "position": [
                     3.2683804035186768,
@@ -663,7 +755,7 @@
                         "transmission": 0.0
                     }
                 ],
-                "meshAssetId": 1,
+                "meshAssetId": 0,
                 "name": "Model 8 - seTransmissionTeacup.gltf",
                 "position": [
                     3.426388740539551,
@@ -681,9 +773,233 @@
                     0.9720374345779419
                 ],
                 "show": true
+            },
+            {
+                "materials": [
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "HoseMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "RubberWoodMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "GlassPlasticMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "MetalPartsMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "LeatherPartsMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "LensesMat",
+                        "opacity": 1.0,
+                        "roughness": 1.0,
+                        "transmission": 1.0
+                    }
+                ],
+                "meshAssetId": 2,
+                "name": "Model 72 - FlightHelmet.gltf",
+                "position": [
+                    0.8217544555664063,
+                    0.5293792486190796,
+                    3.1559927463531494
+                ],
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": [
+                    0.5950000286102295,
+                    0.5950000286102295,
+                    0.5950000286102295
+                ],
+                "show": true
+            },
+            {
+                "materials": [
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "glass",
+                        "opacity": 0.5775255560874939,
+                        "roughness": 0.0,
+                        "transmission": 0.4224744439125061
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "kwintant_mat",
+                        "opacity": 1.0,
+                        "roughness": 0.49219197034835815,
+                        "transmission": 0.0
+                    },
+                    {
+                        "baseColor": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ],
+                        "emissive": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "emissiveStrength": 1.0,
+                        "ior": 1.5,
+                        "maxBounces": 3,
+                        "metallic": 1.0,
+                        "name": "mirror",
+                        "opacity": 0.49219197034835815,
+                        "roughness": 0.0,
+                        "transmission": 0.0
+                    }
+                ],
+                "meshAssetId": 3,
+                "name": "Model 73 - scene.gltf",
+                "position": [
+                    1.1818205118179321,
+                    0.03743438422679901,
+                    3.7540876865386963
+                ],
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "show": true
             }
         ],
-        "nextNamingNumber": 65
+        "nextNamingNumber": 119
     },
     "renderer": {
         "alphaClamp": 0.9900000095367432,
@@ -699,7 +1015,7 @@
         "dlssMinRadianceThreshold": 0.0,
         "dlssSizeMode": 1,
         "extentProjection": 1,
-        "fireflyClampThreshold": 0.0,
+        "fireflyClampThreshold": 12.5,
         "fragmentBarycentric": false,
         "frustumCulling": 1,
         "ftbSyncMode": 0,
@@ -730,6 +1046,7 @@
         "rtxSecondaryRayOffset": 0.0010000000474974513,
         "rtxTraceStrategy": 2,
         "shadowsMode": 2,
+        "shortenRay": true,
         "showShOnly": false,
         "sizeCulling": 0,
         "sizeCullingMinPixels": 1.0,
@@ -755,10 +1072,10 @@
             "autoPlay": false,
             "mode": 0,
             "speed": 3.0,
-            "transition": 5.0
+            "transition": 7.0
         },
         "summaryOverlay": {
-            "show": false
+            "show": true
         },
         "transformHelpers": {
             "show": false,
@@ -792,7 +1109,7 @@
                     0.9998999834060669,
                     0.9998999834060669
                 ],
-                "emissiveStrength": 9.199999809265137,
+                "emissiveStrength": 9.5,
                 "ior": 1.0,
                 "maxBounces": 0,
                 "metallic": 0.0,
@@ -827,6 +1144,7 @@
         }
     ],
     "splatsGlobals": {
+        "billboardBoundingMode": 0,
         "compressBlas": true,
         "rgbaFormat": 2,
         "shFormat": 2,
@@ -868,5 +1186,5 @@
             1.0
         ]
     },
-    "version": 7
+    "version": 8
 }

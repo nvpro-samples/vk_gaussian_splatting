@@ -60,7 +60,7 @@
 
 - **Save / Save As** projects; renderer settings and tonemapping in project files; project name in title bar.
 - Asset tree: **Settings**, **Recent Meshes**, mesh import modal.
-- **Samples** folder with build script for downloading external assets; new and updated [sample projects](sample-projects/index.md) (large city with sky, chessboard winter house, greenhouse on stove scene, and others).
+- **Samples** folder with build script for downloading external assets; new and updated [sample projects](sample-projects/index.md) (large city with sky, chessboard winter garden, winter garden on stove scene, and others).
 - Mesh asset download moved from CMake to the samples build script.
 
 ### Documentation & CI
@@ -111,7 +111,7 @@
 - UI / UX enhancements (summary overlay, shader feedback and ray hit profile, editing mode)
 - 3D transform and infinite grid visual helpers
 - Runtime image comparison tool with MSE / PSNR / FLIP metrics
-- Added **Winter house** and **Large city** models from <a href="https://teleportour.com/" target="_blank">teleportour.com</a> to [datasets page](datasets.md#models-from-teleportourcom). Thanks to <a href="https://www.linkedin.com/in/andrii-shramko" target="_blank">Andrii Shramko</a>.
+- Added **Winter Garden** and **Large city** models from <a href="https://teleportour.com/" target="_blank">teleportour.com</a> to [datasets page](datasets.md#models-from-teleportourcom). Thanks to <a href="https://www.linkedin.com/in/andrii-shramko" target="_blank">Andrii Shramko</a>.
 
 ## Older Versions
 

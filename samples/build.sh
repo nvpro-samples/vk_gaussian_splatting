@@ -27,7 +27,8 @@ GDRIVE=(
 #                 (use when the zip has no top-level folder)
 #   subfolder   : optional — extract under data/<subfolder>/ instead of data/
 ZIPS=(
-    "http://developer.download.nvidia.com/ProGraphics/nvpro-samples/flowers_1.zip flowers_1"
+    "https://developer.download.nvidia.com/ProGraphics/nvpro-samples/flowers_1.zip flowers_1"
+    "https://developer.download.nvidia.com/ProGraphics/nvpro-samples/vkgs/astronomical_quintant.zip astronomical_quintant"
 )
 
 # ── Google Drive zip downloads (download + extract) ──────────────────────────
@@ -44,7 +45,7 @@ GDRIVE_ZIPS=(
 # ── Git sparse-checkout repos ────────────────────────────────────────────────
 # Entries: "<repo_url> <commit> <dest_folder> <path1,path2,...>"
 GIT_REPOS=(
-    "https://github.com/KhronosGroup/glTF-Sample-Assets.git 5109ab2a499c5a2c784b86e460fa491d52256e25 glTF-Sample-Assets Models/ABeautifulGame,Models/Corset,Models/FlightHelmet,Models/DiffuseTransmissionTeacup"
+    "https://github.com/KhronosGroup/glTF-Sample-Assets.git 5109ab2a499c5a2c784b86e460fa491d52256e25 glTF-Sample-Assets Models/ABeautifulGame,Models/FlightHelmet,Models/DiffuseTransmissionTeacup"
 )
 
 # ── Resolve destination ──────────────────────────────────────────────────────
