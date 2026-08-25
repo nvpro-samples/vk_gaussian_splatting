@@ -227,13 +227,23 @@ void GaussianSplatting::onAttach(nvapp::Application* app)
   // Initialize Tonemapper
   initTonemapper();
 
-  // Request initial shader compilation
-  m_requestUpdateShaders = true;
+  // Request initial shader compilation — but skip it when a project is going to be loaded
+  // (--inputProject). The default-mesh pipeline compiled here would be thrown away as soon
+  // as the project's settings/scene are applied. The project loader arms the compile itself
+  // (reset() on success, or the failure branches in loadProjectIfNeeded()), and --inputFile /
+  // default-scene arm it via the scene-composition detector, so no compile is lost.
+  if(prmScene.projectToLoadFilename.empty())
+    m_requestUpdateShaders = true;
 };
 
 
 void GaussianSplatting::onDetach()
 {
+  // Teardown-only: prevents reset() -> processUpdateRequests(true) from recompiling the
+  // emptied scene just before deinitShaders() runs below. Runtime reset() calls never set
+  // this, so they still recompile.
+  m_isShuttingDown = true;
+
   vkDeviceWaitIdle(m_device);
 
   // stops the threads
@@ -1378,7 +1388,7 @@ void GaussianSplatting::processUpdateRequests(bool forceAll)
   resetFrameCounter();
   vkDeviceWaitIdle(m_device);
 
-  if(m_requestUpdateShaders)
+  if(m_requestUpdateShaders && !m_isShuttingDown)
   {
     deinitPipelines();
     deinitShaders();
