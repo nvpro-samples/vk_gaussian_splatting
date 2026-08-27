@@ -153,6 +153,9 @@ void VkgsProjectWriter::saveRendererSettings(json& data, const GaussianSplatting
 #endif
   item["lightingEnabled"]                      = (prmRender.lightingEnabled != 0);
   item["shadowsMode"]                          = (int)prmRender.shadowsMode;
+  item["gsShadowMask"]                         = prmRender.gsShadowMask;
+  item["gsShadowMaskMin"]                      = prmRender.gsShadowMaskMin;
+  item["gsShadowMaskFromParticles"]            = prmRender.gsShadowMaskFromParticles;
   item["colorFormat"]                          = (int)prmRender.colorFormat;
   item["rtxMaxBounces"]                        = prmFrame.rtxMaxBounces;
   item["rtxSecondaryRayOffset"]                = prmFrame.rtxSecondaryRayOffset;
@@ -264,6 +267,7 @@ void VkgsProjectWriter::saveLights(json& data, const GaussianSplattingUI* ui)
       assetItem["attenuationMode"] = instance->lightSource->attenuationMode;
       assetItem["radius"]          = instance->lightSource->radius;
       assetItem["enabled"]         = instance->lightSource->enabled;
+      assetItem["shadowOnly"]      = instance->lightSource->shadowOnly;
 
       assetsArray.push_back(assetItem);
     }

@@ -218,7 +218,8 @@ protected:
   // Must match the NEED_SURFACE_INFO shader macro computation in updateSlangMacros()
   inline bool needSurfaceInfo()
   {
-    bool need = prmRender.lightingEnabled || (m_assets.cameras.getCamera().dofMode != DOF_DISABLED);
+    bool need = prmRender.lightingEnabled || prmRender.gsShadowMask
+                || (m_assets.cameras.getCamera().dofMode != DOF_DISABLED);
 #if defined(USE_DLSS)
     need = need || m_dlss.isEnabled();
 #endif

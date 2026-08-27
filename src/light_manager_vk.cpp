@@ -473,6 +473,7 @@ void LightManagerVk::rebuildBuffer()
       shaderLight.attenuationMode = instance->lightSource->attenuationMode;
       shaderLight.radius          = instance->lightSource->radius;
       shaderLight.enabled         = instance->lightSource->enabled;
+      shaderLight.shadowOnly      = instance->lightSource->shadowOnly;
       shaderLights.push_back(shaderLight);
     }
   }
@@ -527,6 +528,7 @@ void LightManagerVk::updateBuffer()
       shaderLight.attenuationMode = instance->lightSource->attenuationMode;
       shaderLight.radius          = instance->lightSource->radius;
       shaderLight.enabled         = instance->lightSource->enabled;
+      shaderLight.shadowOnly      = instance->lightSource->shadowOnly;
       shaderLights.push_back(shaderLight);
     }
   }

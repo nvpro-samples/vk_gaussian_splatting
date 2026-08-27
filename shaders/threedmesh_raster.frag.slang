@@ -97,7 +97,7 @@ FragmentOutput main(FragmentInput input
     // Apply lighting from each light source (using bindless lights)
     for(int i = 0; i < assets.lightCount; ++i)
     {
-      if(assets.lights[i].enabled == 0)
+      if(assets.lights[i].enabled == 0 || assets.lights[i].shadowOnly != 0)
         continue;
       bool inShadow = false;  // Rasterization doesn't have shadow rays (yet)
       wavefrontComputeShadingDirectOnly(assets.lights[i], input.worldPos, shadingNrm, material, input.viewDir, inShadow, float3(1.0), color);

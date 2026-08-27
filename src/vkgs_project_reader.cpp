@@ -234,6 +234,9 @@ void VkgsProjectReader::loadRendererSettings(const json& data, GaussianSplatting
 
   if(item.contains("shadowsMode"))
     prmRender.shadowsMode = (ShadowsMode)item["shadowsMode"].get<int>();
+  LOAD1(prmRender.gsShadowMask, item, "gsShadowMask");
+  LOAD1(prmRender.gsShadowMaskMin, item, "gsShadowMaskMin");
+  LOAD1(prmRender.gsShadowMaskFromParticles, item, "gsShadowMaskFromParticles");
   // Backward compat: old projects used bool "shadowsEnabled"
   if(!item.contains("shadowsMode") && item.contains("shadowsEnabled"))
     prmRender.shadowsMode = item["shadowsEnabled"].get<bool>() ? ShadowsMode::eShadowsHard : ShadowsMode::eShadowsDisabled;
@@ -798,6 +801,8 @@ void VkgsProjectReader::loadLights(const json& data, int fileVersion, GaussianSp
             LOAD1(instance->lightSource->radius, assetItem, "proxyScale");
           if(assetItem.contains("enabled"))
             LOAD1(instance->lightSource->enabled, assetItem, "enabled");
+          // Optional key (feat/shadow-mask); absent in older files -> default 0
+          LOAD1(instance->lightSource->shadowOnly, assetItem, "shadowOnly");
         }
         else  // Version 3: backward compatibility
         {

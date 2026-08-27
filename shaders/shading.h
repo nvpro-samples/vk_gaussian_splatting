@@ -126,6 +126,8 @@ struct LightSource
   int       attenuationMode = 2;                       // 0=None, 1=Linear, 2=Quadratic, 3=Physical
   float     radius          = 1.0f;                    // Light source radius for soft shadows (from proxyScale)
   int       enabled         = 1;                       // 0=disabled, 1=enabled
+  int       shadowOnly      = 0;                       // 1 = gs-shadow light: only casts shadow-mask rays onto
+                                                       // splat emissive, never contributes illumination (NEE skips it)
 };
 
 #ifdef __cplusplus

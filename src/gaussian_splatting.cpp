@@ -429,9 +429,9 @@ void GaussianSplatting::onPreRender()
     // environment lighting, non-full-pass tracing (RTX only), or stochastic raster (raster only)
     if(prmRtx.temporalSamplingMode == TEMPORAL_SAMPLING_AUTO
        && (m_assets.cameras.getCamera().dofMode != DOF_DISABLED
-           || (prmRender.shadowsMode == ShadowsMode::eShadowsSoft && isRtxPipelineActive() && prmRender.lightingEnabled)
-           || (m_sky.isEnabled() && m_sky.mode() != shaderio::EnvironmentMode::eNone && prmRender.lightingEnabled)
-           || (isRtxPipelineActive() && prmRender.lightingEnabled)
+           || (prmRender.shadowsMode == ShadowsMode::eShadowsSoft && isRtxPipelineActive() && effectiveLightingMode())
+           || (m_sky.isEnabled() && m_sky.mode() != shaderio::EnvironmentMode::eNone && effectiveLightingMode())
+           || (isRtxPipelineActive() && effectiveLightingMode())
            || (isRtxPipelineActive() && prmRtx.rtxTraceStrategy != RTX_TRACE_STRATEGY_FULL_ANYHIT)
            || (isRasterPipelineActive() && prmRaster.sortingMethod == SORTING_STOCHASTIC_SPLAT)))
     {
@@ -1700,6 +1700,9 @@ void GaussianSplatting::updateAndUploadFrameInfoUBO(VkCommandBuffer cmd, const u
   prmFrame.particleEmissiveAoRadius   = prmRtx.particleEmissiveAoRadius;
   prmFrame.particleEmissiveAoStrength = prmRtx.particleEmissiveAoStrength;
 
+  // GS shadow mask floor
+  prmFrame.gsShadowMaskMin = prmRender.gsShadowMaskMin;
+
   // Depth iso threshold (transmittance threshold for depth picking)
   prmFrame.depthIsoThreshold    = prmRaster.depthIsoThreshold;
   prmFrame.depthIsoThresholdRTX = prmRtx.depthIsoThresholdRTX;
@@ -2319,8 +2322,13 @@ void GaussianSplatting::updateSlangMacros()
           // Normal computation method
           {"NORMAL_METHOD", std::to_string((int)prmRender.normalMethod)},
           // Global lighting, shadows, and DOF modes
-          {"LIGHTING_MODE", std::to_string(prmRender.lightingEnabled)},
+          {"LIGHTING_MODE", std::to_string(effectiveLightingMode())},
           {"SHADOWS_MODE", std::to_string((int)prmRender.shadowsMode)},
+          // GS shadow mask: gs-shadow lights darken the splat emissive at the surfel.
+          // Needs at least one occluder source compiled (meshes by default, particles opt-in).
+          {"GS_SHADOW_MASK", std::to_string((int)(prmRender.gsShadowMask
+                                                  && (!m_assets.meshes.instances.empty() || prmRender.gsShadowMaskFromParticles)))},
+          {"GS_SHADOW_MASK_PARTICLES", std::to_string((int)(prmRender.gsShadowMask && prmRender.gsShadowMaskFromParticles))},
           {"DOF_MODE", std::to_string((int)(m_assets.cameras.getCamera().dofMode))},
           // Surface info needed for lighting, DLSS, or DOF
           {"NEED_SURFACE_INFO", std::to_string((int)needSurfaceInfo())},
@@ -2353,7 +2361,7 @@ void GaussianSplatting::updateSlangMacros()
              return prmRtx.shortenRay;
            }())},
           {"PARTICLE_AO_ENABLED", std::to_string((int)(prmRtx.particleEmissiveAoEnabled && !m_assets.meshes.instances.empty()
-                                                       && prmRender.lightingEnabled == LIGHTING_ENABLED))},
+                                                       && effectiveLightingMode() == LIGHTING_ENABLED))},
 #if defined(USE_DLSS)
           {"DLSS_ENABLED", std::to_string((int)m_dlss.isEnabled())},
 #else

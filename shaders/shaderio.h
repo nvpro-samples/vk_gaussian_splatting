@@ -396,6 +396,9 @@ struct FrameInfo
   float particleEmissiveAoRadius   = 0.05f;  // AO hemisphere sampling radius
   float particleEmissiveAoStrength = 1.0f;   // AO darkening intensity (0 = no effect, 1 = full, >1 = exaggerated)
 
+  // GS shadow mask: visibility floor for shadow-only lights masking splat emissive
+  float gsShadowMaskMin = 0.2f;  // 0 = shadows go fully black, 1 = no visible shadow
+
   // Depth iso threshold: transmittance threshold for depth picking
   // Depth is picked when transmittance drops below this threshold
   float depthIsoThreshold    = 0.7f;  // For rasterization
