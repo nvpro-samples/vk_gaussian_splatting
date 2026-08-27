@@ -1420,10 +1420,11 @@ void evaluateLightingAndShadingParticles(in int           bounce,
   }
 #endif
 
-  // GS shadow mask: shadow-only (gs-shadow) lights darken the emissive term at the
-  // surfel. Same rationale as the AO block above: the emissive term has no other
-  // occlusion, while shaded contributions get their shadows from NEE shadow rays
-  // (gs-shadow lights are skipped by NEE, so nothing is counted twice).
+  // GS shadow mask: shadow-only (gs-shadow) AND castOnGs lights darken the emissive
+  // term at the surfel. The emissive term has no other occlusion; shaded contributions
+  // get their shadows from NEE shadow rays. No double-count: a shadow-only light is
+  // skipped by NEE (mask only), and a castOnGs light shadows the EMISSIVE term here and
+  // the separate NEE-shaded term via its own NEE ray -- different terms, each once.
 #if GS_SHADOW_MASK
   emissiveContribution *= computeGsShadowMask(pixel.isoSurfPos, pixel.integratedNormal, seedRayPass, payload);
 #endif
@@ -1697,6 +1698,11 @@ float computeSplatEmissiveAO(in float3 surfacePos, in float3 surfaceNormal, in f
 // Returns 1.0 when no shadow-only light reaches the surfel.
 float3 computeGsShadowMask(in float3 surfPos, in float3 surfNormal, inout uint seed, inout HitPayload payload)
 {
+  // Intensity*luminance-weighted average of per-light visibility over all mask-casting
+  // lights (shadowOnly or castOnGs). A bright castOnGs light carries a large illumination
+  // intensity, so mixing it with a dim dedicated shadow-only light lets the bright one
+  // dominate the blend -- for an independent hard-mask light, match intensities or use
+  // shadow-only lights alone.
   float3 maskSum   = float3(0.0);
   float  weightSum = 0.0;
 
