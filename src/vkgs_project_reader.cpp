@@ -803,6 +803,8 @@ void VkgsProjectReader::loadLights(const json& data, int fileVersion, GaussianSp
             LOAD1(instance->lightSource->enabled, assetItem, "enabled");
           // Optional key (feat/shadow-mask); absent in older files -> default 0
           LOAD1(instance->lightSource->shadowOnly, assetItem, "shadowOnly");
+          // Optional key (feat/gs-shadow-both-light); absent in older files -> default 0
+          LOAD1(instance->lightSource->castOnGs, assetItem, "castOnGs");
         }
         else  // Version 3: backward compatibility
         {

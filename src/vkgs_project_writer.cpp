@@ -268,6 +268,7 @@ void VkgsProjectWriter::saveLights(json& data, const GaussianSplattingUI* ui)
       assetItem["radius"]          = instance->lightSource->radius;
       assetItem["enabled"]         = instance->lightSource->enabled;
       assetItem["shadowOnly"]      = instance->lightSource->shadowOnly;
+      assetItem["castOnGs"]        = instance->lightSource->castOnGs;
 
       assetsArray.push_back(assetItem);
     }

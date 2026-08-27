@@ -128,6 +128,8 @@ struct LightSource
   int       enabled         = 1;                       // 0=disabled, 1=enabled
   int       shadowOnly      = 0;                       // 1 = gs-shadow light: only casts shadow-mask rays onto
                                                        // splat emissive, never contributes illumination (NEE skips it)
+  int       castOnGs        = 0;                       // 1 = light illuminates AND also casts onto the GS shadow
+                                                       // mask (a lit light whose shadow darkens splat emissive)
 };
 
 #ifdef __cplusplus

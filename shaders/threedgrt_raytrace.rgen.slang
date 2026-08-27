@@ -1703,7 +1703,8 @@ float3 computeGsShadowMask(in float3 surfPos, in float3 surfNormal, inout uint s
   for(uint i = 0; i < assets.lightCount; ++i)
   {
     LightSource light = assets.lights[i];
-    if(light.enabled == 0 || light.shadowOnly == 0)
+    // Include shadow-only lights (mask-only) AND lit lights flagged castOnGs (illuminate + cast on GS).
+    if(light.enabled == 0 || (light.shadowOnly == 0 && light.castOnGs == 0))
       continue;
 
     // Direction/distance to the light; with SHADOWS_SOFT and radius > 0 this

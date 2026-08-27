@@ -4770,6 +4770,22 @@ void GaussianSplattingUI::guiDrawLightProperties()
     }
   }
 
+  {
+    // Redundant when the light already doesn't illuminate (shadow-only casts on GS anyway).
+    ImGui::BeginDisabled(asset->shadowOnly != 0);
+    bool castOnGs = (asset->castOnGs != 0);
+    if(PE::Checkbox("Cast shadow on splats (while lit)", &castOnGs,
+                    "The light illuminates normally AND its shadow also darkens the splat\n"
+                    "emissive via the GS shadow mask (requires \"GS shadow mask\" in Lighting\n"
+                    "and Temporal, RTX pipelines). Use to have one light both shadow meshes\n"
+                    "and cast onto the splats."))
+    {
+      asset->castOnGs = castOnGs ? 1 : 0;
+      needAssetUpdate = true;
+    }
+    ImGui::EndDisabled();
+  }
+
   // Instance properties (per-instance)
   needInstanceUpdate |= PE::DragFloat3("Translation", glm::value_ptr(instance->translation), 0.01f);
 
