@@ -179,6 +179,13 @@ struct RenderParameters
   int32_t     lightingEnabled = LIGHTING_DISABLED;              // Enable lighting for all models
   ShadowsMode shadowsMode     = ShadowsMode::eShadowsDisabled;  // Shadows mode for all models (RTX only)
 
+  // GS shadow mask: shadow-only (gs-shadow) lights darken the splat emissive output
+  // at the reconstructed surfel (RTX pipelines only). Implies LIGHTING_MODE compilation
+  // and surface reconstruction; pure-emissive splat sets keep their baked appearance.
+  bool  gsShadowMask              = false;  // master enable
+  float gsShadowMaskMin           = 0.2f;   // shadow floor: 0 = shadows go black, 1 = no visible shadow
+  bool  gsShadowMaskFromParticles = false;  // also let particles occlude mask rays (self-shadow risk)
+
   // Color buffer format
   VkFormat colorFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
 
@@ -194,6 +201,15 @@ struct RenderParameters
 
 // Parameters common to all rendering pipelines
 extern RenderParameters prmRender;
+
+// Effective lighting compile mode: the GS shadow mask needs the particle shading
+// path (and its linear-space/tonemapper contract) compiled in, so enabling it
+// implies LIGHTING_ENABLED even when the user keeps lighting off. Pure-emissive
+// splat sets still early-exit and keep their baked appearance.
+inline int32_t effectiveLightingMode()
+{
+  return (prmRender.lightingEnabled == LIGHTING_ENABLED || prmRender.gsShadowMask) ? LIGHTING_ENABLED : LIGHTING_DISABLED;
+}
 
 // Parameters that control rasterization
 struct RasterParameters
