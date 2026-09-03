@@ -51,6 +51,12 @@ If you are working offline, you can browse the documentation markdown pages in t
 
 ## News
 
+- [2026/09] Release 2026.2.9
+  - **Faster ray tracing** with reduced per-ray payload and improved stochastic transparency
+  - **Fixed splat materials** being taken from the wrong splat set in raster and hybrid with lighting enabled
+  - **Cross-platform asset paths** for reliable project saving and loading across Windows and Linux
+  - **Updated sample projects** and dataset listings featuring winter garden content (🔥new [video](https://developer.download.nvidia.com/ProGraphics/nvpro-samples/vkgs/vkgs_v2026_2_lighting_from_radiance_field.mp4))
+  - Fixed the build with `-DUSE_DLSS=OFF`, and a crash when saving images before the first frame
 - [2026/06] 🔥Release 2026.2
   - **GGX PBR materials** (metallic-roughness) replacing Phong, with indirect lighting for splat sets
   - **glTF/GLB mesh loading** with full PBR textures, emissive, and scene-graph flattening
@@ -65,15 +71,6 @@ If you are working offline, you can browse the documentation markdown pages in t
   - **Samples folder** with an asset-download build script and new sample projects
   - **Billboard benchmark suite** and **headless mode** with an expanded CLI
   - **Platform**: HardwareSupport capability registry, Intel Arc and Linux build fixes, upgraded nvpro_core2
-  - [Release Notes](https://nvpro-samples.github.io/vk_gaussian_splatting/release-notes)
-- [2026/04] Release 2026.1.7 
-  - **Pre-built binaries** available on GitHub Releases page
-  - **New online [documentation](https://nvpro-samples.github.io/vk_gaussian_splatting/) website** — user guides, technical deep dives, and references now available as a browsable site
-  - **Simplified root README.md** (this file)
-  - **Rendering pipeline selector** added to the menu bar
-  - **Navigation mode icons** in toolbar with improved camera controls
-  - **Fix profiler reporting** during camera drag in raster/hybrid pipelines
-  - **Fix 32-bit addressing overflow** in sorting buffers by converting to LargeBuffer (supports larger models)
 
 For earlier releases and full details, see the [Release Notes](https://nvpro-samples.github.io/vk_gaussian_splatting/release-notes) page.
 

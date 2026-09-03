@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## Version 2026.2.9
 
 ### Projects & assets
 
@@ -10,6 +10,18 @@
 
 - **Single-splat-set payload reduction**: `RTX_HAS_PARTICLES` now encodes the clamped RTX splat descriptor count (0 = no particle code, 1 = single set, 2 = multi-set). With a single splat set (one instance, no BLAS chunk split), the per-sample `splatSetIdx[]` array and `currentSplatSetInstance` are removed from the ray payload (descriptor index 0 implied), reducing payload size by `PARTICLES_SPP + 1` dwords and lowering register pressure across `TraceRay()`. Shader recompilation triggers automatically when the mode changes (e.g. a second set is added).
 - **Stochastic any-hit payload/ALU reduction**: the any-hit now evaluates opacity only (`threedgrtProcessHit` gained a `kRadiance` template flag); the SH radiance fetch and the normal (surface-info gated, previously always computed) run once per ray in the raygen for the surviving sample instead of once per candidate hit. The per-sample `color[]`/`normal[]` payload fields are removed (7 dwords), and the stochastic shadow path simplifies to binary occlusion (semantically identical to the previous constant-alpha averaging).
+- **Wireframe is disabled with stochastic trace strategies** in the RTX pipeline, where it is unsupported. The checkbox is greyed out with an explanatory tooltip and the setting is preserved, so it reapplies when the strategy or pipeline changes.
+
+### Rasterization & hybrid
+
+- **Fixed splat materials being taken from the wrong splat set** in raster and hybrid with lighting enabled. In front-to-back mode the per-pixel splat ID was written by every fragment to a colour attachment that cannot blend and has no depth test to arbitrate, so the farthest splat won instead of the reconstructed surface splat — with multiple splat sets, all of them were shaded using the backmost set's material. The ID is now written in the same interlocked block as the depth pick. Ray tracing was unaffected.
+
+### Stability & bug fixes
+
+- Fixed the build with `-DUSE_DLSS=OFF`, for environments without the NVIDIA NGX SDK. Note that the default `-DUSE_DLSS=ON` build also runs on non-NVIDIA hardware such as AMD/RADV — DLSS is simply auto-disabled at runtime.
+- Guarded `--saveImage` issued before the first rendered frame in headless mode.
+- Skip two redundant shader compilations at startup and shutdown.
+- Fixed the splat global-offset table being keyed by rendering order instead of descriptor index, which gave wrong global splat IDs to instances following a hidden one (affects picking and ray-hit profiling only, not rendering).
 
 ## Version 2026.2
 
