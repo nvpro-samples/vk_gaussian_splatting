@@ -2889,13 +2889,21 @@ void SplatSetManagerVk::rebuildGlobalIndexTables()
     ++splatSetIdx;
   }
 
-  m_splatSetGlobalIndexTable.resize(m_instanceInfos.size());
   m_totalGlobalSplatCount = totalSplats;
 
-  // Second pass: fill splatSetGlobalIndexTable offsets
-  for(size_t i = 0; i < m_instanceInfos.size(); ++i)
+  // Second pass: fill splatSetGlobalIndexTable offsets.
+  //
+  // Indexed by DESCRIPTOR index (InstanceInfo::splatSetIdx), which is what both consumers
+  // use to look it up, and sized like the descriptor array so every instance has a slot.
+  // It used to be sized and filled by *rendering* ordinal instead, which silently agreed
+  // with the descriptor index only while nothing was hidden: with a hidden instance ahead
+  // of a visible one, every following instance read past the end and fell back to base 0.
+  // Hidden instances keep offset 0 here; they contribute no splats, so it is never read.
+  m_splatSetGlobalIndexTable.assign(m_instances.size(), 0u);
+  for(const auto& info : m_instanceInfos)
   {
-    m_splatSetGlobalIndexTable[i] = m_instanceInfos[i].globalOffset;
+    if(info.splatSetIdx < m_splatSetGlobalIndexTable.size())
+      m_splatSetGlobalIndexTable[info.splatSetIdx] = info.globalOffset;
   }
 
   // Skip building the per-splat table when pure RTX (not needed; saves memory and CPU time).
@@ -3609,11 +3617,18 @@ void SplatSetManagerVk::rebuildRtxDescriptorArrayFromChunks()
   m_gpuRtxDescriptorArray.clear();
   m_rtxToBaseDescriptorMap.clear();
 
+  uint32_t descriptorIdx = 0;
   for(uint32_t instanceIdx = 0; instanceIdx < m_instances.size(); ++instanceIdx)
   {
     const auto& instance = m_instances[instanceIdx];
     if(!instance || !instance->splatSet)
       continue;
+
+    // Descriptor index into the base descriptor array, compacted over null instances to
+    // match rebuildGPUDescriptorArray(). It must advance before the early-outs below so it
+    // stays aligned for instances that contribute no BLAS chunks. This is not the raw
+    // m_instances index: those diverge as soon as m_instances holds a null entry.
+    const uint32_t baseDescriptorIdx = descriptorIdx++;
 
     const uint32_t splatSetIdx = static_cast<uint32_t>(instance->splatSet->index);
     if(splatSetIdx >= m_particleAsBlasChunkRanges.size())
@@ -3623,7 +3638,8 @@ void SplatSetManagerVk::rebuildRtxDescriptorArrayFromChunks()
     if(range.count == 0)
       continue;
 
-    const uint32_t baseOffset = (instanceIdx < m_splatSetGlobalIndexTable.size()) ? m_splatSetGlobalIndexTable[instanceIdx] : 0u;
+    const uint32_t baseOffset =
+        (baseDescriptorIdx < m_splatSetGlobalIndexTable.size()) ? m_splatSetGlobalIndexTable[baseDescriptorIdx] : 0u;
 
     for(uint32_t i = 0; i < range.count; ++i)
     {
@@ -3640,7 +3656,9 @@ void SplatSetManagerVk::rebuildRtxDescriptorArrayFromChunks()
       desc.blasAddress     = chunk.helper.getBlas().address;
 
       m_gpuRtxDescriptorArray.push_back(desc);
-      m_rtxToBaseDescriptorMap.push_back(instanceIdx);
+      // Maps to m_gpuDescriptorArray (see declaration), so it takes the descriptor index,
+      // not the raw instance index — refreshRtxDescriptorsFromBase() looks it up there.
+      m_rtxToBaseDescriptorMap.push_back(baseDescriptorIdx);
     }
   }
 
