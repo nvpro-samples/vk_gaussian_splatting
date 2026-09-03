@@ -34,6 +34,7 @@
 // For FTB: depth buffer accessed as storage image (R=depth, G=transmittance)
 // globallycoherent ensures memory coherency between interlock-protected fragment invocations
 [[vk::binding(BINDING_RASTER_DEPTH, 0)]] globallycoherent RWTexture2D<float2> depthTransmittanceBuffer;
+[[vk::binding(BINDING_RASTER_SPLATID, 0)]] globallycoherent RWTexture2D<uint> splatIdBuffer;
 #endif
 
 struct FragmentInput
@@ -63,8 +64,10 @@ struct FragmentOutput
   [[vk::location(2)]] float4 outDepth : SV_Target2;   // Integrated depth (R=depth, A=opacity for blending) - BTF only
   [[vk::location(3)]] uint   outSplatId : SV_Target3; // Global splat ID for material lookup
 #else
-  [[vk::location(2)]] uint   outSplatId : SV_Target2; // Global splat ID for material lookup (shifted for FTB)
-  // Note: In FTB mode, picked depth is stored in storage image (depthTransmittanceBuffer.r)
+  // FTB picks depth and splat id in storage images inside the same interlocked block.
+  // As a colour attachment the splat id could not be picked: integer targets cannot blend
+  // and FTB runs without a depth test, so every fragment would write it and the last one
+  // rasterised (the farthest splat) would win instead of the surface splat.
 #endif
 #endif
 };
@@ -209,7 +212,8 @@ FragmentOutput main(FragmentInput input)
   float  transmittance     = prevTransmittance * (1.0 - opacity);
   if(depth == 0 && transmittance < frameInfo.depthIsoThreshold)
   {
-    depth = input.position.z;
+    depth                     = input.position.z;
+    splatIdBuffer[pixelCoord] = input.splatId;
   }
   // Write back: depth in R, transmittance in G
   depthTransmittanceBuffer[pixelCoord] = float2(depth, transmittance);
@@ -218,8 +222,10 @@ FragmentOutput main(FragmentInput input)
 #endif
 #endif // FRONT_TO_BACK
 
-  // Output global splat ID for material lookup in hybrid ray tracing mode
+#if !FRONT_TO_BACK
+  // Output global splat ID for material lookup in stochastic/BTF mode.
   output.outSplatId = input.splatId;
+#endif
 #endif
 
   return output;

@@ -777,10 +777,15 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
         colorAttachments.push_back(rasterDepthAttachment);
       }
 
-      VkRenderingAttachmentInfo splatIdAttachment  = DEFAULT_VkRenderingAttachmentInfo;
-      splatIdAttachment.imageView                  = m_gBuffers.getColorImageView(COLOR_RASTER_SPLATID);
-      splatIdAttachment.clearValue.color.uint32[0] = 0xFFFFFFFF;  // Clear to invalid ID
-      colorAttachments.push_back(splatIdAttachment);
+      // FTB writes the splat id as a storage image inside the interlocked block (so the
+      // surface splat wins, not the last one rasterised), so it is not a colour attachment.
+      if(!useFTB)
+      {
+        VkRenderingAttachmentInfo splatIdAttachment  = DEFAULT_VkRenderingAttachmentInfo;
+        splatIdAttachment.imageView                  = m_gBuffers.getColorImageView(COLOR_RASTER_SPLATID);
+        splatIdAttachment.clearValue.color.uint32[0] = 0xFFFFFFFF;  // Clear to invalid ID
+        colorAttachments.push_back(splatIdAttachment);
+      }
     }
 
     // Create the rendering info
@@ -809,9 +814,12 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
           barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_DEPTH), VK_IMAGE_LAYOUT_GENERAL,
                                                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}));
         }
-        // For FTB: depth buffer stays in GENERAL layout for storage image access
-        barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_SPLATID), VK_IMAGE_LAYOUT_GENERAL,
-                                                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}));
+        if(!useFTB)
+        {
+          barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_SPLATID), VK_IMAGE_LAYOUT_GENERAL,
+                                                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}));
+        }
+        // For FTB: depth and splat-id buffers stay in GENERAL layout for storage image access.
       }
 
       VkDependencyInfo depInfo{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -824,12 +832,18 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
     // The buffer stays in GENERAL layout for storage image access during rendering
     if(useFTB && needSurfaceInfo())
     {
-      VkClearColorValue       clearValue = {{0.0f, 1.0f, 0.0f, 0.0f}};  // R=depth(0), G=transmittance(1)
+      VkClearColorValue clearValue = {{0.0f, 1.0f, 0.0f, 0.0f}};  // R=depth(0), G=transmittance(1)
+      // The splat id is no longer a colour attachment in FTB, so it gets no attachment
+      // clear: clear it here too, or pixels no splat covers keep last frame's id.
+      VkClearColorValue clearSplatIdValue{};
+      clearSplatIdValue.uint32[0]        = 0xFFFFFFFF;  // Invalid splat id
       VkImageSubresourceRange range      = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
       vkCmdClearColorImage(cmd, m_gBuffers.getColorImage(COLOR_RASTER_DEPTH), VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &range);
+      vkCmdClearColorImage(cmd, m_gBuffers.getColorImage(COLOR_RASTER_SPLATID), VK_IMAGE_LAYOUT_GENERAL,
+                           &clearSplatIdValue, 1, &range);
 
-      // Barrier to ensure clear is complete before splat shader reads/writes
-      VkImageMemoryBarrier2 clearBarrier{
+      // Barriers to ensure the clears are complete before the splat shader reads/writes
+      const VkImageMemoryBarrier2 clearBarrierTemplate{
           .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
           .srcStageMask        = VK_PIPELINE_STAGE_2_CLEAR_BIT,
           .srcAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -839,13 +853,16 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
           .newLayout           = VK_IMAGE_LAYOUT_GENERAL,
           .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
           .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image               = m_gBuffers.getColorImage(COLOR_RASTER_DEPTH),
           .subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
       };
+      std::array<VkImageMemoryBarrier2, 2> clearBarriers{clearBarrierTemplate, clearBarrierTemplate};
+      clearBarriers[0].image = m_gBuffers.getColorImage(COLOR_RASTER_DEPTH);
+      clearBarriers[1].image = m_gBuffers.getColorImage(COLOR_RASTER_SPLATID);
+
       VkDependencyInfo clearDepInfo{
           .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-          .imageMemoryBarrierCount = 1,
-          .pImageMemoryBarriers    = &clearBarrier,
+          .imageMemoryBarrierCount = static_cast<uint32_t>(clearBarriers.size()),
+          .pImageMemoryBarriers    = clearBarriers.data(),
       };
       vkCmdPipelineBarrier2(cmd, &clearDepInfo);
     }
@@ -1029,9 +1046,12 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
         barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_DEPTH),
                                                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL}));
       }
-      // For FTB: depth buffer stays in GENERAL layout (storage image access)
-      barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_SPLATID),
-                                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL}));
+      if(!useFTB)
+      {
+        barriers.push_back(nvvk::makeImageMemoryBarrier({m_gBuffers.getColorImage(COLOR_RASTER_SPLATID),
+                                                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL}));
+      }
+      // For FTB: depth and splat-id buffers stay in GENERAL layout (storage image access)
     }
 
     if(!barriers.empty())
@@ -2872,8 +2892,8 @@ void GaussianSplatting::initPipelines()
           if(!useFTB)
           {
             creator.colorFormats.push_back(m_rasterDepthFormat);
+            creator.colorFormats.push_back(m_splatIdFormat);
           }
-          creator.colorFormats.push_back(m_splatIdFormat);
         }
         creator.renderingState.depthAttachmentFormat = m_depthFormat;
         creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
@@ -2898,8 +2918,8 @@ void GaussianSplatting::initPipelines()
           if(!useFTB)
           {
             creator.colorFormats.push_back(m_rasterDepthFormat);
+            creator.colorFormats.push_back(m_splatIdFormat);
           }
-          creator.colorFormats.push_back(m_splatIdFormat);
         }
         creator.renderingState.depthAttachmentFormat = m_depthFormat;
         creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
