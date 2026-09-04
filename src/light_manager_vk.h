@@ -57,6 +57,8 @@ struct LightSourceVk
   int                 attenuationMode = 2;      // 0=None, 1=Linear, 2=Quadratic, 3=Physical
   float               radius          = 1.0f;   // Light source radius (soft shadows + proxy visualization)
   int                 enabled         = 1;      // 0=disabled, 1=enabled
+  int                 shadowOnly      = 0;      // 1 = gs-shadow light: shadow-mask only, no illumination
+  int                 castOnGs        = 0;      // 1 = light illuminates AND also casts onto the GS shadow mask
 
   // C++ management data (NOT uploaded to GPU)
   std::shared_ptr<MeshVk> proxyMesh;      // Visualization mesh (sphere/cone/quad)
