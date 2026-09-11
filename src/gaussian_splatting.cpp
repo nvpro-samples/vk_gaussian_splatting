@@ -1054,9 +1054,28 @@ void GaussianSplatting::renderHybridPipeline(VkCommandBuffer cmd, uint32_t splat
       // For FTB: depth and splat-id buffers stay in GENERAL layout (storage image access)
     }
 
-    if(!barriers.empty())
+    // In FTB the depth and splat-id buffers are written as storage images from the fragment
+    // shader, so they take no attachment barrier above -- and an image barrier naming a
+    // different image orders execution but makes neither of these writes available or visible.
+    // Both readers sit outside this pass: the deferred shading dispatch and the hybrid trace.
+    // The ray tracing stage is only a legal destination when the pipeline feature is enabled,
+    // which it need not be: the RT extensions are requested as optional in main.cpp, and FTB is
+    // reached on a raster-only device whenever needSurfaceInfo() is true.
+    const bool             needFtbStorageBarrier = useFTB && needSurfaceInfo();
+    const VkMemoryBarrier2 ftbStorageBarrier{
+        .sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                        | (isSupported.raytracing ? VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR : 0),
+        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+    };
+
+    if(!barriers.empty() || needFtbStorageBarrier)
     {
       VkDependencyInfo depInfo{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                               .memoryBarrierCount      = needFtbStorageBarrier ? 1u : 0u,
+                               .pMemoryBarriers         = needFtbStorageBarrier ? &ftbStorageBarrier : nullptr,
                                .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
                                .pImageMemoryBarriers    = barriers.data()};
       vkCmdPipelineBarrier2(cmd, &depInfo);
