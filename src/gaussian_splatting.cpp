@@ -2859,10 +2859,16 @@ void GaussianSplatting::initPipelines()
       }
       // Note: For FTB, depth buffer is not a color attachment - it's accessed via storage image
 
-      // Add blend state for splat ID buffer (fourth color attachment) - NO blending, just write
-      pipelineState.colorBlendEnables.push_back(VK_FALSE);                // No blending for integer ID
-      pipelineState.colorWriteMasks.push_back(VK_COLOR_COMPONENT_R_BIT);  // Single component for uint32
-      pipelineState.colorBlendEquations.push_back({});                    // Unused but required
+      // Add blend state for splat ID buffer - NO blending, just write.
+      // Not an attachment in FTB, where the id is written as a storage image: the blend state is
+      // sized from colorWriteMasks, so an entry here that colorFormats does not match makes
+      // attachmentCount disagree with the pipeline's colour attachment count.
+      if(!useFTB)
+      {
+        pipelineState.colorBlendEnables.push_back(VK_FALSE);                // No blending for integer ID
+        pipelineState.colorWriteMasks.push_back(VK_COLOR_COMPONENT_R_BIT);  // Single component for uint32
+        pipelineState.colorBlendEquations.push_back({});                    // Unused but required
+      }
     }
 
     // By default disable depth write and test for the pipeline
@@ -2962,8 +2968,8 @@ void GaussianSplatting::initPipelines()
         if(!useFTB)
         {
           creator.colorFormats.push_back(m_rasterDepthFormat);
+          creator.colorFormats.push_back(m_splatIdFormat);
         }
-        creator.colorFormats.push_back(m_splatIdFormat);
       }
       creator.renderingState.depthAttachmentFormat = m_depthFormat;
       creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
@@ -3008,10 +3014,13 @@ void GaussianSplatting::initPipelines()
         pipelineState.colorBlendEquations.push_back({});
       }
 
-      // Splat ID buffer - no blending, no write
-      pipelineState.colorBlendEnables.push_back(VK_FALSE);
-      pipelineState.colorWriteMasks.push_back(0);
-      pipelineState.colorBlendEquations.push_back({});
+      // Splat ID buffer - no blending, no write. Absent in FTB, as above.
+      if(!useFTB)
+      {
+        pipelineState.colorBlendEnables.push_back(VK_FALSE);
+        pipelineState.colorWriteMasks.push_back(0);
+        pipelineState.colorBlendEquations.push_back({});
+      }
     }
 
     // TODOC
@@ -3055,8 +3064,8 @@ void GaussianSplatting::initPipelines()
       if(!useFTB)
       {
         creator.colorFormats.push_back(m_rasterDepthFormat);
+        creator.colorFormats.push_back(m_splatIdFormat);
       }
-      creator.colorFormats.push_back(m_splatIdFormat);
     }
     creator.renderingState.depthAttachmentFormat = m_depthFormat;
     creator.dynamicStateValues.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
@@ -3111,18 +3120,20 @@ void GaussianSplatting::initPipelines()
     pipelineStateDepth.depthStencilState.depthWriteEnable = VK_TRUE;
     pipelineStateDepth.depthStencilState.depthCompareOp   = VK_COMPARE_OP_LESS;  // Write if closer than existing
 
-    // Disable color writes for all attachments (depth-only pass)
-    // Must match render pass color attachment count: main + normal + splatId = 3
-    // All arrays must have matching sizes
-    VkColorBlendEquationEXT noBlend{};  // Default values (no blending)
-    pipelineStateDepth.colorBlendEnables   = {VK_FALSE, VK_FALSE, VK_FALSE};
-    pipelineStateDepth.colorBlendEquations = {noBlend, noBlend, noBlend};
-    pipelineStateDepth.colorWriteMasks     = {0, 0, 0};  // No color writes
-
     nvvk::GraphicsPipelineCreator creatorDepth;
     creatorDepth.pipelineInfo.layout = m_pipelineLayout;
-    // Must match the render pass color attachments (FTB with generateSurface)
-    creatorDepth.colorFormats                         = {prmRender.colorFormat, m_normalFormat, m_splatIdFormat};
+    // Must match the render pass colour attachments, and this pipeline exists only under FTB.
+    // useFTB implies needSurfaceInfo(), so the normal buffer is always present; the splat id is
+    // not an attachment here, because FTB writes it as a storage image inside the interlock.
+    creatorDepth.colorFormats = {prmRender.colorFormat, m_normalFormat};
+
+    // Depth-only pass: no colour writes at all, one entry per attachment. Sized from the format
+    // list rather than hardcoded, so the two cannot drift apart again.
+    const size_t            depthAttachmentCount = creatorDepth.colorFormats.size();
+    VkColorBlendEquationEXT noBlend{};  // Default values (no blending)
+    pipelineStateDepth.colorBlendEnables.assign(depthAttachmentCount, VK_FALSE);
+    pipelineStateDepth.colorBlendEquations.assign(depthAttachmentCount, noBlend);
+    pipelineStateDepth.colorWriteMasks.assign(depthAttachmentCount, 0);
     creatorDepth.renderingState.depthAttachmentFormat = m_depthFormat;
 
     creatorDepth.addShader(VK_SHADER_STAGE_VERTEX_BIT, "main", m_shaders.depthConsolidateVertShader);
