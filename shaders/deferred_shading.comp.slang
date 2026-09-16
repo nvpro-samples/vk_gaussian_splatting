@@ -138,7 +138,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     // Apply lighting from each light source (no shadows in pure rasterization)
     for(uint i = 0; i < assets.lightCount; ++i)
     {
-      if(assets.lights[i].enabled == 0)
+      if(assets.lights[i].enabled == 0 || assets.lights[i].shadowOnly != 0)
         continue;
       bool inShadow = false;  // No shadow rays in rasterization
       wavefrontComputeShadingDirectOnly(assets.lights[i], worldPos, normal, mat, viewDir, inShadow, float3(1.0), color);

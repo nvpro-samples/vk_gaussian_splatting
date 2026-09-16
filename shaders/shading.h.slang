@@ -581,7 +581,9 @@ NEESample sampleOneLightNEE(in float3                     worldPos,
     int         lightIdx = min(int(rand(seed) * float(lightCount)), lightCount - 1);
     LightSource light    = lights[lightIdx];
 
-    if(light.enabled == 0)
+    // Disabled and shadow-only (gs-shadow) lights contribute no illumination.
+    // Returning a zero sample keeps the estimator unbiased (same as enabled==0).
+    if(light.enabled == 0 || light.shadowOnly != 0)
       return result;
 
     float3 lightDir;

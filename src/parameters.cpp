@@ -144,6 +144,12 @@ void registerCommandLineParameters(nvutils::ParameterRegistry* parameterRegistry
                          (int32_t)LIGHTING_DISABLED, (int32_t)LIGHTING_ENABLED);
   parameterRegistry->add({"shadowMode", "0=off(default) 1=hard shadows 2=soft shadows"},
                          (uint32_t*)&prmRender.shadowsMode, (uint32_t)SHADOWS_DISABLED, (uint32_t)SHADOWS_SOFT);
+  parameterRegistry->add({"gsShadowMask", "1=shadow-only (gs-shadow) lights darken splat emissive output (RTX pipelines)"},
+                         &prmRender.gsShadowMask);
+  parameterRegistry->add({"gsShadowMaskMin", "shadow mask floor in [0,1], 0=black shadows (default 0.2)"},
+                         &prmRender.gsShadowMaskMin);
+  parameterRegistry->add({"gsShadowMaskFromParticles", "1=particles also occlude gs-shadow mask rays (self-shadow risk)"},
+                         &prmRender.gsShadowMaskFromParticles);
 
   // Rasterization
   parameterRegistry->add({"sortStrategy", "particles rasterization strategy 0=GPU radix sort(default) 1=CPU async mono 2=CPU async multi 3=stochastic splat"},

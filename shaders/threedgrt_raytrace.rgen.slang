@@ -1449,6 +1449,15 @@ void evaluateLightingAndShadingParticles(in int           bounce,
   }
 #endif
 
+  // GS shadow mask: shadow-only (gs-shadow) AND castOnGs lights darken the emissive
+  // term at the surfel. The emissive term has no other occlusion; shaded contributions
+  // get their shadows from NEE shadow rays. No double-count: a shadow-only light is
+  // skipped by NEE (mask only), and a castOnGs light shadows the EMISSIVE term here and
+  // the separate NEE-shaded term via its own NEE ray -- different terms, each once.
+#if GS_SHADOW_MASK
+  emissiveContribution *= computeGsShadowMask(pixel.isoSurfPos, pixel.integratedNormal, seedRayPass, payload);
+#endif
+
   // Early exit for pure emissive materials - no lighting interaction
   // No clay mode in pure emissive
   if(splatSetDesc.material.needShading != 1)
@@ -1707,6 +1716,63 @@ float computeSplatEmissiveAO(in float3 surfacePos, in float3 surfaceNormal, in f
   return 1.0;
 }
 #endif  // PARTICLE_AO_ENABLED
+
+#if GS_SHADOW_MASK
+// GS shadow mask: weighted-average visibility of the surfel toward all shadow-only
+// (gs-shadow) lights, remapped through the gsShadowMaskMin floor. Occluders are
+// meshes by default; particles opt in via GS_SHADOW_MASK_PARTICLES (the receiving
+// splat set then occludes itself — use with care). Baked radiance approximates the
+// sum of all incident lighting, so per-light visibilities are averaged weighted by
+// light importance (not multiplied): overlapping shadows do not double-darken.
+// Returns 1.0 when no shadow-only light reaches the surfel.
+float3 computeGsShadowMask(in float3 surfPos, in float3 surfNormal, inout uint seed, inout HitPayload payload)
+{
+  // Intensity*luminance-weighted average of per-light visibility over all mask-casting
+  // lights (shadowOnly or castOnGs). A bright castOnGs light carries a large illumination
+  // intensity, so mixing it with a dim dedicated shadow-only light lets the bright one
+  // dominate the blend -- for an independent hard-mask light, match intensities or use
+  // shadow-only lights alone.
+  float3 maskSum   = float3(0.0);
+  float  weightSum = 0.0;
+
+  for(uint i = 0; i < assets.lightCount; ++i)
+  {
+    LightSource light = assets.lights[i];
+    // Include shadow-only lights (mask-only) AND lit lights flagged castOnGs (illuminate + cast on GS).
+    if(light.enabled == 0 || (light.shadowOnly == 0 && light.castOnGs == 0))
+      continue;
+
+    // Direction/distance to the light; with SHADOWS_SOFT and radius > 0 this
+    // jitters on the light disk, converging over temporal accumulation.
+    float3 lightDir;
+    float  lightDist;
+    if(!computeLightToSurfaceVector(light, surfPos, seed, lightDir, lightDist))
+      continue;  // out of range: the light does not reach this surfel, no vote
+
+    const float3 shadowOrigin = surfPos + surfNormal * frameInfo.rtxSecondaryRayOffset;
+
+    float3 visibility = float3(1.0);
+#if RTX_HAS_MESHES
+    if(assets.meshCount > 0)
+      visibility *= traceShadowRayMesh(assets, shadowOrigin, lightDir, lightDist, payload).transmittance;
+#endif
+#if GS_SHADOW_MASK_PARTICLES && RTX_HAS_PARTICLES
+    if(maxComponent(visibility) > 0.001 && assets.totalGlobalSplatCount > 0)
+      visibility *= traceShadowRayParticle(frameInfo, assets, shadowOrigin, lightDir, lightDist, payload).transmittance;
+#endif
+
+    const float weight = max(light.intensity, 0.0) * luminance(light.color);
+    maskSum += weight * visibility;
+    weightSum += weight;
+  }
+
+  if(weightSum <= 0.0)
+    return float3(1.0);
+
+  const float3 mask = maskSum / weightSum;
+  return float3(frameInfo.gsShadowMaskMin) + (1.0 - frameInfo.gsShadowMaskMin) * mask;
+}
+#endif  // GS_SHADOW_MASK
 
 // Trace shadow ray for a single light and compute transmission
 ShadowInfo traceShadowRayForLight(in FrameInfo     frameInfo,
