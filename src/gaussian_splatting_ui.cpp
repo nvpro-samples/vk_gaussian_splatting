@@ -440,6 +440,29 @@ void GaussianSplattingUI::onPreRender()
   GaussianSplatting::onPreRender();
 }
 
+void GaussianSplattingUI::onLastHeadlessFrame()
+{
+  // --saveImage (including inside a --sequencestring/--sequencefile SEQUENCE block) fires
+  // its parameter callback -> saveBufferToFile() as soon as the parameter is parsed. In
+  // headless mode (Application::headlessRun()), that parsing happens during the pre-loop
+  // onUIRender() setup pass, which runs BEFORE the real per-frame onRender() draw calls
+  // (the headless frame loop) ever execute. The saved image therefore always captured an
+  // empty/cleared G-buffer, independent of camera, pipeline, or scene content -- repro:
+  // any --headless run with --saveImage/--sequencestring produces a byte-identical blank
+  // PNG regardless of --inputFile, --pipeline, camera presets, or --benchmark.
+  //
+  // onLastHeadlessFrame() is this framework's own documented hook for exactly this case
+  // ("Called at the end of the last frame in headless mode", nvapp/application.hpp) --
+  // Application::headlessRun() calls it after the real frame loop and vkDeviceWaitIdle,
+  // so the G-buffers actually hold rendered content by this point. Re-running the save
+  // here (once a filename was actually requested) fixes it; the earlier, premature save
+  // from the UI-setup pass is simply overwritten with the correct image.
+  if(!m_saveImageFilename.empty())
+  {
+    saveBufferToFile(m_saveImageFilename, m_saveImageBufferIndex);
+  }
+}
+
 void GaussianSplattingUI::onRender(VkCommandBuffer cmd)
 {
   // Hide all 3D visual helpers in benchmark mode (grid, transform gizmo, light proxies)
