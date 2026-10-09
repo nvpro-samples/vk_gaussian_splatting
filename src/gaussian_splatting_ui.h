@@ -134,6 +134,15 @@ public:  // Methods specializing IAppElement
 
   void onUIMenu() override;
 
+  // Headless mode: --saveImage (and SEQUENCE blocks containing it) fire their parameter
+  // callback during Application::headlessRun()'s pre-loop onUIRender setup pass, which
+  // runs BEFORE the real per-frame onRender() draw calls ever execute -- so a save
+  // requested that way always captured an empty/cleared G-buffer. onLastHeadlessFrame()
+  // is the framework's own documented hook for "do something with the rendered image"
+  // (nvapp/application.hpp), called after the real frame loop and vkDeviceWaitIdle --
+  // re-running the save here, once a filename was actually requested, fixes it.
+  void onLastHeadlessFrame() override;
+
   void onFileDrop(const std::filesystem::path& filename) override;
 
   // Override reset to clear selections and detach helpers before base reset
