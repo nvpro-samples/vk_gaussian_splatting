@@ -231,7 +231,12 @@ void main()
   // Reconstruct the state of ray tracing as if it did trace primary rays
   // We copy the information from the rasterization
 #if HYBRID_ENABLED
-  initRtxStateFromRasterPass(pixel, launchID, launchIdFloat, launchSizeFloat, rayOrigin, rayDirection);
+  // Not in the mesh depth pre-pass: it runs before this frame's raster pass, so the raster buffers
+  // hold the previous frame's results, or zeros right after they are created. A zero splat id reads
+  // as splat 0 and is resolved through the global index table, which is null while no splats are
+  // loaded: the read faults and the device is lost. The pre-pass only needs the mesh depth anyway.
+  if(!pcRay.meshDepthOnly)
+    initRtxStateFromRasterPass(pixel, launchID, launchIdFloat, launchSizeFloat, rayOrigin, rayDirection);
 #endif
 
 #if WIREFRAME
